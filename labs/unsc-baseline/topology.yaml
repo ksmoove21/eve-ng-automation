@@ -37,3 +37,31 @@ links:
     to:
       node: R2
       interface: GigabitEthernet1
+
+validation:
+
+  - name: r1-gi1
+    type: interface
+    node: R1
+    interface: GigabitEthernet1
+    address: 10.255.0.1
+    state: up
+
+  - name: r2-gi1
+    type: interface
+    node: R2
+    interface: GigabitEthernet1
+    address: 10.255.0.2
+    state: up
+
+  - name: r1-to-r2
+    type: ping
+    node: R1
+    destination: 10.255.0.2
+    min_success_rate: 100
+
+  - name: r2-to-r1
+    type: ping
+    node: R2
+    destination: 10.255.0.1
+    min_success_rate: 100
