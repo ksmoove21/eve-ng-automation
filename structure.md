@@ -73,6 +73,20 @@ Keep these boundaries explicit.
 Lab-specific addressing, names, routing design, and acceptance criteria belong
 under `labs/<lab>/`. Do not hardcode them into generic Python modules.
 
+## External/private workspaces
+
+The installed engine and the active lab workspace may be different directories
+or different Git repositories.
+
+The global `--root` option identifies the workspace root containing runtime
+inputs such as `labs/`, `config/`, `.env`, and generated `.state/` data.
+Do not assume `--root` is the engine source checkout.
+
+This separation is intentional: reusable engine code and generic regression
+fixtures may remain public while environment-specific or sensitive labs live in
+a private repository. Generic Python modules must not depend on a particular
+workspace name, hostname, private domain, PKI name, or lab naming convention.
+
 ## Control-platform support
 
 The project is operated from Windows PowerShell and may also be used from
@@ -335,8 +349,8 @@ Repository examples may include variable names but not real secret values.
 System SSH host-key verification should remain enabled. Do not add insecure
 fallbacks merely to bypass trust errors.
 
-TLS validation should remain enabled. The current UNSC environment uses a
-private PKI trusted by the control workstation.
+TLS validation should remain enabled. Private/internal deployments may use a
+private CA, but the control workstation should trust that CA rather than disabling verification.
 
 ## EVE server assumptions
 
@@ -412,7 +426,7 @@ After coding:
 
 ## Current proven baseline
 
-The `unsc-baseline` lab is the first known-good operational reference.
+The `iosxe-baseline` lab is the first known-good operational reference.
 
 It has demonstrated:
 
