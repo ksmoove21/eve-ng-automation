@@ -290,3 +290,56 @@ implemented EVE-tunneled PAN-OS transport.
   `docs/validation.md` remain uncommitted for review.
 - This README entry is committed and pushed separately under the changelog
   convention. The feature branch remains unmerged.
+
+## 2026-09-27 - Live PAN-OS validation fails closed on an untrusted device key
+
+One explicitly authorized, read-only live validation was run against EVE lab
+`UNSC-Home-Replica-01` and firewall `LAB-PA-01`. The private workspace still
+declared the stale DHCP address `10.0.212.131`, so the test used a process-local
+override to target the console-observed address `10.0.212.38`. No workspace file,
+EVE object, or PAN-OS setting was changed.
+
+The standard validation path connected to EVE and reached the corrected PAN-OS
+management target through the existing Paramiko `direct-tcpip` channel. Device
+SSH setup then refused the connection because the PAN-OS host key for
+`10.0.212.38` was not present in the trusted host-key store. Host-key checking
+was not weakened or bypassed.
+
+The live result was:
+
+- command exit status: 1
+- overall result: `fail`
+- check: `transport-xml-smoke`
+- assertion setting: `required: false`
+- check result: `fail`
+- evidence kind: `failure_kind: execution`
+- reason: the PAN-OS SSH key for `10.0.212.38` is not trusted
+
+This confirms the new failure semantics in a live environment: an optional
+assertion does not hide a transport/execution failure. The assertion itself was
+not evaluated because verified SSH transport was not established, and running
+configuration retrieval and XML parsing did not begin.
+
+The remaining operator steps are to verify and trust the firewall's current SSH
+host key through the EVE jump path, then persist the current DHCP address in the
+private workspace if another CLI validation is desired:
+
+```yaml
+LAB-PA-01:
+  management_ip: 10.0.212.38
+```
+
+Because `10.0.212.38` is DHCP-derived runtime state, this remains a temporary
+environment value rather than a durable static management design. After both
+items are complete, the next read-only command is:
+
+```text
+eve validate UNSC-Home-Replica-01
+```
+
+No second live command was run. No engine, test, or validation documentation
+change was made during this live-test turn. The previously prepared changes in
+`src/eve_lab/validation.py`, `tests/test_validation_panos_runner.py`, and
+`docs/validation.md` remain uncommitted for review. This README update is
+committed and pushed separately under the changelog convention. The feature
+branch remains unmerged.
