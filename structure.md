@@ -396,6 +396,33 @@ record of both intent and implementation.
 
 Preserve unrelated edits and existing staged work.
 
+## Agent initiative and authorization boundaries
+
+Agents should resolve repository-visible prerequisites before asking the owner
+and should continue reversible, low-risk work that is already within the active
+task's scope.
+
+Repository-local authorization persists for the active task. This includes
+implementation, tests, documentation, diff review, branch preparation, and
+other reversible work needed to complete the requested deliverable. Agents
+should not stop at avoidable permission checkpoints or hand routine
+implementation back to the owner when the work is already authorized.
+
+Live infrastructure authorization is narrower and does not silently broaden
+across turns. Starting, stopping, configuring, deleting, resetting, or otherwise
+changing EVE-NG nodes or network devices requires authorization applicable to
+that specific live action and scope.
+
+When live authorization is absent, continue useful offline preparation and mark
+the live step as the exact remaining dependency. Optional assertions, test
+failures, or implementation friction must not be worked around by changing
+human intent, weakening validation, or broadening permissions.
+
+Corrections and follow-up messages steer the active task unless the owner
+cancels it or provides an incompatible objective. Preserve accepted decisions,
+completed work, evidence, and outstanding steps across turns and context
+compaction.
+
 ## Agent responsibilities
 
 Before coding:
