@@ -45,3 +45,18 @@ The classifier now explicitly permits those forms while unknown input and all
 recognized interactive prompts remain fail-closed. Offline regression coverage
 passes for the one-time Return behavior and all refusal cases. The revised
 benign-noise classifier still requires live EVE-NG verification.
+
+### The expanded benign-noise classifier still fails live
+
+Live validation after expanding the benign-noise classifier still refused the
+one-time Return on both R1 and R3. The available error identified only that some
+buffered material was unclassified, so adding more guessed patterns would risk
+weakening the read-only guard without identifying the actual input shape.
+
+The refusal path now reports structural evidence only: character and logical-line
+counts, category counts, unclassified line lengths, whether those lines contain
+control characters, and the control-character code points. It never includes
+printable console text, addresses, hostnames, commands, or credentials. The
+allowlist and refusal policy are unchanged. Offline redaction and regression
+tests pass; the diagnostic output still requires live EVE-NG collection before
+the classifier should be changed again.
