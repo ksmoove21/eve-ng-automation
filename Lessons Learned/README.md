@@ -201,3 +201,28 @@ The new front matter:
 This was a documentation-only change. No engine behavior, lab definitions, tests,
 or live EVE state were modified. The README change was reviewed on branch
 `docs/readme-fork-guide`, merged through PR #3, and is now present on `main`.
+
+
+## 2026-09-27 - Public repository separated from private lab workspaces
+
+The public fork was generalized so reusable engine code and regression fixtures no
+longer depend on the owner's private environment naming.
+
+Changes on `refactor/generic-public-repo`:
+
+- repository branding and README language were made generic
+- `config/servers.yaml` now uses `https://eve.example.com` instead of a private endpoint
+- `docs/UNSC_ENVIRONMENT.md` was replaced by generic `docs/ENVIRONMENT.md`
+- `docs/UNSC_ROADMAP.md` was renamed to `docs/ROADMAP.md` and owner-specific wording was removed
+- the Windows baseline runbook was rewritten around a generic target environment
+- `unsc-baseline` was renamed to `iosxe-baseline`, including the topology name
+- `structure.md` now explicitly supports external/private workspaces
+- the CLI `--root` help now describes a workspace root rather than a repository root
+- the README documents using an installed public engine against a separate private
+  workspace containing `labs/`, `config/`, `.env`, and `.state/`
+
+No validation semantics, topology reconciliation behavior, device initialization,
+or console safety behavior changed. No live EVE operations were performed for
+this refactor. The generic fixtures remain `iosxe-baseline` and
+`gre-vrf-validation`; environment-specific labs are expected to live outside
+the public engine repository when privacy is desired.
