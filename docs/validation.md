@@ -18,12 +18,12 @@ behavior remain unchanged. The baseline lab has not been expanded.
 
 ## Implemented scope
 
-Only the existing `c8000v` template is enabled, using the IOS XE adapter in
-`src/eve_lab/validation_iosxe.py`. Other templates fail before console access.
-The template registry in `validation.py` is the extension point; additional
-platforms need explicit schemas/capabilities, commands, parsers and tests.
-This is not a claim of support for IOS XR, NX-OS, other vendors or other IOS
-XE templates.
+`c8000v` remains enabled through the IOS XE adapter in
+`src/eve_lab/validation_iosxe.py`. Palo Alto firewall nodes using the
+\`paloalto\` template are also enabled through
+\`src/eve_lab/validation_panos.py\` for committed-configuration assertions.
+Panorama is intentionally not registered for validation. NX-OS, IOS XR and
+other templates still fail preflight until explicit adapters are added.
 
 | Type | Required fields beyond name/type/node | Optional fields |
 | --- | --- | --- |
@@ -157,3 +157,92 @@ IOS XE image and EVE-NG console path:
 
 Use a separate focused lab for new live cases; do not expand the baseline
 merely to exercise all types. No live EVE operation was performed for this work.
+
+
+## PAN-OS firewall validation
+
+PAN-OS validation uses the firewall management plane rather than the EVE serial
+console. The controller first connects to the EVE host over SSH, then opens a
+`direct-tcpip` tunnel to the firewall management address declared in
+`labs/LAB/init.yaml`. Device authentication uses `PALO_USERNAME` and
+`PALO_PASSWORD`.
+
+The validator reuses the existing read-only running-config workflow:
+
+```text
+set cli pager off
+set cli op-command-xml-output on
+show config running
+set cli op-command-xml-output off
+```
+
+It parses the returned committed XML once per firewall and evaluates all
+declared checks locally. It does not enter configuration mode, modify candidate
+configuration, commit, clear sessions or alter runtime state.
+
+Supported PAN-OS types in this first slice:
+
+| Type | Required fields | Optional fields |
+| --- | --- | --- |
+| `panos-interface` | `interface` | `address`, `expected` |
+| `panos-zone-interface` | `zone`, `interface` | `vsys`, `expected` |
+| `panos-virtual-router-interface` | `virtual_router`, `interface` | `expected` |
+| `panos-route` | `destination` | `virtual_router`, `next_hop`, `expected` |
+| `panos-security-rule` | `rule` | `vsys`, `expected` |
+| `panos-nat-rule` | `rule` | `vsys`, `expected` |
+
+`expected` defaults to `present`. `vsys` defaults to `vsys1`, and
+`virtual_router` defaults to `default` for route checks. Route checks in
+this slice inspect committed IPv4 static routes. Dynamic routing state, runtime
+interface state, session/policy counters and packet probes remain future live
+validation work.
+
+Example:
+
+```yaml
+validation:
+  - name: outside-address
+    type: panos-interface
+    node: PA1
+    interface: ethernet1/1
+    address: 198.51.100.1/30
+    expected: present
+
+  - name: outside-zone
+    type: panos-zone-interface
+    node: PA1
+    zone: OUTSIDE
+    interface: ethernet1/1
+    expected: present
+
+  - name: outside-vr
+    type: panos-virtual-router-interface
+    node: PA1
+    virtual_router: default
+    interface: ethernet1/1
+    expected: present
+
+  - name: default-route
+    type: panos-route
+    node: PA1
+    destination: 0.0.0.0/0
+    next_hop: 198.51.100.2
+    expected: present
+
+  - name: allow-test
+    type: panos-security-rule
+    node: PA1
+    rule: ALLOW-TEST
+    expected: present
+```
+
+The corresponding private workspace must provide:
+
+```yaml
+# labs/LAB/init.yaml
+PA1:
+  management_ip: 192.0.2.10
+```
+
+The management IP is environment data and need not be committed to a public
+engine repository.
