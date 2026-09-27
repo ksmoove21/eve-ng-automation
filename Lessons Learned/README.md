@@ -343,3 +343,59 @@ change was made during this live-test turn. The previously prepared changes in
 `docs/validation.md` remain uncommitted for review. This README update is
 committed and pushed separately under the changelog convention. The feature
 branch remains unmerged.
+
+## 2026-09-27 - Explicit enrollment of the current PAN-OS lab SSH key
+
+The owner authorized trusting new SSH keys encountered in labs. A proposed broad
+automatic trust-on-first-use policy across PAN-OS initialization, backup,
+restore, and validation was rejected because it would silently accept every
+previously unseen device key and enlarge the trust scope.
+
+The safer action enrolled only the current LAB-PA-01 key for management address
+10.0.212.38, reached through the already verified EVE SSH connection. No
+existing key was replaced. The enrolled key is:
+
+~~~text
+ssh-rsa SHA256:dPUAWTwwFUxtcdAXXMNM3+KZHzcgZEaD7/mJc8m8K0U
+~~~
+
+The key was saved in the controller user's standard SSH trust store. EVE and
+PAN-OS configuration were not changed, and validation was not rerun. Future key
+mismatches remain hard failures.
+
+structure.md now records the owner convention: a new lab-device key may be
+enrolled only with explicit owner authorization, scoped to the exact device
+address through an already verified EVE connection, with its fingerprint
+reported. Saved keys must never be replaced automatically. docs/validation.md
+applies that rule to PAN-OS validation.
+
+The previously prepared PAN-OS validation change was completed and committed
+with this convention:
+
+- Node-level transport, session, running-config retrieval, and XML parsing
+  failures force overall validation result fail, independently of optional
+  assertion semantics.
+- Execution failures include failure_kind: execution.
+- A successfully executed optional assertion mismatch still leaves the overall
+  result as pass.
+- tests/test_validation_panos_runner.py covers optional and required assertion
+  outcomes plus transport, retrieval, parsing, and success cases.
+- Panorama validation remains unsupported.
+- The only implemented PAN-OS validation transport remains the explicit
+  EVE-tunneled direct-tcpip path.
+
+Verification:
+
+- Focused PAN-OS tests: 17 passed.
+- Full test_validation*.py suite: 66 passed.
+- git diff --check: passed with line-ending conversion warnings only.
+- The SSH key enrollment was a live read-only transport operation.
+- No live validation was run after enrollment.
+- No EVE or PAN-OS configuration was changed.
+
+The implementation, tests, and documentation were committed locally as
+5f2b089 (fix: fail closed on PAN-OS validation execution errors). This README
+entry is committed separately under the changelog convention. Neither commit is
+pushed in this turn because pushing the README commit would also push the
+preceding implementation commit, while automatic push authorization applies
+only to this changelog file. The feature branch remains unmerged.
