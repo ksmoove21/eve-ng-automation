@@ -26,13 +26,21 @@ def _token(value, field):
         raise ValueError(field + " must be a single token (letters, digits, _, ., -)")
 
 
+def _interface(value):
+    # PAN-OS interface names commonly contain '/', e.g. ethernet1/1.
+    # Keep the accepted alphabet deliberately narrow because interface names are
+    # interpolated into ElementTree XPath predicates below.
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./-]*", value):
+        raise ValueError("interface must be a PAN-OS interface token")
+
+
 def validate_check(check):
     expected = check.get("expected", "present")
     if expected not in ("present", "absent"):
         raise ValueError("PAN-OS expected must be present or absent")
     kind = check["type"]
     if kind == "panos-interface":
-        _token(check.get("interface"), "interface")
+        _interface(check.get("interface"))
         if "address" in check:
             if not isinstance(check["address"], str):
                 raise ValueError("address must be an IPv4 interface string")
@@ -43,11 +51,11 @@ def validate_check(check):
             IPv4Address(address)
     elif kind == "panos-zone-interface":
         _token(check.get("zone"), "zone")
-        _token(check.get("interface"), "interface")
+        _interface(check.get("interface"))
         _token(check.get("vsys", "vsys1"), "vsys")
     elif kind == "panos-virtual-router-interface":
         _token(check.get("virtual_router"), "virtual_router")
-        _token(check.get("interface"), "interface")
+        _interface(check.get("interface"))
     elif kind == "panos-route":
         _token(check.get("virtual_router", "default"), "virtual_router")
         if not isinstance(check.get("destination"), str):
