@@ -399,3 +399,38 @@ entry is committed separately under the changelog convention. Neither commit is
 pushed in this turn because pushing the README commit would also push the
 preceding implementation commit, while automatic push authorization applies
 only to this changelog file. The feature branch remains unmerged.
+
+## 2026-09-27 - Live PAN-OS validation reaches execution-failure reporting
+
+One explicitly authorized read-only live validation demo ran against
+UNSC-Home-Replica-01 and LAB-PA-01. Because the private init.yaml still declares
+stale address 10.0.212.131, the process used a nonpersistent override for the
+console-observed DHCP address 10.0.212.38. No workspace file, EVE object, or
+PAN-OS configuration was changed.
+
+The earlier host-key refusal did not recur because the current firewall key had
+been enrolled. EVE reported the node running, but its SSH direct-tcpip channel
+returned No route to host for 10.0.212.38:22 throughout the bounded 120-second
+retry period.
+
+The final structured result was:
+
+- command exit status: 1
+- overall result: fail
+- check: transport-xml-smoke
+- assertion setting: required false
+- check result: fail
+- failure classification: execution
+- reason: timed out waiting for PAN-OS management SSH; check management address,
+  SSH service, and EVE reachability
+
+This is live confirmation that a transport failure cannot be hidden by an
+optional assertion. Running-configuration retrieval, XML parsing, and the
+security-rule assertion did not execute. It does not establish whether the
+DHCP address changed, PAN-OS management SSH became unavailable, or EVE lost its
+route; those runtime causes require operator inspection.
+
+No second live command was run. No tests or source changes were needed for this
+demo. The branch remains unmerged. This entry is committed separately under the
+Lessons Learned convention and is not pushed because the branch also contains
+an unpushed implementation commit.
