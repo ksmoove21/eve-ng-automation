@@ -1,9 +1,8 @@
 servers:
   default:
-    # Existing UNSC EVE-NG instance. The automation does not provision the
-    # server or its network path; eve.unsc.in must already resolve and be
-    # reachable from the machine running this CLI.
-    url: https://eve.unsc.in
+    # Replace this example endpoint with your EVE-NG server. The automation
+    # assumes DNS/routing/TLS reachability already exists from the controller.
+    url: https://eve.example.com
     username_env: EVE_USERNAME
     password_env: EVE_PASSWORD
     timeout: 120
