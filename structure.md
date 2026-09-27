@@ -186,24 +186,38 @@ Validation must be read-only.
 The lab definition owns the expected behavior. Generic Python code owns how
 those expectations are measured.
 
-Current primitive examples include:
+Implemented primitives include:
 
 - interface state and address
 - ping reachability
+- route presence or absence (IPv4, optional VRF and next hop)
+- default route (IPv4, optional VRF)
+- BGP neighbor state (IPv4/IPv6 unicast, optional VRF)
+- OSPF neighbor state (global IPv4)
+- IS-IS adjacency (neighbor name or system ID)
+- VRF reachability (IPv4)
+- MTU/DF reachability (IPv4)
+
+`validation.py` owns schema dispatch, node grouping, transport orchestration
+and reports. `validation_iosxe.py` owns new IOS XE primitive schemas, fixed
+read-only commands and structured parsers. Only `c8000v` is registered;
+future platform adapters must explicitly define and test their capabilities.
+See [docs/validation.md](docs/validation.md) for exact fields and limitations.
+
+Checks are required by default. Only an explicit human-authored
+`required: false` makes a failed check advisory; its failure remains visible.
+Never infer optionality or relax thresholds from observed output.
+
+Validation uses guarded console authentication: refuse setup/configuration
+prompts and request prompt redisplay without submitting pending input. Device
+initialization retains its existing login behavior. Terminal pagination is a
+session setting; probes and show commands do not change configuration.
 
 Expected future primitives include:
 
-- route presence or absence
-- default route
-- BGP neighbor state
-- OSPF neighbor state
-- IS-IS adjacency
-- VRF route lookup
-- VRF reachability
 - MPLS/LDP state
 - MP-BGP VPNv4/VPNv6 state
 - GRE/tunnel state
-- MTU/DF reachability
 - bounded generic command assertions where a dedicated primitive is not yet
   available
 

@@ -58,9 +58,13 @@ class Console:
         # Never include console output: it may contain passwords/configuration.
         raise RuntimeError('Timed out waiting for console prompt; inspect the EVE console for boot progress or an interactive setup prompt')
 
-    def login(self, username, password, secret):
-        self.send('')
-        wake = True
+    def login(self, username, password, secret, *, read_only=False):
+        if read_only:
+            # Redisplay, never submit a pending command or a setup default.
+            self.channel.sendall('\x12')
+        else:
+            self.send('')
+        wake = not read_only
         secret_prompts = set()
         pattern = (r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
@@ -69,6 +73,10 @@ class Console:
         for _ in range(12):
             _, match = self.expect(pattern, timeout=self.boot_timeout, wake=wake)
             prompt = match.group().strip()
+            if read_only and (re.match(r'(Enter|Confirm) enable secret', prompt, re.I)
+                              or prompt.startswith(('Enter your selection', 'Would you like'))
+                              or '(config' in prompt):
+                raise RuntimeError('Read-only login refused setup or configuration-mode prompt')
             if re.match(r'(Enter|Confirm) enable secret', prompt, re.I):
                 stage = prompt.split()[0].lower()
                 if stage in secret_prompts:
@@ -101,6 +109,8 @@ class Console:
                 if enabled.group().strip().startswith('Password:'):
                     self.send(secret)
                 else:
+                    if read_only and '(config' in enabled.group():
+                        raise RuntimeError('Read-only login refused configuration-mode prompt')
                     self.prompt = enabled.group().strip()
                     return
             elif '(config' in prompt:
