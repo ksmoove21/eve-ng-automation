@@ -1,29 +1,17 @@
 # Baseline validation on Windows
 
-This runbook verifies the inherited EVE-NG automation against the existing
-UNSC EVE-NG instance without changing any lab state.
+This runbook verifies a fresh checkout from Windows PowerShell before making live
+topology changes.
 
-Target:
-
-```text
-https://eve.unsc.in
-```
-
-The goal is to prove local Python setup, repository configuration, DNS/TLS,
-EVE-NG API authentication, and server discovery before changing topology or
-device support.
-
-## 1. Clone the fork and select the foundation branch
+## 1. Clone the repository
 
 ```powershell
 git clone https://github.com/ksmoove21/eve-ng-automation.git
 cd eve-ng-automation
-git switch automation/unsc-foundation
 git status
 ```
 
-Expected: the branch is `automation/unsc-foundation` and the working tree is
-clean.
+Expected: `main` is checked out and the working tree is clean.
 
 ## 2. Create the Python environment
 
@@ -36,47 +24,47 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-If PowerShell execution policy prevents virtual-environment activation, use the
-virtual environment's Python executable directly instead of changing machine
-policy:
+If PowerShell execution policy prevents virtual-environment activation, invoke
+the virtual environment's executables directly rather than weakening machine
+policy.
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e .
-```
+## 3. Configure a workspace
 
-## 3. Create the local credential file
+A workspace may be this repository or a separate/private repository.
+
+For an in-repository test, copy the example credential file:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-For the first read-only API checks, only these values are required:
+Populate your own EVE credentials and edit `config/servers.yaml` to point to
+your EVE-NG instance.
 
-```text
-EVE_USERNAME=<EVE web/API username>
-EVE_PASSWORD=<EVE web/API password>
-```
-
-Leave SSH and guest-device credentials blank until those workflows are tested.
-
-The `.env` file is gitignored and must not be committed.
-
-## 4. Verify DNS and HTTPS outside the application
+For a separate workspace, use the same `labs/`, `config/`, and `.env`
+layout and pass it with:
 
 ```powershell
-Resolve-DnsName eve.unsc.in
-Invoke-WebRequest https://eve.unsc.in
+eve --root H:\Github\my-eve-workspace status --server default
 ```
 
-The workstation already trusts the private PKI used by `eve.unsc.in`.
-Do not disable TLS verification.
+Keep `.env` gitignored.
 
-A successful web request proves only DNS, routing, TCP/TLS, and web-server
-reachability. API authentication is validated in the next step.
+## 4. Verify DNS, TLS, and SSH independently
 
-## 5. Verify EVE-NG API access
+Use the actual hostname from your server profile:
 
-These commands are read-only:
+```powershell
+Resolve-DnsName eve.example.com
+Invoke-WebRequest https://eve.example.com
+ssh root@eve.example.com
+```
+
+Use the appropriate SSH account for your server. Verify and trust the expected
+host key. If the HTTPS certificate is privately issued, trust the issuing CA
+rather than disabling TLS verification.
+
+## 5. Verify read-only EVE API access
 
 ```powershell
 eve status --server default
@@ -84,60 +72,29 @@ eve templates --server default
 eve template c8000v --server default
 ```
 
-Success proves that the Python client can authenticate to EVE-NG and read server
-and template information over HTTPS.
+These checks do not deploy or modify a lab.
 
-Record the output from `eve templates` because it becomes the source for
-comparing the inherited example against the images and templates actually
-installed on the UNSC EVE server.
-
-## 6. Run the inherited offline tests
-
-From the repository root:
+## 6. Run offline tests
 
 ```powershell
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-These tests should run without requiring live EVE-NG changes.
+Known inherited POSIX-specific test assumptions are documented in
+`structure.md`.
 
-Any failure at this stage should be investigated before modifying the engine.
-
-## 7. Validate the inherited lab definition locally
-
-The inherited implementation currently loads server credentials even for
-`plan`, although `plan` itself does not contact EVE-NG.
+## 7. Plan a generic fixture locally
 
 ```powershell
-eve plan palo-lab1 --server default
+eve plan iosxe-baseline --server default
+eve plan gre-vrf-validation --server default
 ```
 
-This validates the checked-in topology YAML and reports local object counts.
+Planning validates local lab intent. Review referenced image names against the
+target server before applying anything.
 
 ## Stop point
 
-Do not run these during baseline validation:
-
-```text
-eve apply
-eve start
-eve stop
-eve delete
-eve init
-eve restore
-eve bootstrap --attach
-eve nat add
-eve nat remove
-eve dhcp update
-eve dhcp clear
-```
-
-The next phase begins only after:
-
-- the offline tests pass;
-- HTTPS/API authentication succeeds;
-- template discovery succeeds; and
-- the installed EVE image/template inventory has been reviewed.
-
-At that point, create a dedicated disposable baseline lab rather than applying
-the inherited `palo-lab1` definition blindly.
+Do not continue to `apply`, `start`, `init`, `restore`, `delete`, NAT,
+or DHCP changes until you have reviewed the target environment and explicitly
+intend to modify it.

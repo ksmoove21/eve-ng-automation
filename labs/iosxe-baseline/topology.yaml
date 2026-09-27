@@ -1,5 +1,5 @@
-name: unsc-baseline
-description: Minimal UNSC baseline lab for validating EVE-NG lifecycle automation
+name: iosxe-baseline
+description: Minimal IOS XE baseline lab for validating EVE-NG lifecycle automation
 remote_folder: /
 
 nodes:

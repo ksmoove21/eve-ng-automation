@@ -1,4 +1,4 @@
-# UNSC EVE-NG Automation Roadmap
+# EVE-NG Automation Roadmap
 
 This fork starts from `wcmder/eve-ng` and preserves its current declarative
 topology and lifecycle model while extending it for broader network-lab use.
@@ -19,7 +19,7 @@ code are the durable source of truth.
 - Keep the inherited `palo-lab1` example functional.
 - Inventory the current CLI, topology schema, supported templates, and tests.
 - Establish an offline regression-test workflow.
-- Establish a separate live-integration checklist for the owner's EVE-NG host.
+- Establish a separate live-integration checklist for a target EVE-NG host.
 - Document the local development and Git branching workflow.
 - Do not redesign working upstream behavior before a baseline is established.
 
@@ -27,12 +27,12 @@ Exit criteria:
 
 - Existing automated tests pass locally.
 - `eve plan palo-lab1` succeeds with local configuration.
-- The engine can authenticate to the owner's EVE-NG instance.
+- The engine can authenticate to the target EVE-NG instance.
 - A non-destructive status/template query succeeds.
 
 ## Phase 1: Environment compatibility
 
-Adapt the fork to the owner's EVE-NG installation without embedding
+Adapt the fork to the target EVE-NG installation without embedding
 environment-specific values in reusable engine code.
 
 Candidate work:
@@ -164,5 +164,5 @@ operation, but it is not a dependency of the core automation engine.
 The original implementation is `wcmder/eve-ng`.
 
 This fork is intended for independent experimentation and extension. Changes
-remain in this fork unless the owner explicitly decides to contribute a
+remain in this fork unless a maintainer explicitly decides to contribute a
 specific change upstream.

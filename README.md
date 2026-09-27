@@ -1,6 +1,6 @@
-# UNSC EVE-NG Automation
+# EVE-NG Automation
 
-This repository is a fork of [wcmder/eve-ng](https://github.com/wcmder/eve-ng) that extends the original EVE-NG automation engine with a Git-backed lab workflow, Windows-first operator guidance, declarative operational validation, live-tested IOS XE console handling, and UNSC reference labs.
+This repository is a fork of [wcmder/eve-ng](https://github.com/wcmder/eve-ng) that extends the original EVE-NG automation engine with a Git-backed lab workflow, Windows-first operator guidance, declarative operational validation, live-tested IOS XE console handling, and reusable reference labs.
 
 The goal is straightforward: a human or automation agent should be able to read the repository, understand the intended lab state, deploy it to an existing EVE-NG server, initialize supported devices, and prove the resulting network satisfies explicit acceptance criteria without guessing at hidden assumptions.
 
@@ -15,7 +15,7 @@ Compared with the upstream baseline, this fork currently adds:
 - declarative lab acceptance criteria under `validation:`
 - structured IOS XE validation for interface state, ping, route presence/absence, default route, BGP, OSPF, IS-IS, VRF ping, and MTU/DF ping
 - read-only validation console acquisition hardened against real EVE/Telnet/IOS XE terminal behavior
-- the `unsc-baseline` regression fixture
+- the `iosxe-baseline` regression fixture
 - the `gre-vrf-validation` live integration lab
 - a persistent [Lessons Learned](Lessons%20Learned/README.md) changelog that records implementation findings, test evidence, and live EVE results
 - explicit separation between topology intent, runtime reconciliation, initialization, and operational validation
@@ -53,7 +53,7 @@ The live-tested reference used C8000V `17.16.01a`. All 13 declared acceptance ch
 - bidirectional VRF reachability
 - 1500-byte DF/MTU reachability
 
-The smaller `unsc-baseline` lab remains the regression fixture for basic topology creation, IOS XE initialization, interface validation, and bidirectional ping validation.
+The smaller `iosxe-baseline` lab remains the regression fixture for basic topology creation, IOS XE initialization, interface validation, and bidirectional ping validation.
 
 These are proven reference combinations, not claims that every EVE-NG/C8000V release behaves identically.
 
@@ -94,6 +94,44 @@ Important behavior:
 - `eve validate` is read-only and must not alter device configuration or silently weaken human-authored acceptance criteria.
 - A failed required validation check returns a nonzero result.
 - EVE-NG API acceptance is not treated as proof that a guest is booted or operational.
+
+## Keep private labs in a separate workspace
+
+The engine does not require lab definitions to live in this Git repository. The global `--root` option selects the **workspace root** used for `labs/`, `config/`, `.env`, and generated `.state/` data.
+
+That makes it practical to keep the reusable engine public while storing real or sensitive labs in a separate private repository:
+
+```text
+public: eve-ng-automation/
+  src/eve_lab/
+  tests/
+  docs/
+  labs/iosxe-baseline/
+  labs/gre-vrf-validation/
+
+private: my-eve-workspace/
+  .env
+  config/servers.yaml
+  labs/
+    production-like-lab/
+    private-routing-lab/
+```
+
+Install this project once, then point commands at the private workspace:
+
+```powershell
+eve --root H:\Github\my-eve-workspace plan private-routing-lab --server default
+eve --root H:\Github\my-eve-workspace apply private-routing-lab --server default
+eve --root H:\Github\my-eve-workspace validate private-routing-lab --server default
+```
+
+On Linux/macOS the same model applies with a POSIX path:
+
+```sh
+eve --root ~/git/my-eve-workspace plan private-routing-lab --server default
+```
+
+The workspace does not need to contain the Python engine source. It only needs the runtime files required by the commands you use. Keep `.env` gitignored even when the workspace repository itself is private.
 
 ## Quick start for a new tester
 
@@ -207,10 +245,10 @@ When changing engine behavior, add focused offline tests first and clearly disti
 | `structure.md` | Architecture, safety rules, platform boundaries, testing and Git workflow |
 | `Lessons Learned/README.md` | Changelog-style implementation and live-evidence record |
 | `docs/validation.md` | Validation schema, primitives, evidence and limitations |
-| `docs/UNSC_ROADMAP.md` | Project direction and phased goals |
-| `docs/UNSC_ENVIRONMENT.md` | Current UNSC environment assumptions/reference |
+| `docs/ROADMAP.md` | Project direction and phased goals |
+| `docs/ENVIRONMENT.md` | Current UNSC environment assumptions/reference |
 | `docs/BASELINE_VALIDATION_WINDOWS.md` | Windows baseline/testing notes |
-| `labs/unsc-baseline/` | Minimal known-good regression lab |
+| `labs/iosxe-baseline/` | Minimal known-good regression lab |
 | `labs/gre-vrf-validation/` | Full IOS XE operational validation fixture |
 | `src/eve_lab/` | Shared Python engine |
 | `tests/` | Offline/unit test suites |

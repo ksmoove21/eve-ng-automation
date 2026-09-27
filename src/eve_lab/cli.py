@@ -26,7 +26,7 @@ from .validation import validate_lab
 
 def main():
     parser = argparse.ArgumentParser(description="EVE-NG lab tooling")
-    parser.add_argument("--root", type=Path, default=Path.cwd(), help="Repository root")
+    parser.add_argument("--root", type=Path, default=Path.cwd(), help="Workspace root containing labs, config, .env, and .state")
     commands = parser.add_subparsers(dest="command", required=True)
     nat = commands.add_parser("nat", help="Manage runtime pnet1 Internet NAT through pnet0")
     nat.add_argument("nat_action", choices=["add", "remove", "status"])
