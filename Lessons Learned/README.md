@@ -516,3 +516,116 @@ No source change, test, or live operation was performed. This diagnostic entry
 is committed separately under the Lessons Learned convention and is not pushed
 because the branch contains an unpushed implementation commit. The feature
 branch remains unmerged.
+
+
+## 2026-09-27 - Live PAN-OS soft-lockup diagnostic isolates EVE CPU limiting
+
+The owner explicitly authorized a live diagnostic and restart of the PAN-OS
+QEMU node. EVE itself is a VMware virtual machine, not bare metal. The outer
+EVE VM has 56 vCPUs arranged as two 28-core virtual sockets, approximately
+362 GiB RAM, a 64,380 MHz CPU reservation, no CPU limit, and hardware-assisted
+virtualization exposed to the guest. Only LAB-PA-01 was running during the
+controlled comparison; the Cisco nodes remained stopped.
+
+The initial LAB-PA-01 runtime allocation was four vCPUs, 8,192 MB RAM, and EVE
+CPU Limit enabled. EVE's cpulimit daemon attached this command to the QEMU
+process:
+
+    cpulimit -q -p <qemu-pid> -l 200 -b
+
+For a four-vCPU guest, that caps total QEMU CPU consumption at 200 percent even
+though the process can use 400 percent. The installed daemon uses an 80 percent
+per-vCPU trigger, a 50 percent per-vCPU limit, a 30 percent release threshold,
+five-second checks, and twelve release checks. EVE's log repeatedly showed the
+PAN-OS QEMU process reaching approximately 383 to 436 percent before the
+limiter attached.
+
+A 100-sample, 0.1-second process-state observation found QEMU stopped in
+T/Tl state for 46 samples and runnable/sleeping in S/Sl state for 54 samples.
+The limiter implements its cap by repeatedly stopping and continuing the whole
+QEMU process. In a nested VMware -> KVM -> PAN-OS deployment, guest time
+continues advancing while QEMU is stopped. That behavior directly explains how
+an otherwise CPU-active PAN-OS guest can report watchdog soft lockups and reboot:
+its vCPUs are deliberately prevented from running long enough for the watchdog
+to detect a stall. This is the strongest identified cause of the recurring
+soft-lockup/reboot sequence, although it does not exclude a PAN-OS defect or
+outer-vSphere scheduling delay as additional contributors.
+
+The outer EVE VM did not show RAM or swap pressure and was mostly idle. Short
+samples showed approximately 2 to 6 percent CPU steal at times, which confirms
+nested scheduling delay but was much smaller than the explicit QEMU stop/start
+behavior. Current storage samples did not show sustained saturation. The EVE
+kernel also reports that KVM is running with ignore_msrs=1 and warns that lying
+to guests about MSRs can cause hangs or errors. Repeated blk_mq_run_work_fn
+latency warnings exist as secondary evidence, but neither was correlated with
+the PAN-OS reboot closely enough to call it the cause.
+
+The normal REST stop request returned HTTP 400, EVE error 60027, and left the
+node running. The supported EVE unl_wrapper poweroff action was then used for
+the authorized node restart. It reported that purgeLabTable was refused until
+plumber leases were free, but the QEMU process stopped successfully. The global
+cpulimit service was paused only long enough to release the affected QEMU
+process safely, then restored and verified active.
+
+Two controlled boots were observed:
+
+1. Four vCPUs, 8,192 MB RAM, per-node CPU Limit disabled: QEMU stayed in S/Sl
+   state, never acquired a limiter, and did not reboot during more than twenty
+   minutes. PAN-OS did not reach management SSH or recover the previously
+   observed DHCP address during that window.
+2. Four vCPUs, 12,288 MB RAM, per-node CPU Limit disabled: QEMU again stayed in
+   S/Sl state with no limiter or PID change. The final observation showed 18
+   minutes 44 seconds continuous runtime, 194 percent CPU use, all four vCPU
+   threads present, QEMU status running, and the global EVE limiter service
+   active without a limiter attached to this node.
+
+The 12 GB boot eventually exposed a normal PAN-OS serial login prompt. A
+sanitized prompt classifier found no soft-lockup, kernel-panic, reboot,
+maintenance, bootloader, or configuration prompt marker. The existing console
+login path ended with its generic credential failure. Following the owner's
+baseline rule, a separate bounded comparison attempted factory admin/admin once
+and then the private environmental PALO credentials once. Both attempts timed
+out before reaching a recognizable authentication result, so neither credential
+set was proven accepted or rejected. A structural local check confirmed that
+PALO_USERNAME and PALO_PASSWORD are present, the environmental username is
+admin, and the environmental password is nondefault. No further authentication
+attempt was made to avoid an account lockout. No PAN-OS show command ran and no
+PAN-OS configuration changed. Management ARP and SSH for the previously observed
+DHCP address remained unavailable. The management tap was up and had traffic
+counters, but bounded passive captures did not establish a successful DHCP
+exchange. The management-plane readiness problem therefore remains separate and
+unresolved.
+
+Live changes left in place:
+
+- LAB-PA-01 is running with four vCPUs, 12,288 MB RAM, and per-node CPU Limit
+  disabled.
+- The global EVE cpulimit service is active.
+- Other lab nodes remain stopped.
+- No PAN-OS configuration was changed.
+- The private workspace topology still declares 8,192 MB and does not represent
+  the runtime CPU Limit setting. A future reconciliation while the node is
+  stopped may restore the older resource value unless the operator deliberately
+  updates that private definition.
+
+The EVE documentation describes CPU Limit as throttling a node from an
+80-percent trigger to 50 percent until it remains below 30 percent for one
+minute:
+https://www.eve-ng.net/wp-content/uploads/2020/02/EVE-COOK-BOOK-1.27-2020.pdf
+
+Palo Alto's model-specific requirements must be checked before choosing a
+durable memory allocation; current requirements range by licensed VM-Series
+model and list 9 GB for VM-300 and 16 GB for VM-500:
+https://docs.paloaltonetworks.com/vm-series/activation-and-onboarding/vm-series-models/vm-series-system-requirements
+
+PAN-OS 12.1.7 also addresses PAN-318275, a VM-Series unresponsive condition.
+That release note supports testing a maintained release after preserving
+diagnostics, but it does not prove that defect caused this guest's trace:
+https://docs.paloaltonetworks.com/ngfw/release-notes/12-1/pan-os-12-1-7-known-and-addressed-issues/pan-os-12-1-7-addressed-issues
+
+No repository source or test file changed, and no automated test suite was run
+because this was a live environment diagnostic. Temporary local diagnostic
+scripts contained no stored credentials and are removed after use. The Lessons
+Learned update is committed separately under the repository convention and is
+not pushed because pushing it would also publish the unpushed implementation
+commit. The feature branch remains unmerged.
