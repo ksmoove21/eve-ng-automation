@@ -730,3 +730,19 @@ No live EVE, vSphere, Nexus, Palo Alto, routing, or device operation occurred
 during the private-context task. Remaining unknowns are live occupancy in the
 approved pools, the durable management allocation for UNSC-Home-Replica-01,
 exact pnet-to-port-group mappings on every EVE host, and future DHCP stability.
+
+
+## 2026-09-27 - Lessons Learned publication branch
+
+The owner requested that the accumulated Lessons Learned record be pushed for
+remote review. The local validation/panos branch also contains an earlier
+unpublished engine implementation commit and uncommitted PAN-OS login changes,
+so pushing that branch would publish files outside the changelog-only
+authorization.
+
+An exact snapshot of Lessons Learned/README.md is therefore published from the
+remote validation/panos baseline on a dedicated
+docs/lessons-learned-panos branch. This keeps the remote update documentation
+only while preserving the local implementation work for separate review. No
+engine, test, lab, private workspace, or live infrastructure change is included
+in the publication branch.
