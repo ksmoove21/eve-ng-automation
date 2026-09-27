@@ -96,3 +96,33 @@ needed. `git diff --check` passed with line-ending conversion warnings only.
 The README update is committed and pushed separately under the changelog
 convention. The `structure.md` convention change and all existing engine, test,
 and lab work remain uncommitted, and the feature branch remains unmerged.
+
+## 2026-09-27 - Live console diagnostic identifies ESC/BEL input
+
+One explicitly authorized read-only `eve validate gre-vrf-validation` run was
+performed. It returned exit status 1 because console prompt acquisition still
+refused the one-time Return on both R1 and R3.
+
+Both nodes produced the same structural classification:
+
+- 80 buffered characters across 5 logical lines
+- 3 Telnet preamble lines
+- 1 Ctrl-R artifact line
+- 0 blank, syslog, EXEC-prompt, unsafe-interactive, or configuration-prompt lines
+- 1 unclassified line with length 7
+- the unclassified line contained `U+001B` (ESC) and `U+0007` (BEL)
+
+This proves the current refusal is caused by a short terminal-control-bearing
+line rather than a recognized setup, credential, confirmation, or configuration
+prompt. The diagnostic intentionally did not reveal the five printable
+characters in that line, so their contents remain unknown.
+
+No classifier, engine, test, lab, or configuration changes were made from this
+evidence. No tests were needed because the repository was unchanged. No second
+live command was run. The next change should identify the terminal-control
+sequence safely before deciding whether it is benign; the allowlist must not be
+weakened from this evidence alone.
+
+This README update is committed and pushed separately under the changelog
+convention. All existing engine, test, `structure.md`, and lab changes remain
+uncommitted, and the feature branch remains unmerged.
