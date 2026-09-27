@@ -226,3 +226,30 @@ or console safety behavior changed. No live EVE operations were performed for
 this refactor. The generic fixtures remain `iosxe-baseline` and
 `gre-vrf-validation`; environment-specific labs are expected to live outside
 the public engine repository when privacy is desired.
+
+## 2026-09-27 - Agent initiative is broad for repository work and narrow for live infrastructure
+
+The root agent guidance was expanded after review of external initiative and
+follow-through guidance. The useful behavior was adopted, but it was narrowed
+for an infrastructure-automation repository where live actions can have
+side effects beyond the Git working tree.
+
+`AGENTS.md` now tells agents to resolve retrievable prerequisites before asking
+the owner, carry already-authorized reversible repository work through
+implementation and offline verification, avoid unnecessary permission
+checkpoints, preserve active-task context across follow-up turns, and identify
+the exact blocker when a deliverable cannot be completed.
+
+The same convention is mirrored in `structure.md` so repository policy and the
+root agent entry point remain consistent. The live-action boundary is explicit:
+repository-local reversible authorization may persist for the active task, but
+starting, stopping, configuring, deleting, resetting, or otherwise changing
+EVE-NG nodes or network devices requires authorization applicable to that
+specific live action and scope. When live authorization is absent, agents should
+continue useful offline preparation rather than stopping prematurely.
+
+This was a documentation-only change. No engine behavior, tests, lab
+definitions, EVE-NG state, or network-device state were changed. No test suite
+was required. The changes are on branch `docs/agent-initiative-guidance` and
+opened for review in PR #7; the branch has not been merged.
+
