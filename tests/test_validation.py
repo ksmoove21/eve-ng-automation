@@ -6,12 +6,12 @@ from eve_lab.validation import _checks, _interface_check, _ping_check
 
 class ValidationTests(unittest.TestCase):
     def test_check_schema_accepts_interface_and_ping(self):
-        checks = _checks([
+        checks = _checks({"validation": [
             {"name": "r1-gi1", "type": "interface", "node": "R1",
              "interface": "GigabitEthernet1", "address": "10.255.0.1", "state": "up"},
             {"name": "r1-r2", "type": "ping", "node": "R1",
              "destination": "10.255.0.2", "min_success_rate": 100},
-        ])
+        ]})
         self.assertEqual(len(checks), 2)
 
     def test_interface_check_matches_address_and_up_up(self):
