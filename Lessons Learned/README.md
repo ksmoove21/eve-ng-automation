@@ -226,3 +226,67 @@ or console safety behavior changed. No live EVE operations were performed for
 this refactor. The generic fixtures remain `iosxe-baseline` and
 `gre-vrf-validation`; environment-specific labs are expected to live outside
 the public engine repository when privacy is desired.
+
+## 2026-09-27 - PAN-OS optional checks cannot mask execution failure
+
+### Root cause and transport review
+
+The live `No route to host` result for firewall `LAB-PA-01` was caused by stale
+private workspace state. `init.yaml` declared management address `10.0.212.131`,
+while manual PAN-OS console inspection showed the DHCP-assigned management
+address was `10.0.212.38/24` with gateway `10.0.212.254`. The device was running
+and reachable through its EVE console. This does not prove a defect in the
+existing EVE `direct-tcpip` management SSH path.
+
+`connect_palo()` retains verified device host-key checking while carrying the
+SSH session through the already verified EVE SSH connection. Initialization and
+console backup reuse that transport when `management_ip` is declared, while
+serial console remains available for their existing workflows. PAN-OS running
+configuration retrieval already disables CLI paging for the session before
+requesting XML. Panorama remains excluded from validation.
+
+The minimum private workspace correction is temporary runtime data:
+
+```yaml
+LAB-PA-01:
+  management_ip: 10.0.212.38
+```
+
+Because that address came from DHCP, it is suitable for the next validation run
+but is not a durable static management design. The current validator implements
+only the explicit EVE-tunneled path and does not silently try a direct controller
+connection. A future direct mode should use an explicit transport field rather
+than automatic fallback, but no transport redesign was justified or implemented
+for this incident.
+
+### Validation result semantics
+
+The validator previously converted node transport, running-config retrieval,
+and XML parsing failures into failed checks. If every check was optional,
+`_append_result()` left the overall report as `pass`, even though no assertion
+had executed.
+
+`src/eve_lab/validation.py` now marks every node-level execution failure as an
+overall failure before appending per-check evidence. That evidence includes
+`failure_kind: execution`. A successfully executed optional assertion mismatch
+still remains a visible failed check while preserving overall `pass`; required
+assertion mismatches still fail the run.
+
+`tests/test_validation_panos_runner.py` covers successful optional and required
+assertion semantics, management SSH failure, running-config retrieval failure,
+XML parse failure, and successful validation. `docs/validation.md` documents the
+execution/assertion distinction, DHCP management-address limits, and the single
+implemented EVE-tunneled PAN-OS transport.
+
+### Verification and next live step
+
+- Focused PAN-OS validation and transport tests: 17 passed.
+- Full `test_validation*.py` suite: 66 passed.
+- `git diff --check`: passed with line-ending conversion warnings only.
+- No live EVE or PAN-OS operation was performed.
+- After updating the private `init.yaml`, run from the private workspace root:
+  `eve validate UNSC-Home-Replica-01`.
+- `src/eve_lab/validation.py`, `tests/test_validation_panos_runner.py`, and
+  `docs/validation.md` remain uncommitted for review.
+- This README entry is committed and pushed separately under the changelog
+  convention. The feature branch remains unmerged.
