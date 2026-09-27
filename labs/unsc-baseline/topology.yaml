@@ -12,6 +12,8 @@ nodes:
     cpu: 2
     ethernet: 2
     ram: 8192
+    left: 150
+    top: 200
 
   - name: R2
     template: c8000v
@@ -21,6 +23,8 @@ nodes:
     cpu: 2
     ethernet: 2
     ram: 8192
+    left: 450
+    top: 200
 
 networks: []
 
