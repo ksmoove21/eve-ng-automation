@@ -629,3 +629,104 @@ scripts contained no stored credentials and are removed after use. The Lessons
 Learned update is committed separately under the repository convention and is
 not pushed because pushing it would also publish the unpushed implementation
 commit. The feature branch remains unmerged.
+
+
+## 2026-09-27 - PAN-OS mid-dialog credentials and private environment context
+
+### PAN-OS mandatory password-change attachment
+
+Owner console evidence showed that PAN-OS had accepted the factory admin login
+and was waiting at Enter old password. The earlier diagnostic used the
+non-mutating login path, which intentionally refuses mandatory password changes,
+while the first-login initializer assumed that it controlled the session from
+the initial login prompt.
+
+The first-login state machine now performs a two-second passive prompt probe
+before sending a Return. If it attaches at the old-password prompt for the
+factory admin account, it supplies the factory password only as the current
+password and then uses the private environment's PALO_PASSWORD for the new and
+confirmation prompts. Attachment at the new-password prompt also uses
+PALO_PASSWORD. A silent console still receives one normal initialization prompt
+nudge. Secrets remain omitted from output and errors.
+
+Changed public files:
+
+- src/eve_lab/initialize.py
+- tests/test_panorama_init.py
+
+Focused verification:
+
+- python -m unittest tests.test_panorama_init tests.test_initialize
+- 27 tests passed
+- git diff --check passed
+
+The engine and test changes remain uncommitted for owner review. No live
+password change or device initialization was run after this fix because the
+following private-context task explicitly prohibited live EVE and device
+changes. Live verification must confirm the old, new, confirm, and operational
+prompt sequence against the current PAN-OS console.
+
+### Private EVE parent-environment context
+
+Work moved to the private ksmoove21/unsc-homelab repository. A focused branch,
+automation/eve-environment-context, was created from
+automation/eve-deployment. The new task-routable context records the private
+workspace boundary, vSphere/EVE parent dependencies, Cloud0 and Cloud1
+distinction, approved management pools, assignment identity history, SSH
+host-key policy, current observations, and durable design decisions.
+
+A repository-wide search before creating the registry found no existing uses
+or allocations in 172.18.3.0/24, 172.19.3.0/24, or 172.21.3.0/24. Each pool is
+therefore recorded with zero repository-known allocations and live occupancy
+marked inferred/unknown. No planned range was assigned to
+UNSC-Home-Replica-01 because Git absence does not prove live vacancy.
+
+The registry retains the legacy starter's 10.0.212.130 through
+10.0.212.132 assignments as historical/testing evidence, not durable design.
+The current state separately records the stale 10.0.212.131 intent and the
+observed DHCP sequence from 10.0.212.38 to 10.0.212.36. This preserves the
+difference between desired, observed, historical, stale, and unknown facts.
+
+Every real interface allocated from an approved pool retains its parent /24 and
+corresponding .1 gateway. Smaller lab ranges are bookkeeping only. A device
+rebuild advances generation while retaining logical identity and address where
+practical; deliberate address reuse creates a new logical identity, advances
+assignment epoch, and retains the retired predecessor.
+
+SSH host-key verification remains enabled. Allocation history can explain why a
+changed key may be plausible after an explicit reassignment, but it never
+authorizes automatic key replacement. Changed keys still require explicit
+fingerprint verification, and local known_hosts remains runtime state.
+
+Private files created or changed:
+
+- VSCode Labs/EVE-Workspace/AGENTS.md
+- VSCode Labs/EVE-Workspace/README.md
+- VSCode Labs/EVE-Workspace/context/README.md
+- VSCode Labs/EVE-Workspace/context/parent-environment.yaml
+- VSCode Labs/EVE-Workspace/context/cloud-mappings.yaml
+- VSCode Labs/EVE-Workspace/context/management-addressing.yaml
+- VSCode Labs/EVE-Workspace/context/current-state.yaml
+- VSCode Labs/EVE-Workspace/context/DESIGN-DECISIONS.md
+
+Private verification:
+
+- Four YAML files parsed successfully.
+- Semantic validation confirmed three exact approved /24 pools, their .1
+  gateways, VLAN 312, VRF greenline_pc, and zero repository-known allocations.
+- Eleven referenced context/source files existed.
+- Credential/private-key scan returned no matches.
+- git diff --cached --check passed.
+- A final search outside the new context found no missed approved-pool address
+  uses.
+
+The private context was committed as dbe24f6 and the DHCP observation history as
+8c13e56, then pushed to
+origin/automation/eve-environment-context. It was not merged. The unrelated
+untracked VSCode Labs/EVE-Workspace/labs/UNSC-Home-Replica-01 directory was
+preserved and excluded from both commits.
+
+No live EVE, vSphere, Nexus, Palo Alto, routing, or device operation occurred
+during the private-context task. Remaining unknowns are live occupancy in the
+approved pools, the durable management allocation for UNSC-Home-Replica-01,
+exact pnet-to-port-group mappings on every EVE host, and future DHCP stability.
