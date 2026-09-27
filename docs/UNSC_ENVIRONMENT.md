@@ -37,9 +37,8 @@ report reachability failures, but it should not automatically establish or
 modify those connectivity mechanisms.
 
 The automation is intentionally independent of the hosting platform. It should
-not contain provider-specific assumptions for Azure, AWS, on-premises
-virtualization, or another hosting location unless a future feature explicitly
-requires one.
+not contain hosting-provider-specific assumptions unless a future feature
+explicitly requires them.
 
 ## Credential groups
 
