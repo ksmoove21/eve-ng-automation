@@ -153,8 +153,14 @@ def _append_result(report, check, node_name, passed, evidence):
 
 
 def _fail_node(report, node_name, checks, error):
+    # A node-level execution failure means no assertion was actually evaluated.
+    # It fails the validation run independently of each check's required flag.
+    report["result"] = "fail"
     for check in checks:
-        _append_result(report, check, node_name, False, {"reason": str(error)})
+        _append_result(report, check, node_name, False, {
+            "reason": str(error),
+            "failure_kind": "execution",
+        })
 
 
 def _validate_iosxe_node(ssh, node, node_name, checks, root, timeout, report):

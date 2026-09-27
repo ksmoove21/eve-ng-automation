@@ -9,9 +9,13 @@ protocol clear, interface bounce, node restart or topology write is invoked.
 
 Every check requires `name`, `type` and `node`. Names must be unique. Checks
 are required unless the human explicitly sets `required: false`. An optional
-failure remains a failed check in the report but does not fail the overall
-result. A required failure produces overall `result: fail` and CLI exit 1.
-Invalid definitions and transport errors also cause a nonzero exit.
+assertion mismatch remains a failed check in the report but does not fail the
+overall result. A required assertion mismatch produces overall `result: fail`
+and CLI exit 1. Node-level execution failures are independent of assertion
+optionality: transport/session failure, configuration retrieval failure, or
+failure to parse the collected configuration always fails the overall run and
+is reported with `failure_kind: execution`. Invalid definitions also cause a
+nonzero exit.
 
 The existing interface/ping fields, defaults, evidence and two-attempt ping
 behavior remain unchanged. The baseline lab has not been expanded.
@@ -20,8 +24,8 @@ behavior remain unchanged. The baseline lab has not been expanded.
 
 `c8000v` remains enabled through the IOS XE adapter in
 `src/eve_lab/validation_iosxe.py`. Palo Alto firewall nodes using the
-\`paloalto\` template are also enabled through
-\`src/eve_lab/validation_panos.py\` for committed-configuration assertions.
+`paloalto` template are also enabled through
+`src/eve_lab/validation_panos.py` for committed-configuration assertions.
 Panorama is intentionally not registered for validation. NX-OS, IOS XR and
 other templates still fail preflight until explicit adapters are added.
 
@@ -165,7 +169,12 @@ PAN-OS validation uses the firewall management plane rather than the EVE serial
 console. The controller first connects to the EVE host over SSH, then opens a
 `direct-tcpip` tunnel to the firewall management address declared in
 `labs/LAB/init.yaml`. Device authentication uses `PALO_USERNAME` and
-`PALO_PASSWORD`.
+`PALO_PASSWORD`. This EVE-tunneled path is currently the only implemented
+PAN-OS validation transport. The validator does not silently fall back to a
+direct controller connection. The firewall SSH key must be present in the
+controller trust store. A new key may be enrolled only with explicit owner
+authorization for that exact address through the verified EVE connection; a
+changed saved key is never accepted automatically.
 
 The validator reuses the existing read-only running-config workflow:
 
@@ -244,5 +253,19 @@ PA1:
   management_ip: 192.0.2.10
 ```
 
-The management IP is environment data and need not be committed to a public
-engine repository.
+The management IP is environment/runtime data and need not be committed to a
+public engine repository. It must be the firewall's current management address
+as reachable from the EVE host. A DHCP-learned address may be placed in the
+private workspace temporarily for live validation, but it is not a durable
+static management design and may need to be refreshed after a lease change.
+
+A stale management address is an input error, not evidence that the
+`direct-tcpip` transport architecture is defective. Direct controller-to-firewall
+SSH is not implemented. If it is added later, transport selection must be an
+explicit validated workspace field; the validator must not probe and silently
+fall back between direct and EVE-tunneled paths.
+
+If management SSH cannot be established, running configuration cannot be
+retrieved, or the returned XML cannot be parsed, no assertion was actually
+evaluated. These execution failures make the overall validation result `fail`
+even when every declared check for that firewall has `required: false`.

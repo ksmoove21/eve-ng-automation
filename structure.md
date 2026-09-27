@@ -347,7 +347,10 @@ Never commit:
 Repository examples may include variable names but not real secret values.
 
 System SSH host-key verification should remain enabled. Do not add insecure
-fallbacks merely to bypass trust errors.
+fallbacks merely to bypass trust errors. A previously unseen lab-device key may
+be enrolled only with explicit owner authorization, scoped to the exact device
+address through an already verified EVE connection. Report its fingerprint and
+never replace a saved key automatically; a changed key remains a hard failure.
 
 TLS validation should remain enabled. Private/internal deployments may use a
 private CA, but the control workstation should trust that CA rather than disabling verification.
