@@ -10,7 +10,9 @@ from unittest.mock import MagicMock, patch
 import yaml
 
 from eve_lab.cli import main
-from eve_lab.device_console import Console
+from eve_lab.device_console import (
+    Console, _clean_console_output, _read_only_nudge_diagnostic,
+)
 from eve_lab.deploy import named as discover_nodes
 from eve_lab.validation import _checks, _open_console, validate_lab
 
@@ -112,45 +114,215 @@ class RunnerTests(unittest.TestCase):
 
 
 class ReadOnlyLoginTests(unittest.TestCase):
-    def console(self, responses):
+    def console(self, responses, boot_timeout=60):
         channel = MagicMock()
-        channel.recv_ready.return_value = True
-        channel.recv.side_effect = [response.encode() for response in responses]
-        return Console(channel), channel
+        encoded = [response.encode() for response in responses]
+        channel.recv_ready.side_effect = lambda: channel.recv.call_count < len(encoded)
+        channel.recv.side_effect = encoded
+        channel.closed = False
+        channel.exit_status_ready.return_value = False
+        return Console(channel, boot_timeout=boot_timeout), channel
 
-    def test_existing_authentication_works_read_only(self):
-        console, channel = self.console(['Username:', 'Password:', 'router>', 'Password:', 'router#'])
+    def fallback_console(self, before_return=None, prompt='R1#'):
+        channel = MagicMock()
+        channel.closed = False
+        channel.exit_status_ready.return_value = False
+        chunks = ([before_return.encode()] if before_return is not None else []) + [prompt.encode()]
+
+        def ready():
+            if before_return is not None and channel.recv.call_count == 0:
+                return True
+            prompt_index = 1 if before_return is not None else 0
+            return channel.sendall.call_count >= 2 and channel.recv.call_count == prompt_index
+
+        channel.recv_ready.side_effect = ready
+        channel.recv.side_effect = chunks
+        return Console(channel, boot_timeout=.01), channel
+
+    def test_privileged_prompt_from_ctrl_r_needs_no_return(self):
+        console, channel = self.console(['R1#'])
         console.login('user', 'pass', 'secret', read_only=True)
-        self.assertEqual([c.args[0] for c in channel.sendall.call_args_list],
-                         ['\x12', 'user\r', 'pass\r', 'enable\r', 'secret\r'])
+        self.assertEqual(console.prompt, 'R1#')
+        self.assertEqual([call.args[0] for call in channel.sendall.call_args_list], ['\x12'])
 
-    def test_read_only_refuses_setup_and_config_prompts(self):
-        for prompt in ('Enter enable secret:', 'Confirm enable secret:', 'Enter your selection [2]:',
-                       'Would you like to enter the initial configuration dialog? [yes/no]:',
-                       'router(config)#', 'router(config-if)#'):
+    def test_silent_console_gets_one_return_then_privileged_prompt(self):
+        console, channel = self.fallback_console()
+        console.login('user', 'pass', 'secret', read_only=True)
+        self.assertEqual(console.prompt, 'R1#')
+        self.assertEqual([call.args[0] for call in channel.sendall.call_args_list], ['\x12', '\r'])
+
+    def test_syslog_then_silence_gets_one_return_then_prompt(self):
+        console, channel = self.fallback_console(
+            '*Sep 27 12:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol changed state to up\n')
+        console.login('user', 'pass', 'secret', read_only=True)
+        self.assertEqual(console.prompt, 'R1#')
+        self.assertEqual([call.args[0] for call in channel.sendall.call_args_list], ['\x12', '\r'])
+
+    def test_realistic_telnet_noise_permits_one_return_fallback(self):
+        preamble = (
+            'Trying 127.0.0.1...\n'
+            'Connected to 127.0.0.1.\n'
+            "Escape character is '^]'.\n"
+        )
+        cases = (
+            preamble,
+            preamble + '*Sep 27 12:00:00.000: %LINEPROTO-5-UPDOWN: Interface is up\n',
+            preamble + 'R1#^R',
+            preamble + '^R',
+            preamble + '\x12',
+            preamble + '%SYS-5-CONFIG_I: Configured from console\nR1#^R',
+        )
+        for buffered in cases:
+            console, channel = self.fallback_console(buffered)
+            with self.subTest(buffered=repr(buffered)):
+                console.login('user', 'pass', 'secret', read_only=True)
+                self.assertEqual(console.prompt, 'R1#')
+                self.assertEqual(
+                    [call.args[0] for call in channel.sendall.call_args_list],
+                    ['\x12', '\r'])
+
+    def test_complete_osc_title_sequences_are_removed(self):
+        self.assertEqual(_clean_console_output('\x1b]0;R1\x07'), '')
+        self.assertEqual(_clean_console_output('\x1b]2;R3\x1b\\'), '')
+
+    def test_osc_title_with_telnet_preamble_permits_one_return(self):
+        buffered = (
+            'Trying 127.0.0.1...\n'
+            'Connected to 127.0.0.1.\n'
+            "Escape character is '^]'.\n"
+            '\x1b]0;R1\x07'
+        )
+        console, channel = self.fallback_console(buffered)
+        console.login('user', 'pass', 'secret', read_only=True)
+        self.assertEqual(console.prompt, 'R1#')
+        self.assertEqual(
+            [call.args[0] for call in channel.sendall.call_args_list],
+            ['\x12', '\r'])
+
+    def test_incomplete_and_unknown_escape_sequences_refuse(self):
+        sequences = (
+            '\x1b]0;R1',
+            '\x1bPtitle\x07',
+            '\x1b]9;R1\x07',
+        )
+        for sequence in sequences:
+            console, channel = self.console([sequence], boot_timeout=.01)
+            with self.subTest(sequence=repr(sequence)), self.assertRaisesRegex(
+                    RuntimeError, 'Read-only'):
+                console.login('user', 'pass', 'secret', read_only=True)
+            channel.sendall.assert_called_once_with('\x12')
+
+    def test_osc_normalization_preserves_printable_text_outside_sequence(self):
+        output = _clean_console_output(
+            'before\x1b]1;printable title payload\x07after')
+        self.assertEqual(output, 'beforeafter')
+
+    def test_read_only_recovers_running_ios_prompt_with_syslog_and_redisplay(self):
+        for hostname, redisplay in (('R1', '^R'), ('R3', '\x12')):
+            response = (
+                '*Sep 27 12:00:00.000: %LINEPROTO-5-UPDOWN: Line protocol changed state to up\n'
+                f'{hostname}#{redisplay}{hostname}#'
+                '*Sep 27 12:00:01.000: %SYS-5-CONFIG_I: Configured from console\n'
+            )
+            console, channel = self.console([response, f'terminal length 0\n{hostname}#'])
+            with self.subTest(hostname=hostname):
+                console.login('user', 'pass', 'secret', read_only=True)
+                self.assertEqual(console.prompt, hostname + '#')
+                console.command('terminal length 0')
+                self.assertEqual([call.args[0] for call in channel.sendall.call_args_list],
+                                 ['\x12', 'terminal length 0\r'])
+
+    def test_setup_prompts_refuse_without_return_fallback(self):
+        prompts = (
+            'Enter enable secret:', 'Confirm enable secret:', 'Enter your selection [2]:',
+            'Would you like to enter the initial configuration dialog? [yes/no]:',
+            'Press RETURN to get started!', 'Are you sure? [yes/no]:',
+        )
+        for prompt in prompts:
+            console, channel = self.console([prompt], boot_timeout=.01)
+            with self.subTest(prompt=prompt), self.assertRaisesRegex(RuntimeError, 'Read-only'):
+                console.login('user', 'pass', 'secret', read_only=True)
+            self.assertEqual([call.args[0] for call in channel.sendall.call_args_list], ['\x12'])
+
+    def test_username_and_password_prompts_refuse_without_return_fallback(self):
+        for prompt in ('Username:', 'Password:'):
             console, channel = self.console([prompt])
             with self.subTest(prompt=prompt), self.assertRaisesRegex(RuntimeError, 'Read-only'):
                 console.login('user', 'pass', 'secret', read_only=True)
-            self.assertEqual([c.args[0] for c in channel.sendall.call_args_list], ['\x12'])
+            self.assertEqual([call.args[0] for call in channel.sendall.call_args_list], ['\x12'])
 
-    def test_pending_input_times_out_without_enter_or_periodic_wakeup(self):
+    def test_configuration_mode_prompt_refuses(self):
+        for prompt in ('R1(config)#', 'R1(config-if)#'):
+            console, channel = self.console([prompt])
+            with self.subTest(prompt=prompt), self.assertRaisesRegex(RuntimeError, 'Read-only'):
+                console.login('user', 'pass', 'secret', read_only=True)
+            self.assertEqual([call.args[0] for call in channel.sendall.call_args_list], ['\x12'])
+
+    def test_refusal_diagnostic_reports_structure_without_console_text(self):
+        buffered = (
+            '\n'
+            'Trying 127.0.0.1...\n'
+            'Connected to 127.0.0.1.\n'
+            "Escape character is '^]'.\n"
+            '^R\n'
+            '*Sep 27 12:00:00.000: %SYS-5-CONFIG_I: changed\n'
+            'R1#\n'
+            'Username:\n'
+            'R1(config)#\n'
+            'private printable text\x07'
+        )
+        evidence = _read_only_nudge_diagnostic(buffered)
+        for expected in (
+                'lines=10', 'blank=1', 'telnet=3', 'ctrl_r=1', 'syslog=1',
+                'exec=1', 'unsafe_interactive=1', 'config_prompt=1',
+                'unclassified=1', 'unclassified_lengths=[23]',
+                'unclassified_has_controls=[true]', 'control_codes=[["U+0007"]]'):
+            self.assertIn(expected, evidence)
+        for private in ('127.0.0.1', 'R1', 'Username', 'private', 'printable', 'changed'):
+            self.assertNotIn(private, evidence)
+
+    def test_refusal_error_never_exposes_unclassified_console_text(self):
+        private = 'R1#show secret 192.0.2.1 admin\x07'
+        console, channel = self.console([private], boot_timeout=.01)
+        with self.assertRaises(RuntimeError) as raised:
+            console.login('private-user', 'private-password', 'private-secret', read_only=True)
+        message = str(raised.exception)
+        self.assertIn('classification:', message)
+        self.assertIn(f'unclassified_lengths=[{len(private)}]', message)
+        self.assertIn('unclassified_has_controls=[true]', message)
+        self.assertIn('control_codes=[["U+0007"]]', message)
+        for private_text in (private[:-1], '192.0.2.1', 'admin', 'private-user',
+                             'private-password', 'private-secret'):
+            self.assertNotIn(private_text, message)
+        channel.sendall.assert_called_once_with('\x12')
+
+    def test_pending_input_refuses_without_return(self):
         channel = MagicMock()
         channel.closed = False
         channel.exit_status_ready.return_value = False
         channel.recv_ready.side_effect = [True, False]
         channel.recv.return_value = b'router#reload'
-        console = Console(channel)
-        with patch('eve_lab.device_console.time.monotonic', side_effect=[0, 1, 2, 11, 12, 61]), \
-                patch('eve_lab.device_console.time.sleep'):
+        console = Console(channel, boot_timeout=.01)
+        with self.assertRaisesRegex(RuntimeError, 'Read-only'):
+            console.login('user', 'pass', 'secret', read_only=True)
+        channel.sendall.assert_called_once_with('\x12')
+
+    def test_fallback_return_happens_at_most_once(self):
+        channel = MagicMock()
+        channel.closed = False
+        channel.exit_status_ready.return_value = False
+        channel.recv_ready.return_value = False
+        console = Console(channel, boot_timeout=.01)
+        with patch('eve_lab.device_console.time.sleep'):
             with self.assertRaisesRegex(RuntimeError, 'Timed out'):
                 console.login('user', 'pass', 'secret', read_only=True)
-        channel.sendall.assert_called_once_with('\x12')
+        self.assertEqual([call.args[0] for call in channel.sendall.call_args_list], ['\x12', '\r'])
 
     def test_enable_cannot_enter_configuration_mode(self):
         console, channel = self.console(['router>', 'router(config)#'])
         with self.assertRaisesRegex(RuntimeError, 'Read-only'):
             console.login('user', 'pass', 'secret', read_only=True)
-        self.assertNotIn('end\r', [c.args[0] for c in channel.sendall.call_args_list])
+        self.assertNotIn('end\r', [call.args[0] for call in channel.sendall.call_args_list])
 
     def test_open_console_uses_read_only_login_and_closes_failed_channel(self):
         ssh = MagicMock()

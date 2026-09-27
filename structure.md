@@ -457,3 +457,19 @@ acceptance criteria.
 
 AI may assist with design and implementation, but the repository must remain
 understandable and operable without AI.
+
+## Lessons learned changelog
+
+Record implementation, test, and live-operation lessons in
+[`Lessons Learned/README.md`](Lessons%20Learned/README.md). Append an entry after
+each completed prompt. The entry should closely mirror the final completion
+report: outcome and root cause, summarized code and file changes, exact test
+results, offline-versus-live evidence, remaining limitations or verification,
+and commit/push/merge status. Code diffs may be summarized; do not omit the
+other review evidence.
+
+This changelog is the only repository file an agent may automatically commit and
+push. Such commits must stage only `Lessons Learned/README.md`; all engine, lab,
+test, documentation, and unrelated working-tree changes remain outside that
+commit. A task-specific instruction not to merge still applies to the working
+branch.
