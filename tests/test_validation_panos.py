@@ -167,6 +167,7 @@ class PanosValidationTests(unittest.TestCase):
     def test_invalid_intent_fails_closed(self):
         bad = [
             {"type": "panos-interface", "interface": "ethernet1/1;delete", "expected": "present"},
+            {"type": "panos-interface", "interface": "ethernet1/1'][@name='evil", "expected": "present"},
             {"type": "panos-route", "destination": "192.0.2.1/24", "expected": "present"},
             {"type": "panos-route", "destination": "0.0.0.0/0", "expected": "absent", "next_hop": "192.0.2.1"},
             {"type": "panos-security-rule", "rule": "ALLOW TEST", "expected": "present"},
