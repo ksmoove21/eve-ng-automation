@@ -459,3 +459,60 @@ performed. The existing execution-failure result was correct and required no
 validator change. This entry is committed separately under the Lessons Learned
 convention and is not pushed because the branch contains an unpushed
 implementation commit. The feature branch remains unmerged.
+
+## 2026-09-27 - Diagnostic plan for recurring PAN-OS VM soft lockups
+
+The supplied reboot console identifies a guest kernel soft lockup but not its
+underlying cause. The live boot reports four virtual CPUs and approximately
+8 GB RAM. PAN-OS 12.1 permits software firewalls at an 8 GB floor, but official
+VM-Series model requirements and useful operating margin can be higher. The
+public lab fixture currently declares 12 GB for its PAN-OS 12.1.7 firewalls, so
+the live private node and public fixture are not resource-equivalent.
+
+The principal hypotheses are:
+
+1. A PAN-OS or VM-Series kernel/software defect.
+2. EVE host CPU oversubscription preventing a guest vCPU from being scheduled
+   long enough to trigger the watchdog.
+3. EVE host storage latency or memory pressure stalling the QEMU guest.
+4. Guest resource allocation below the requirement of its licensed VM-Series
+   model or enabled features.
+
+The gdb process shown in the trace may be collecting or inspecting crash state;
+the excerpt does not prove that gdb caused the original stall. The failed
+validator never established management SSH, authenticated, retrieved the
+configuration, or issued a PAN-OS command, so its validation queries did not
+trigger this reboot.
+
+Evidence to preserve after the next occurrence:
+
+- Exact PAN-OS build, licensed VM-Series model, serial, uptime, and last restart.
+- PAN-OS show system files output and all new management/data-plane core or
+  crash files.
+- A tech-support file generated before another reboot overwrites useful state.
+- show system info, show system resources, show system software status, and
+  show system disk-space files.
+- System logs spanning at least ten minutes before and after the watchdog event.
+- EVE host CPU load, per-QEMU process CPU, memory/swap pressure, disk latency,
+  kernel logs, and the exact QEMU command/resource allocation over the same
+  timestamps.
+- Which other lab nodes were running and their total vCPU/RAM allocation.
+
+A controlled comparison should first reproduce with only the affected firewall
+running. Then repeat at a supported higher memory allocation, such as 12 or
+16 GB as appropriate for the licensed model, without changing the workload.
+If the problem disappears only when competing nodes are stopped, host
+oversubscription is the leading explanation. If it persists in isolation with
+adequate resources, preserve the cores and tech-support bundle and open a Palo
+Alto Networks support case. Comparing the exact base release with a supported
+current maintenance release is a separate controlled test.
+
+Official release notes show PAN-318275 addressed in PAN-OS 12.1.7 for a
+VM-Series firewall becoming unresponsive, and 12.1.7-h3 addresses a memory leak
+associated with some display CLI commands. Those notes justify checking the
+exact maintenance build but do not prove either issue matches this stack trace.
+
+No source change, test, or live operation was performed. This diagnostic entry
+is committed separately under the Lessons Learned convention and is not pushed
+because the branch contains an unpushed implementation commit. The feature
+branch remains unmerged.
