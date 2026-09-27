@@ -5,14 +5,20 @@ from urllib.parse import urlsplit
 import paramiko
 
 from .config import load_server
+from .console_backup import palo_running
 from .deploy import lab_path, named
 from .device_console import Console, credentials
+from .initialize import PaloConsole
+from .palo_ssh import connect_palo, management_targets
 from .topology import interface_key
-from . import validation_iosxe
+from . import validation_iosxe, validation_panos
 
 
 # Register only templates with an implemented and tested adapter.
-PLATFORMS = {"c8000v": validation_iosxe}
+PLATFORMS = {
+    "c8000v": validation_iosxe,
+    "paloalto": validation_panos,
+}
 
 
 def _checks(topology):
@@ -25,6 +31,8 @@ def _checks(topology):
     }
     allowed.update({kind: {"name", "type", "node"} | fields
                     for kind, fields in validation_iosxe.FIELDS.items()})
+    allowed.update({kind: {"name", "type", "node"} | fields
+                    for kind, fields in validation_panos.FIELDS.items()})
     for fields in allowed.values():
         fields.add("required")
     names = set()
@@ -45,6 +53,8 @@ def _checks(topology):
             raise ValueError("Validation required must be a boolean")
         if kind in validation_iosxe.FIELDS:
             validation_iosxe.validate_check(check)
+        elif kind in validation_panos.FIELDS:
+            validation_panos.validate_check(check)
         elif kind == "interface":
             if not isinstance(check.get("interface"), str) or not check["interface"].strip():
                 raise ValueError("Interface validation requires interface")
@@ -127,6 +137,81 @@ def _ping_check(console, check):
     }
 
 
+def _append_result(report, check, node_name, passed, evidence):
+    item = {
+        "name": check["name"],
+        "type": check["type"],
+        "node": node_name,
+        "result": "pass" if passed else "fail",
+        "evidence": evidence,
+    }
+    if "required" in check:
+        item["required"] = check["required"]
+    report["checks"].append(item)
+    if not passed and check.get("required", True):
+        report["result"] = "fail"
+
+
+def _fail_node(report, node_name, checks, error):
+    for check in checks:
+        _append_result(report, check, node_name, False, {"reason": str(error)})
+
+
+def _validate_iosxe_node(ssh, node, node_name, checks, root, timeout, report):
+    channel = None
+    try:
+        login = credentials(root, prefix="CISCO")
+        channel, console = _open_console(ssh, node, login, timeout)
+        if any(check["type"] in validation_iosxe.FIELDS for check in checks):
+            console.command("terminal length 0")
+        for check in checks:
+            try:
+                if check["type"] == "interface":
+                    passed, evidence = _interface_check(console, check)
+                elif check["type"] == "ping":
+                    passed, evidence = _ping_check(console, check)
+                else:
+                    passed, evidence = validation_iosxe.evaluate(console, check)
+            except RuntimeError as error:
+                passed, evidence = False, {"reason": str(error)}
+            _append_result(report, check, node_name, passed, evidence)
+    except RuntimeError as error:
+        _fail_node(report, node_name, checks, error)
+    finally:
+        if channel is not None:
+            channel.close()
+
+
+def _validate_panos_node(ssh, topology, node_name, checks, root, timeout, report):
+    device = None
+    channel = None
+    try:
+        targets = management_targets(root, topology["name"])
+        if node_name not in targets:
+            raise RuntimeError(
+                "PAN-OS validation requires management_ip for " + node_name +
+                " in labs/" + topology["name"] + "/init.yaml")
+        login = credentials(root, prefix="PALO")
+        device, channel = connect_palo(
+            ssh, targets[node_name], login[0], login[1], timeout)
+        console = PaloConsole(channel, boot_timeout=timeout)
+        console.login(*login)
+        root_xml = validation_panos.parse_running_config(palo_running(console, timeout))
+        for check in checks:
+            try:
+                passed, evidence = validation_panos.evaluate(root_xml, check)
+            except RuntimeError as error:
+                passed, evidence = False, {"reason": str(error)}
+            _append_result(report, check, node_name, passed, evidence)
+    except RuntimeError as error:
+        _fail_node(report, node_name, checks, error)
+    finally:
+        if channel is not None:
+            channel.close()
+        if device is not None:
+            device.close()
+
+
 def validate_lab(client, topology, root, server_name="default", timeout=60):
     """Execute declared acceptance checks without changing device configuration."""
     if not 1 <= timeout <= 3600:
@@ -140,13 +225,22 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
         if check["node"] not in nodes:
             raise RuntimeError("Validation node missing from EVE: " + check["node"])
         node = nodes[check["node"]]
-        if node.get("template") not in PLATFORMS:
-            raise ValueError("Validation currently supports c8000v nodes only: " + check["node"])
+        template = node.get("template")
+        if template not in PLATFORMS:
+            raise ValueError(
+                "Validation currently supports c8000v and paloalto nodes only: " +
+                check["node"])
+        kind = check["type"]
+        if template == "c8000v" and kind in validation_panos.FIELDS:
+            raise ValueError("PAN-OS validation check targets non-PAN-OS node: " + check["node"])
+        if template == "paloalto" and kind not in validation_panos.FIELDS:
+            raise ValueError(
+                "Palo Alto validation currently requires panos-* check types: " +
+                check["name"])
         if str(node.get("status")) != "2":
             raise RuntimeError("Start " + check["node"] + " before validation")
 
     server = load_server(root, server_name, auth="ssh")
-    login = credentials(root, prefix="CISCO")
     grouped = {}
     for check in checks:
         grouped.setdefault(check["node"], []).append(check)
@@ -160,45 +254,13 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
                     timeout=10, auth_timeout=10, banner_timeout=10,
                     allow_agent=False, look_for_keys=False)
         for node_name, node_checks in grouped.items():
-            channel = None
-            try:
-                channel, console = _open_console(ssh, nodes[node_name], login, timeout)
-                if any(check["type"] in validation_iosxe.FIELDS for check in node_checks):
-                    console.command("terminal length 0")
-                for check in node_checks:
-                    try:
-                        if check["type"] == "interface":
-                            passed, evidence = _interface_check(console, check)
-                        elif check["type"] == "ping":
-                            passed, evidence = _ping_check(console, check)
-                        else:
-                            adapter = PLATFORMS[nodes[node_name]["template"]]
-                            passed, evidence = adapter.evaluate(console, check)
-                    except RuntimeError as error:
-                        passed, evidence = False, {"reason": str(error)}
-                    report["checks"].append({
-                        "name": check["name"],
-                        "type": check["type"],
-                        "node": node_name,
-                        "result": "pass" if passed else "fail",
-                        "evidence": evidence,
-                    })
-                    if "required" in check:
-                        report["checks"][-1]["required"] = check["required"]
-                    if not passed and check.get("required", True):
-                        report["result"] = "fail"
-            except RuntimeError as error:
-                for check in node_checks:
-                    report["checks"].append({
-                        "name": check["name"], "type": check["type"], "node": node_name,
-                        "required": check.get("required", True), "result": "fail",
-                        "evidence": {"reason": str(error)},
-                    })
-                    if check.get("required", True):
-                        report["result"] = "fail"
-            finally:
-                if channel is not None:
-                    channel.close()
+            node = nodes[node_name]
+            if node["template"] == "paloalto":
+                _validate_panos_node(
+                    ssh, topology, node_name, node_checks, root, timeout, report)
+            else:
+                _validate_iosxe_node(
+                    ssh, node, node_name, node_checks, root, timeout, report)
     except paramiko.BadHostKeyException:
         raise RuntimeError("EVE host SSH key has changed; verify it before validation") from None
     except paramiko.AuthenticationException:
