@@ -1,8 +1,19 @@
 # Lessons Learned
 
 This changelog records concrete lessons from implementation, testing, and live
-EVE-NG evidence. Entries distinguish offline verification from behavior proven
-on live devices.
+EVE-NG evidence. Each entry should closely mirror the final completion report,
+including:
+
+- the outcome and root cause
+- a summary of code and file changes
+- exact test and integrity-check results
+- whether evidence is offline or from live EVE-NG
+- remaining limitations or live verification
+- commit, push, and merge status
+
+Code diffs may be summarized, but verification results, evidence boundaries,
+remaining work, and repository status should be retained. Sensitive console
+contents and credentials must never be recorded.
 
 Only this file may be committed and pushed automatically after a completed
 prompt. Other repository changes remain uncommitted unless the owner explicitly
@@ -60,3 +71,28 @@ printable console text, addresses, hostnames, commands, or credentials. The
 allowlist and refusal policy are unchanged. Offline redaction and regression
 tests pass; the diagnostic output still requires live EVE-NG collection before
 the classifier should be changed again.
+
+#### Verification and repository status
+
+- `ReadOnlyLoginTests`: 14 passed.
+- `ConsoleTests`: 15 passed.
+- All validation tests: 50 passed.
+- `git diff --check`: passed, with line-ending conversion warnings only.
+- No live EVE operations were performed while implementing the diagnostic.
+- `src/eve_lab/device_console.py` and `tests/test_validation_runner.py` remain
+  uncommitted for review.
+- The diagnostic lesson was committed and pushed separately as `50ecf1e`; the
+  feature branch was not merged.
+## 2026-09-27 - Changelog entries mirror completion reports
+
+The owner clarified that Lessons Learned entries should preserve nearly all
+information from the final completion response. Code changes may be summarized,
+but exact verification results, evidence boundaries, remaining work, and
+repository status are required for later review away from the console.
+
+The README format and `structure.md` convention now state those requirements.
+This was a documentation-only change; no tests or live EVE operations were
+needed. `git diff --check` passed with line-ending conversion warnings only.
+The README update is committed and pushed separately under the changelog
+convention. The `structure.md` convention change and all existing engine, test,
+and lab work remain uncommitted, and the feature branch remains unmerged.
