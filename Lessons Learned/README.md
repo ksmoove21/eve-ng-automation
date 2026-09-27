@@ -434,3 +434,28 @@ No second live command was run. No tests or source changes were needed for this
 demo. The branch remains unmerged. This entry is committed separately under the
 Lessons Learned convention and is not pushed because the branch also contains
 an unpushed implementation commit.
+
+## 2026-09-27 - PAN-OS guest reboot explains the live SSH timeout
+
+Console evidence supplied after the live validation shows that the PAN-OS VM was
+unhealthy and rebooted during the validation window. The Linux watchdog
+repeatedly reported a soft lockup on CPU 2 in PID 24033, process gdb, with the
+task shown around copy_user_generic_string and copy_page_to_iter.
+
+PAN-OS subsequently stopped services and emitted PanOS software stopped,
+followed by reboot: Restarting system, SeaBIOS, GRUB, and a fresh kernel boot.
+During that shutdown and restart, the EVE direct-tcpip attempts to
+10.0.212.38:22 returned No route to host and eventually reached the validator's
+bounded timeout.
+
+This evidence identifies the immediate reason management SSH was unavailable:
+the guest was stopping or rebooting. It does not identify the underlying cause
+of the kernel soft lockup; the excerpt begins within a trace and is insufficient
+to attribute that failure to validation, EVE transport, resource sizing, or a
+specific PAN-OS defect.
+
+No source change, test run, second validation, or live EVE/PAN-OS operation was
+performed. The existing execution-failure result was correct and required no
+validator change. This entry is committed separately under the Lessons Learned
+convention and is not pushed because the branch contains an unpushed
+implementation commit. The feature branch remains unmerged.
