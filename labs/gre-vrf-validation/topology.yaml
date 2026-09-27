@@ -1,0 +1,151 @@
+name: gre-vrf-validation
+description: Focused IOS XE GRE, VRF, OSPF, eBGP, route, and MTU validation lab
+remote_folder: /
+
+nodes:
+
+  - name: R1
+    template: c8000v
+    type: qemu
+    console: telnet
+    image: c8000v-17.16.01a
+    cpu: 2
+    ethernet: 2
+    ram: 8192
+    left: 100
+    top: 200
+
+  - name: R2
+    template: c8000v
+    type: qemu
+    console: telnet
+    image: c8000v-17.16.01a
+    cpu: 2
+    ethernet: 2
+    ram: 8192
+    left: 400
+    top: 200
+
+  - name: R3
+    template: c8000v
+    type: qemu
+    console: telnet
+    image: c8000v-17.16.01a
+    cpu: 2
+    ethernet: 2
+    ram: 8192
+    left: 700
+    top: 200
+
+networks: []
+
+links:
+
+  - name: r1-r2
+    from:
+      node: R1
+      interface: GigabitEthernet1
+    to:
+      node: R2
+      interface: GigabitEthernet1
+
+  - name: r2-r3
+    from:
+      node: R2
+      interface: GigabitEthernet2
+    to:
+      node: R3
+      interface: GigabitEthernet1
+
+validation:
+
+  - name: r1-r2-ospf-full
+    type: ospf-neighbor
+    node: R1
+    neighbor: 10.255.2.2
+    state: full
+
+  - name: r3-r2-ospf-full
+    type: ospf-neighbor
+    node: R3
+    neighbor: 10.255.2.2
+    state: full
+
+  - name: r1-r3-underlay-loopback
+    type: route
+    node: R1
+    prefix: 10.255.3.3/32
+    expected: present
+
+  - name: r3-r1-underlay-loopback
+    type: route
+    node: R3
+    prefix: 10.255.1.1/32
+    expected: present
+
+  - name: r1-blue-bgp-r3
+    type: bgp-neighbor
+    node: R1
+    neighbor: 172.16.100.2
+    state: established
+    vrf: BLUE
+    address_family: ipv4-unicast
+
+  - name: r3-blue-bgp-r1
+    type: bgp-neighbor
+    node: R3
+    neighbor: 172.16.100.1
+    state: established
+    vrf: BLUE
+    address_family: ipv4-unicast
+
+  - name: r1-blue-r3-tenant-route
+    type: route
+    node: R1
+    prefix: 192.168.103.3/32
+    vrf: BLUE
+    expected: present
+    next_hop: 172.16.100.2
+
+  - name: r3-blue-r1-tenant-route
+    type: route
+    node: R3
+    prefix: 192.168.101.1/32
+    vrf: BLUE
+    expected: present
+    next_hop: 172.16.100.1
+
+  - name: r1-blue-default-route
+    type: default-route
+    node: R1
+    vrf: BLUE
+    expected: present
+
+  - name: r1-blue-ping-r3-tenant
+    type: vrf-ping
+    node: R1
+    vrf: BLUE
+    destination: 192.168.103.3
+    min_success_rate: 100
+
+  - name: r3-blue-ping-r1-tenant
+    type: vrf-ping
+    node: R3
+    vrf: BLUE
+    destination: 192.168.101.1
+    min_success_rate: 100
+
+  - name: r1-blue-reserved-prefix-absent
+    type: route
+    node: R1
+    prefix: 192.0.2.0/24
+    vrf: BLUE
+    expected: absent
+
+  - name: r1-r3-underlay-mtu
+    type: mtu-ping
+    node: R1
+    destination: 10.255.3.3
+    packet_size: 1500
+    df: true
+    min_success_rate: 100

@@ -1,0 +1,182 @@
+# Lessons Learned
+
+This changelog records concrete lessons from implementation, testing, and live
+EVE-NG evidence. Each entry should closely mirror the final completion report,
+including:
+
+- the outcome and root cause
+- a summary of code and file changes
+- exact test and integrity-check results
+- whether evidence is offline or from live EVE-NG
+- remaining limitations or live verification
+- commit, push, and merge status
+
+Code diffs may be summarized, but verification results, evidence boundaries,
+remaining work, and repository status should be retained. Sensitive console
+contents and credentials must never be recorded.
+
+Only this file may be committed and pushed automatically after a completed
+prompt. Other repository changes remain uncommitted unless the owner explicitly
+requests otherwise.
+
+## 2026-09-27 - IOS XE VRF BGP and read-only console attachment
+
+### VRF BGP requires a route distinguisher
+
+On C8000V 17.16.01a, entering `address-family ipv4 vrf BLUE` failed with
+`% VRF BLUE does not have an RD configured.` IOS XE stayed in router
+configuration mode, so the following neighbor, network, and
+`exit-address-family` commands were interpreted in the wrong context.
+
+The lab fix was to configure an RD under each endpoint's `vrf definition BLUE`.
+`exit-address-family` was correct and was retained. Live evidence confirmed the
+global OSPF adjacency and the GRE tunnel using global Loopback0 transport with
+Tunnel100 in VRF BLUE.
+
+### Ctrl-R alone does not reliably wake an EVE serial console
+
+A running IOS XE console attached through EVE may remain silent after Ctrl-R.
+A manual Return caused the privileged EXEC prompt to appear immediately and
+released queued validation commands on both R1 and R3.
+
+The read-only login path now waits briefly after Ctrl-R and may send exactly one
+blank Return. It first rejects setup, authentication, confirmation, selection,
+and configuration-mode prompts so validation cannot accept defaults or enter
+configuration.
+
+### Transport noise must be classified separately from interactive prompts
+
+The first fallback implementation was too strict because an EVE Telnet
+attachment can buffer harmless transport and console material before a usable
+prompt. Benign input includes blank lines, `Trying`/`Connected`/escape-character
+preamble lines, raw or printable Ctrl-R artifacts, IOS XE syslog records, and
+stale EXEC prompt fragments.
+
+The classifier now explicitly permits those forms while unknown input and all
+recognized interactive prompts remain fail-closed. Offline regression coverage
+passes for the one-time Return behavior and all refusal cases. The revised
+benign-noise classifier still requires live EVE-NG verification.
+
+### The expanded benign-noise classifier still fails live
+
+Live validation after expanding the benign-noise classifier still refused the
+one-time Return on both R1 and R3. The available error identified only that some
+buffered material was unclassified, so adding more guessed patterns would risk
+weakening the read-only guard without identifying the actual input shape.
+
+The refusal path now reports structural evidence only: character and logical-line
+counts, category counts, unclassified line lengths, whether those lines contain
+control characters, and the control-character code points. It never includes
+printable console text, addresses, hostnames, commands, or credentials. The
+allowlist and refusal policy are unchanged. Offline redaction and regression
+tests pass; the diagnostic output still requires live EVE-NG collection before
+the classifier should be changed again.
+
+#### Verification and repository status
+
+- `ReadOnlyLoginTests`: 14 passed.
+- `ConsoleTests`: 15 passed.
+- All validation tests: 50 passed.
+- `git diff --check`: passed, with line-ending conversion warnings only.
+- No live EVE operations were performed while implementing the diagnostic.
+- `src/eve_lab/device_console.py` and `tests/test_validation_runner.py` remain
+  uncommitted for review.
+- The diagnostic lesson was committed and pushed separately as `50ecf1e`; the
+  feature branch was not merged.
+## 2026-09-27 - Changelog entries mirror completion reports
+
+The owner clarified that Lessons Learned entries should preserve nearly all
+information from the final completion response. Code changes may be summarized,
+but exact verification results, evidence boundaries, remaining work, and
+repository status are required for later review away from the console.
+
+The README format and `structure.md` convention now state those requirements.
+This was a documentation-only change; no tests or live EVE operations were
+needed. `git diff --check` passed with line-ending conversion warnings only.
+The README update is committed and pushed separately under the changelog
+convention. The `structure.md` convention change and all existing engine, test,
+and lab work remain uncommitted, and the feature branch remains unmerged.
+
+## 2026-09-27 - Live console diagnostic identifies ESC/BEL input
+
+One explicitly authorized read-only `eve validate gre-vrf-validation` run was
+performed. It returned exit status 1 because console prompt acquisition still
+refused the one-time Return on both R1 and R3.
+
+Both nodes produced the same structural classification:
+
+- 80 buffered characters across 5 logical lines
+- 3 Telnet preamble lines
+- 1 Ctrl-R artifact line
+- 0 blank, syslog, EXEC-prompt, unsafe-interactive, or configuration-prompt lines
+- 1 unclassified line with length 7
+- the unclassified line contained `U+001B` (ESC) and `U+0007` (BEL)
+
+This proves the current refusal is caused by a short terminal-control-bearing
+line rather than a recognized setup, credential, confirmation, or configuration
+prompt. The diagnostic intentionally did not reveal the five printable
+characters in that line, so their contents remain unknown.
+
+No classifier, engine, test, lab, or configuration changes were made from this
+evidence. No tests were needed because the repository was unchanged. No second
+live command was run. The next change should identify the terminal-control
+sequence safely before deciding whether it is benign; the allowlist must not be
+weakened from this evidence alone.
+
+This README update is committed and pushed separately under the changelog
+convention. All existing engine, test, `structure.md`, and lab changes remain
+uncommitted, and the feature branch remains unmerged.
+
+## 2026-09-27 - OSC title normalization resolves live console acquisition
+
+### Identified control sequence
+
+The seven-character line containing ESC and BEL was consistent with an xterm
+Operating System Command used to set a terminal title: `ESC ] Ps ; Pt BEL`.
+Xterm defines selectors 0, 1, and 2 for icon/window titles, and ECMA-48 defines
+OSC as a delimited control string. A sequence such as `ESC ] 0 ; R1 BEL` is
+exactly seven characters. Raw console contents remained redacted.
+
+The successful live run after normalization proves that the rejected input
+matched a complete OSC title/icon form with selector 0, 1, or 2 and a BEL or ST
+terminator. The exact selector and printable title were not logged.
+
+References:
+
+- [Xterm control sequences](https://xorg.freedesktop.org/archive/X11R6.8.0/PDF/ctlseqs.pdf)
+- [ECMA-48 control strings](https://ecma-international.org/wp-content/uploads/ECMA-48_3rd_edition_march_1984.pdf)
+
+### Code and safety behavior
+
+`src/eve_lab/device_console.py` now recognizes only complete OSC title/icon
+sequences matching:
+
+```text
+ESC ] [0|1|2] ; printable-payload (BEL | ST)
+```
+
+Those sequences are removed before existing CSI and Ctrl-R normalization.
+Printable text outside the sequence is preserved. Incomplete OSC, unsupported
+OSC selectors, and unknown escape-sequence families remain unclassified and
+unsafe. Setup, credentials, confirmation, selection, and configuration-mode
+refusal behavior is unchanged. Normal initialization logic is unchanged.
+
+`tests/test_validation_runner.py` adds coverage for BEL and ST termination, a
+Telnet preamble plus OSC sequence, incomplete and unknown escape sequences, an
+unsupported OSC selector, and preservation of printable text outside a complete
+OSC sequence.
+
+### Verification and repository status
+
+- `ReadOnlyLoginTests`: 18 passed.
+- `ConsoleTests`: 15 passed.
+- All validation tests: 54 passed.
+- `git diff --check`: passed with line-ending conversion warnings only.
+- One explicitly authorized live `eve validate gre-vrf-validation` run exited 0.
+- All 13 declared checks passed across R1 and R3, including OSPF, global and VRF
+  routes, VRF BGP, default route, negative route, VRF pings, and MTU/DF ping.
+- No second live command was run.
+- `src/eve_lab/device_console.py` and `tests/test_validation_runner.py` remain
+  uncommitted for review.
+- This README update is committed and pushed separately under the changelog
+  convention. The feature branch remains unmerged.

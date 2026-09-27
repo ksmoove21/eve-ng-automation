@@ -8,6 +8,11 @@ from .config import load_server
 from .deploy import lab_path, named
 from .device_console import Console, credentials
 from .topology import interface_key
+from . import validation_iosxe
+
+
+# Register only templates with an implemented and tested adapter.
+PLATFORMS = {"c8000v": validation_iosxe}
 
 
 def _checks(topology):
@@ -18,13 +23,17 @@ def _checks(topology):
         "interface": {"name", "type", "node", "interface", "address", "state"},
         "ping": {"name", "type", "node", "destination", "min_success_rate"},
     }
+    allowed.update({kind: {"name", "type", "node"} | fields
+                    for kind, fields in validation_iosxe.FIELDS.items()})
+    for fields in allowed.values():
+        fields.add("required")
     names = set()
     result = []
     for check in checks:
         if not isinstance(check, dict):
             raise ValueError("Each validation check must be a mapping")
         kind = check.get("type")
-        if kind not in allowed or set(check) - allowed[kind]:
+        if not isinstance(kind, str) or kind not in allowed or set(check) - allowed[kind]:
             raise ValueError("Unsupported validation check: " + repr(check))
         for field in ("name", "node"):
             if not isinstance(check.get(field), str) or not check[field].strip():
@@ -32,7 +41,11 @@ def _checks(topology):
         if check["name"] in names:
             raise ValueError("Duplicate validation check name: " + check["name"])
         names.add(check["name"])
-        if kind == "interface":
+        if type(check.get("required", True)) is not bool:
+            raise ValueError("Validation required must be a boolean")
+        if kind in validation_iosxe.FIELDS:
+            validation_iosxe.validate_check(check)
+        elif kind == "interface":
             if not isinstance(check.get("interface"), str) or not check["interface"].strip():
                 raise ValueError("Interface validation requires interface")
             if "address" in check and (not isinstance(check["address"], str) or not check["address"].strip()):
@@ -54,10 +67,14 @@ def _open_console(ssh, node, login, timeout):
     if node.get("console") != "telnet" or url.scheme != "telnet" or not url.port:
         raise RuntimeError("Telnet console required for validation")
     channel = ssh.get_transport().open_session(timeout=10)
-    channel.get_pty(term="vt100", width=512, height=1000)
-    channel.exec_command("telnet 127.0.0.1 " + str(url.port))
-    console = Console(channel, boot_timeout=timeout)
-    console.login(*login)
+    try:
+        channel.get_pty(term="vt100", width=512, height=1000)
+        channel.exec_command("telnet 127.0.0.1 " + str(url.port))
+        console = Console(channel, boot_timeout=timeout)
+        console.login(*login, read_only=True)
+    except Exception:
+        channel.close()
+        raise
     return channel, console
 
 
@@ -123,7 +140,7 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
         if check["node"] not in nodes:
             raise RuntimeError("Validation node missing from EVE: " + check["node"])
         node = nodes[check["node"]]
-        if node.get("template") != "c8000v":
+        if node.get("template") not in PLATFORMS:
             raise ValueError("Validation currently supports c8000v nodes only: " + check["node"])
         if str(node.get("status")) != "2":
             raise RuntimeError("Start " + check["node"] + " before validation")
@@ -146,11 +163,17 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
             channel = None
             try:
                 channel, console = _open_console(ssh, nodes[node_name], login, timeout)
+                if any(check["type"] in validation_iosxe.FIELDS for check in node_checks):
+                    console.command("terminal length 0")
                 for check in node_checks:
                     try:
-                        passed, evidence = (_interface_check(console, check)
-                                            if check["type"] == "interface"
-                                            else _ping_check(console, check))
+                        if check["type"] == "interface":
+                            passed, evidence = _interface_check(console, check)
+                        elif check["type"] == "ping":
+                            passed, evidence = _ping_check(console, check)
+                        else:
+                            adapter = PLATFORMS[nodes[node_name]["template"]]
+                            passed, evidence = adapter.evaluate(console, check)
                     except RuntimeError as error:
                         passed, evidence = False, {"reason": str(error)}
                     report["checks"].append({
@@ -160,7 +183,18 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
                         "result": "pass" if passed else "fail",
                         "evidence": evidence,
                     })
-                    if not passed:
+                    if "required" in check:
+                        report["checks"][-1]["required"] = check["required"]
+                    if not passed and check.get("required", True):
+                        report["result"] = "fail"
+            except RuntimeError as error:
+                for check in node_checks:
+                    report["checks"].append({
+                        "name": check["name"], "type": check["type"], "node": node_name,
+                        "required": check.get("required", True), "result": "fail",
+                        "evidence": {"reason": str(error)},
+                    })
+                    if check.get("required", True):
                         report["result"] = "fail"
             finally:
                 if channel is not None:

@@ -15,6 +15,118 @@ import paramiko
 from .config import load_server
 
 
+_PROMPT = r'^[ \t]*[\w.()/:-]+[>#](?=[ \t]*(?:$|[*%]))'
+_PRIVILEGED_PROMPT = r'^[ \t]*[\w.()/:-]+#(?=[ \t]*(?:$|[*%]))'
+_OSC_TITLE = re.compile(r'\x1b\][012];[\x20-\x7e]*(?:\x07|\x1b\\)')
+
+
+_READ_ONLY_UNSAFE = re.compile(
+    r'(?im)(?:'
+    r'Enter enable secret\s*:|Confirm enable secret\s*:|'
+    r'Enter your selection\s*\[[^\]]+\]\s*:|'
+    r'Username:\s*$|Password:\s*$|'
+    r'Would you like to enter[^\n]*[?:]\s*$|'
+    r'Press RETURN to get started[^\n]*$|'
+    r'(?:confirm(?:ation)?|are you sure)[^\n]*(?:\[[^\]]+\]|[?:])\s*$|'
+    r'^[ \t]*[\w.()/:-]+\(config[^)]*\)#[ \t]*(?:$|[*%])'
+    r')'
+)
+
+
+def _clean_console_output(data):
+    clean = _OSC_TITLE.sub('', data)
+    clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', clean)
+    # IOS XE can echo Ctrl-R as a control byte or as ^R before it
+    # redisplays the current prompt. Treat that echo as a line boundary.
+    return re.sub(r'\^R(?=[\w.()/:-]+[>#])', '\n', clean.replace('\x12', '\n'))
+
+
+def _safe_read_only_nudge(output):
+    """Allow Return only when the buffered console text is benign noise."""
+    if _READ_ONLY_UNSAFE.search(output):
+        return False
+
+    for line in output.splitlines():
+        line = line.replace('^R', '').strip()
+        if not line:
+            continue
+        if re.fullmatch(
+                r'(?:Trying .+\.\.\.|Connected to .+\.|Escape character is .+)',
+                line):
+            continue
+        if re.match(
+                r'^(?:\*?[A-Z][a-z]{2}\s+\d{1,2}\s+'
+                r'\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+\S+)?\s*:\s*)?'
+                r'%[A-Z0-9_]+-\d+-[A-Z0-9_]+:',
+                line):
+            continue
+        if ('(config' not in line.lower()
+                and re.fullmatch(r'[\w.()/:-]+[>#]', line)):
+            continue
+        return False
+    return True
+
+
+def _read_only_nudge_diagnostic(output):
+    """Describe a rejected buffer without exposing any printable console text."""
+    counts = {
+        'blank': 0,
+        'telnet': 0,
+        'ctrl_r': 0,
+        'syslog': 0,
+        'exec': 0,
+        'unsafe_interactive': 0,
+        'config_prompt': 0,
+        'unclassified': 0,
+    }
+    unclassified_lengths = []
+    unclassified_has_controls = []
+    control_codes = []
+    lines = output.split('\n') if output else []
+
+    for original in lines:
+        stripped = original.strip(' 	')
+        if not stripped:
+            counts['blank'] += 1
+            continue
+        line = stripped.replace('^R', '').replace('\x12', '').strip(' 	')
+        if not line:
+            counts['ctrl_r'] += 1
+        elif '(config' in line.lower():
+            counts['config_prompt'] += 1
+        elif _READ_ONLY_UNSAFE.search(line):
+            counts['unsafe_interactive'] += 1
+        elif re.fullmatch(
+                r'(?:Trying .+\.\.\.|Connected to .+\.|Escape character is .+)',
+                line):
+            counts['telnet'] += 1
+        elif re.match(
+                r'^(?:\*?[A-Z][a-z]{2}\s+\d{1,2}\s+'
+                r'\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:\s+\S+)?\s*:\s*)?'
+                r'%[A-Z0-9_]+-\d+-[A-Z0-9_]+:',
+                line):
+            counts['syslog'] += 1
+        elif re.fullmatch(r'[\w.()/:-]+[>#]', line):
+            counts['exec'] += 1
+        else:
+            codes = [f'U+{ord(char):04X}' for char in original
+                     if ord(char) < 32 or 127 <= ord(char) <= 159]
+            counts['unclassified'] += 1
+            unclassified_lengths.append(len(original))
+            unclassified_has_controls.append(bool(codes))
+            control_codes.append(codes)
+
+    fields = [f'characters={len(output)}', f'lines={len(lines)}']
+    fields.extend(f'{name}={count}' for name, count in counts.items())
+    fields.extend((
+        'unclassified_lengths=' + json.dumps(unclassified_lengths, separators=(',', ':')),
+        'unclassified_has_controls=' + json.dumps(
+            unclassified_has_controls, separators=(',', ':')),
+        'control_codes=' + json.dumps(control_codes, separators=(',', ':')),
+    ))
+    return ', '.join(fields)
+
+
 class Console:
     def __init__(self, channel, boot_timeout=60):
         self.channel = channel
@@ -25,16 +137,16 @@ class Console:
     def send(self, line):
         self.channel.sendall(line + '\r')
 
-    def expect(self, pattern, timeout=60, wake=False):
+    def expect(self, pattern, timeout=60, wake=False, latest=False, return_on_timeout=False):
         data, self.pending = self.pending, ''
         started = time.monotonic()
         deadline = started + timeout
         next_wake = started + 10
         next_progress = started + 30
         while time.monotonic() < deadline:
-            # Remove terminal color/cursor controls before recognizing prompts.
-            clean = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', data)
-            match = re.search(pattern, clean, re.M)
+            clean = _clean_console_output(data)
+            matches = list(re.finditer(pattern, clean, re.M))
+            match = matches[-1] if latest and matches else (matches[0] if matches else None)
             if match:
                 self.pending = clean[match.end():]
                 return clean[:match.end()], match
@@ -55,20 +167,46 @@ class Console:
                 raise RuntimeError('Console connection ended')
             else:
                 time.sleep(.05)
+        clean = _clean_console_output(data)
+        if return_on_timeout:
+            self.pending = clean
+            return clean, None
         # Never include console output: it may contain passwords/configuration.
         raise RuntimeError('Timed out waiting for console prompt; inspect the EVE console for boot progress or an interactive setup prompt')
 
-    def login(self, username, password, secret):
-        self.send('')
-        wake = True
+    def login(self, username, password, secret, *, read_only=False):
+        if read_only:
+            # Redisplay, never submit a pending command or a setup default.
+            self.channel.sendall('\x12')
+        else:
+            self.send('')
+        wake = not read_only
         secret_prompts = set()
         pattern = (r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
                    r'Username:\s*$|Password:\s*$|Would you like to enter[^\n]*[?:]\s*$|'
-                   r'Press RETURN to get started[^\n]*$|^[\w.()/:-]+[>#]\s*$')
+                   r'Press RETURN to get started[^\n]*$|' + _PROMPT)
+        probe = read_only
         for _ in range(12):
-            _, match = self.expect(pattern, timeout=self.boot_timeout, wake=wake)
+            if probe:
+                observed, match = self.expect(
+                    pattern, timeout=min(2, self.boot_timeout), wake=False,
+                    latest=True, return_on_timeout=True)
+                probe = False
+                if match is None:
+                    if _READ_ONLY_UNSAFE.search(observed) or not _safe_read_only_nudge(observed):
+                        evidence = _read_only_nudge_diagnostic(observed)
+                        raise RuntimeError(
+                            'Read-only login refused Return because the console was not safely idle '
+                            f'(classification: {evidence})')
+                    self.send('')
+                    continue
+            else:
+                observed, match = self.expect(
+                    pattern, timeout=self.boot_timeout, wake=wake, latest=read_only)
             prompt = match.group().strip()
+            if read_only and _READ_ONLY_UNSAFE.search(observed):
+                raise RuntimeError('Read-only login refused interactive or configuration-mode prompt')
             if re.match(r'(Enter|Confirm) enable secret', prompt, re.I):
                 stage = prompt.split()[0].lower()
                 if stage in secret_prompts:
@@ -97,10 +235,12 @@ class Console:
             elif prompt.endswith('>'):
                 wake = False
                 self.send('enable')
-                _, enabled = self.expect(r'Password:\s*$|^[\w.()/:-]+#\s*$')
+                _, enabled = self.expect(r'Password:\s*$|' + _PRIVILEGED_PROMPT)
                 if enabled.group().strip().startswith('Password:'):
                     self.send(secret)
                 else:
+                    if read_only and '(config' in enabled.group():
+                        raise RuntimeError('Read-only login refused configuration-mode prompt')
                     self.prompt = enabled.group().strip()
                     return
             elif '(config' in prompt:
@@ -112,7 +252,7 @@ class Console:
 
     def command(self, command, timeout=60):
         self.send(command)
-        output, match = self.expect(r'^[\w.()/:-]+#\s*$', timeout)
+        output, match = self.expect(_PRIVILEGED_PROMPT, timeout)
         if re.search(r'^%\s*(?:Invalid|Incomplete|Ambiguous|Error|Authorization|Access denied)', output, re.M | re.I):
             raise RuntimeError('Cisco rejected a command; inspect the console (output omitted)')
         self.prompt = match.group().strip()
