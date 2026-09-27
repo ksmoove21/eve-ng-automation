@@ -21,6 +21,7 @@ from .session_discovery import discover as discover_sessions
 from .dhcp import clear as clear_dhcp, report as report_dhcp, update_dns as update_dhcp_dns, update as update_dhcp
 from .deploy import apply, delete, lab_status, lifecycle, plan
 from .topology import load_lab_target, load_topology
+from .validation import validate_lab
 
 
 def main():
@@ -61,10 +62,10 @@ def main():
     credential_options.add_argument("--username", help="Device SSH username (default: blank)")
     securecrt.add_argument("--interactive", action="store_true", help="Prompt for each session name")
     securecrt.add_argument("--port", type=int, default=22, help="Device SSH port (default: 22)")
-    for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap"):
+    for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
         command = commands.add_parser(name)
         command.add_argument("--server", default="default")
-        if name in ("plan", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap"):
+        if name in ("plan", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
             command.add_argument("lab")
         if name == "bootstrap":
             command.add_argument("--node", required=True, help="Palo Alto 11.2 node to prepare for a bootstrap test")
@@ -101,6 +102,8 @@ def main():
             command.add_argument("--remote-folder", help="Remote folder; bypass reading topology.yaml (use / for root)")
         if name == "status":
             command.add_argument("lab", nargs="?", help="Omit for server status")
+        if name == "validate":
+            command.add_argument("--timeout", type=int, default=60, help="Console validation timeout in seconds (default: 60)")
         if name == "template":
             command.add_argument("name")
     args = parser.parse_args()
@@ -158,7 +161,7 @@ def main():
             result = plan(topology, server)
         else:
             client = EveClient(server["url"], server.get("timeout", 15))
-            if args.command in ("init", "backup", "restore"):
+            if args.command in ("init", "backup", "restore", "validate"):
                 client.login(server["username"], server["password"], html5=False)
             else:
                 client.login(server["username"], server["password"])
@@ -185,6 +188,8 @@ def main():
                         result = backup(client, topology, args.root, args.server, args.check, args.node, args.timeout, args.management_ip)
                 elif args.command == "delete":
                     result = delete(client, topology)
+                elif args.command == "validate":
+                    result = validate_lab(client, topology, args.root, args.server, args.timeout)
                 elif args.command in ("start", "stop"):
                     result = lifecycle(client, topology, args.command, node_name=getattr(args, 'node', None))
                 elif args.command == "status" and topology:
@@ -203,6 +208,8 @@ def main():
                     print(f"Logout warning: {error}", file=sys.stderr)
         print(json.dumps(result, indent=2))
         if args.command in ("backup", "init", "restore") and result.get("failed"):
+            sys.exit(1)
+        if args.command == "validate" and result.get("result") != "pass":
             sys.exit(1)
     except (OSError, ValueError, RuntimeError, yaml.YAMLError) as error:
         parser.exit(1, f"Error: {error}\n")
