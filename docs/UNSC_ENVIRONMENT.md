@@ -16,7 +16,7 @@ The checked-in server profile is:
 ```yaml
 servers:
   default:
-    url: http://eve.unsc.in
+    url: https://eve.unsc.in
 ```
 
 Credentials are not stored in this file. They remain in the local `.env` file
@@ -28,7 +28,7 @@ The automation assumes the workstation running the CLI can already:
 
 1. resolve `eve.unsc.in`;
 2. route to the resolved address;
-3. reach the EVE-NG web/API service; and
+3. reach the EVE-NG HTTPS/API service; and
 4. reach SSH on the EVE-NG host when an SSH-backed command is used.
 
 Private routing, WireGuard, local DNS, firewall policy, and other transport
@@ -36,8 +36,10 @@ dependencies are external prerequisites. This repository should detect and
 report reachability failures, but it should not automatically establish or
 modify those connectivity mechanisms.
 
-This keeps the automation usable whether the EVE-NG instance is local, hosted,
-or reachable through a private tunnel.
+The automation is intentionally independent of the hosting platform. It should
+not contain provider-specific assumptions for Azure, AWS, on-premises
+virtualization, or another hosting location unless a future feature explicitly
+requires one.
 
 ## Credential groups
 
@@ -88,9 +90,14 @@ eve template c8000v --server default
 After server discovery succeeds, inspect installed images and templates before
 attempting `apply`, `start`, `init`, or other state-changing operations.
 
-## HTTP versus HTTPS
+## HTTPS
 
-The inherited implementation used HTTP, so this fork initially preserves that
-behavior for the UNSC target. If `eve.unsc.in` is later confirmed to use HTTPS
-for its EVE-NG API, update `config/servers.yaml` to the HTTPS URL and validate
-the client behavior before merging that change.
+`eve.unsc.in` uses HTTPS. The checked-in server profile therefore uses:
+
+```text
+https://eve.unsc.in
+```
+
+If the certificate is privately issued, the client must trust the issuing CA
+through the operating system or Python trust path rather than disabling TLS
+verification in the automation.
