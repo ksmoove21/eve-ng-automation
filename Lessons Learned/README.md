@@ -126,3 +126,57 @@ weakened from this evidence alone.
 This README update is committed and pushed separately under the changelog
 convention. All existing engine, test, `structure.md`, and lab changes remain
 uncommitted, and the feature branch remains unmerged.
+
+## 2026-09-27 - OSC title normalization resolves live console acquisition
+
+### Identified control sequence
+
+The seven-character line containing ESC and BEL was consistent with an xterm
+Operating System Command used to set a terminal title: `ESC ] Ps ; Pt BEL`.
+Xterm defines selectors 0, 1, and 2 for icon/window titles, and ECMA-48 defines
+OSC as a delimited control string. A sequence such as `ESC ] 0 ; R1 BEL` is
+exactly seven characters. Raw console contents remained redacted.
+
+The successful live run after normalization proves that the rejected input
+matched a complete OSC title/icon form with selector 0, 1, or 2 and a BEL or ST
+terminator. The exact selector and printable title were not logged.
+
+References:
+
+- [Xterm control sequences](https://xorg.freedesktop.org/archive/X11R6.8.0/PDF/ctlseqs.pdf)
+- [ECMA-48 control strings](https://ecma-international.org/wp-content/uploads/ECMA-48_3rd_edition_march_1984.pdf)
+
+### Code and safety behavior
+
+`src/eve_lab/device_console.py` now recognizes only complete OSC title/icon
+sequences matching:
+
+```text
+ESC ] [0|1|2] ; printable-payload (BEL | ST)
+```
+
+Those sequences are removed before existing CSI and Ctrl-R normalization.
+Printable text outside the sequence is preserved. Incomplete OSC, unsupported
+OSC selectors, and unknown escape-sequence families remain unclassified and
+unsafe. Setup, credentials, confirmation, selection, and configuration-mode
+refusal behavior is unchanged. Normal initialization logic is unchanged.
+
+`tests/test_validation_runner.py` adds coverage for BEL and ST termination, a
+Telnet preamble plus OSC sequence, incomplete and unknown escape sequences, an
+unsupported OSC selector, and preservation of printable text outside a complete
+OSC sequence.
+
+### Verification and repository status
+
+- `ReadOnlyLoginTests`: 18 passed.
+- `ConsoleTests`: 15 passed.
+- All validation tests: 54 passed.
+- `git diff --check`: passed with line-ending conversion warnings only.
+- One explicitly authorized live `eve validate gre-vrf-validation` run exited 0.
+- All 13 declared checks passed across R1 and R3, including OSPF, global and VRF
+  routes, VRF BGP, default route, negative route, VRF pings, and MTU/DF ping.
+- No second live command was run.
+- `src/eve_lab/device_console.py` and `tests/test_validation_runner.py` remain
+  uncommitted for review.
+- This README update is committed and pushed separately under the changelog
+  convention. The feature branch remains unmerged.
