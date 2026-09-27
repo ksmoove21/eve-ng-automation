@@ -1,0 +1,35 @@
+name: unsc-baseline
+description: Minimal UNSC baseline lab for validating EVE-NG lifecycle automation
+remote_folder: /
+
+nodes:
+
+  - name: R1
+    template: c8000v
+    type: qemu
+    console: telnet
+    image: c8000v-17.16.01a
+    cpu: 2
+    ethernet: 2
+    ram: 8192
+
+  - name: R2
+    template: c8000v
+    type: qemu
+    console: telnet
+    image: c8000v-17.16.01a
+    cpu: 2
+    ethernet: 2
+    ram: 8192
+
+networks: []
+
+links:
+
+  - name: r1-r2
+    from:
+      node: R1
+      interface: GigabitEthernet1
+    to:
+      node: R2
+      interface: GigabitEthernet1
