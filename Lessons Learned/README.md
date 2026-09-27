@@ -180,3 +180,24 @@ OSC sequence.
   uncommitted for review.
 - This README update is committed and pushed separately under the changelog
   convention. The feature branch remains unmerged.
+
+
+## 2026-09-27 - Main README now explains the fork before the upstream reference
+
+The repository landing page was updated so a new human or AI worker can understand
+this fork without inferring behavior from the inherited upstream documentation.
+
+The new front matter:
+
+- identifies the repository as a fork of `wcmder/eve-ng`
+- summarizes the capabilities added by this fork
+- documents the proven `gre-vrf-validation` reference and its 13 live-passing checks
+- explains the intended `plan -> apply -> start -> init -> validate` workflow
+- provides Windows PowerShell and Linux/macOS setup examples
+- directs agents to `AGENTS.md`, `structure.md`, and this changelog before changes
+- documents credentials, image, safety, and inherited portability considerations
+- preserves the broader upstream-derived command reference below the fork-specific guidance
+
+This was a documentation-only change. No engine behavior, lab definitions, tests,
+or live EVE state were modified. The README change was reviewed on branch
+`docs/readme-fork-guide`, merged through PR #3, and is now present on `main`.
