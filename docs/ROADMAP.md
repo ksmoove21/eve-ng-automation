@@ -55,10 +55,11 @@ practical.
 
 Initial targets:
 
-1. Cisco IOSv / IOSvL2
-2. Cisco NX-OSv
-3. MikroTik CHR
-4. Additional IOS XE variants as needed
+1. Palo Alto VM-Series firewall validation (Panorama excluded)
+2. Cisco NX-OSv / Nexus 9000v, including vPC readiness
+3. Cisco IOSv / IOSvL2
+4. MikroTik CHR
+5. Additional IOS XE variants as needed
 
 Each platform addition should define:
 
