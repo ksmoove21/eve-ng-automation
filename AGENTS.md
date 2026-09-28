@@ -1,5 +1,7 @@
 # Repository guidance
 
+At the start of every new Codex chat or sprint, first read [.codex/workspace-context.md](.codex/workspace-context.md) to re-establish the authoritative local repository roots and public/private boundary.
+
 Read [PROJECT-INTENT.md](docs/architecture/PROJECT-INTENT.md), [STRUCTURE.md](docs/architecture/STRUCTURE.md), and [EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md) before changing this repository.
 
 This project extends the operating model of upstream `wcmder/eve-ng`; it does
