@@ -21,6 +21,20 @@ A failed test is an input to the next engineering iteration, not a handoff
 point. Diagnose it, repair the implementation when the repair is within scope,
 and rerun the relevant tests.
 
+Do not repeatedly retry the same abstraction without gathering new evidence.
+When a high-level workflow does not explain a failure, descend deliberately
+through the diagnostic stack: command/API result, application evidence, raw
+console or transport, runtime/process observation, then narrowly scoped host
+inspection when that inspection is within the authorized boundary. Prefer
+observation before mutation.
+
+When the root cause depends on uncertain platform behavior, image requirements,
+API semantics, boot behavior, version-specific limitations, or vendor syntax,
+research authoritative sources before inventing a workaround. Prefer vendor
+documentation, upstream project source/docs, release notes or bug documentation,
+then reputable community evidence. Validate researched conclusions against the
+actual disposable lab.
+
 Use these execution zones:
 
 - **Repository/offline work:** autonomous.
@@ -33,10 +47,15 @@ Use these execution zones:
   automation testing.
 
 Do not ask for intermediate confirmation for actions already covered by the
-current sprint and execution zone. Stop only when continuing would materially
-change the agreed architecture or intent, cross an unauthorized boundary,
-require unavailable credentials/resources, or remain technically blocked after
-reasonable remediation.
+current sprint and execution zone. Do not emit progress-only handoffs such as
+"continuing", "currently running", or "next I will" when there is still
+authorized work to perform. Continue tool execution until acceptance criteria or
+a true stop condition is reached.
+
+Stop only when continuing would materially change the agreed architecture or
+intent, cross an unauthorized boundary, require unavailable
+credentials/resources, or remain technically blocked after reasonable
+remediation and evidence gathering.
 
 Preserve unrelated user edits. Do not weaken validation or silently change
 human-authored intent to make a lab pass. Do not claim live success without
