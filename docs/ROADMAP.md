@@ -70,6 +70,23 @@ Each platform addition should define:
 - Backup/restore behavior where supported.
 - Automated tests.
 
+A platform is not considered complete merely because its adapter, parser, or
+offline tests exist. Where the required image is available in the designated
+EVE development sandbox, platform completion requires end-to-end proof that:
+
+- the topology plans successfully;
+- the node deploys/reconciles successfully;
+- the guest reaches usable readiness;
+- bootstrap/initialization succeeds;
+- configuration-save semantics are verified where applicable;
+- declared validation succeeds against the actual NOS;
+- offline regression tests remain green; and
+- reusable platform quirks/failures discovered during live testing are recorded.
+
+If live testing fails, the sprint continues through diagnosis, repair, and
+retest unless a true architectural, authorization, resource, or technical
+blocker is reached.
+
 ## Phase 3: Reusable lab services
 
 Build reusable capabilities that reduce per-lab manual configuration.
@@ -144,18 +161,31 @@ configuration, and validation artifacts consumed by the existing engine.
 
 ## Phase 7: Agent-assisted workflow
 
-Once the automation engine is stable, optimize the development workflow around
-ChatGPT/Codex assistance.
+Optimize the development workflow around engineer-defined intent and autonomous
+sprint execution.
 
 Desired flow:
 
-1. Engineer and ChatGPT define the lab objective and architecture.
-2. Intent and acceptance criteria are committed to Git.
+1. Engineer and ChatGPT define the lab objective, architecture, execution
+   boundary, and acceptance criteria.
+2. Durable intent is represented in Git where appropriate.
 3. Codex implements or reuses automation components on a feature branch.
-4. Offline tests run.
-5. The engineer approves live EVE-NG deployment.
-6. Integration and network acceptance tests run.
-7. Confirmed changes merge into this fork.
+4. Codex runs focused offline tests.
+5. Codex uses the designated disposable EVE development lab to deploy, start,
+   initialize, and validate the real guest platform when the sprint requires
+   runtime proof.
+6. Intermediate failures feed directly into diagnosis, repair, and retest
+   without an owner nudge.
+7. Codex stops only for a material architecture/intent change, an unauthorized
+   infrastructure boundary, unavailable required resources, or a persistent
+   technical blocker.
+8. The engineer and ChatGPT review the completed diff and evidence.
+9. Confirmed changes merge into this fork.
+
+The agent is an implementation worker, not the durable project memory. Git owns
+the implementation and intent that must survive across sessions. The private
+workspace owns environment-specific lab inputs. A Codex conversation should be
+disposable once its sprint is complete.
 
 MCP or another agent-control interface may be added later for interactive
 operation, but it is not a dependency of the core automation engine.
