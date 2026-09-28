@@ -12,6 +12,7 @@ from .config import load_server
 from .deploy import lab_path, named
 from .device_console import Console, credentials
 from .palo_ssh import management_targets, connect_palo
+from .initialize_nxos import NxosConsole, load_bootstrap
 
 
 class PaloConsole(Console):
@@ -204,7 +205,7 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
         template = node.get('template')
         address = targets.get(name) if template in ('paloalto', 'panorama') else None
         reason = None
-        if template not in ('c8000v', 'paloalto', 'panorama'):
+        if template not in ('c8000v', 'nxosv9k', 'nxosv9k-9300v', 'paloalto', 'panorama'):
             reason = 'Unsupported init template: ' + str(template)
         elif node.get('console') != 'telnet' and not address:
             reason = 'Console type ' + str(node.get('console')) + ' is unsupported; init requires a working Telnet serial console'
@@ -212,14 +213,14 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 reason += '; stop the node and run eve init <lab> --node <name> --prepare-console, or use --management-ip after initial setup'
         elif not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*', name):
             reason = 'Node name is not a safe config filename'
-        path = (base / (name + '-init.cfg')).resolve()
+        path = (base / (name + ('-init.yaml' if template in ('nxosv9k', 'nxosv9k-9300v') else '-init.cfg'))).resolve()
         if not reason and (not path.is_relative_to(base) or not path.is_file()):
-            reason = 'Missing init file: configs/' + name + '-init.cfg'
+            reason = 'Missing init file: configs/' + name + ('-init.yaml' if template in ('nxosv9k', 'nxosv9k-9300v') else '-init.cfg')
         if reason:
             result['skipped'].append({'node': name, 'reason': reason})
             print(f'Skipped {name}: {reason}', file=sys.stderr)
             continue
-        commands = config_commands(path, template)
+        commands = load_bootstrap(path) if template in ('nxosv9k', 'nxosv9k-9300v') else config_commands(path, template)
         if template == 'panorama' and not address:
             validate_panorama_network(commands)
         url = urlsplit(node.get('url', ''))
@@ -257,7 +258,7 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                     channel.get_pty(term='vt100', width=512, height=1000)
                     channel.exec_command('telnet 127.0.0.1 ' + str(port))
                 console_type = {'paloalto': PaloConsole if targets.get(name) else PaloSerialConsole,
-                                'panorama': PanoramaConsole}.get(template, Console)
+                                'panorama': PanoramaConsole, 'nxosv9k': NxosConsole, 'nxosv9k-9300v': NxosConsole}.get(template, Console)
                 console = console_type(channel, boot_timeout=timeout)
                 if template == 'panorama' or (template == 'paloalto' and not targets.get(name)):
                     console.login(*login, auto_factory=not bool(targets.get(name)))
