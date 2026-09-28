@@ -9,6 +9,14 @@ automation belongs under `src/eve_lab/`.
 
 Read this file before changing the repository. Preserve unrelated user edits.
 
+## Documentation audiences
+
+Keep public-facing documentation focused on the product: supported capabilities, observable behavior, requirements, setup, commands, examples, limitations, and operator safety.
+
+Do not put internal design discussions, agent handoff flows, prompt strategy, implementation sequencing, branch choreography, or decision-history narration in the root README or user-facing docs. Those belong in contributor/internal material such as this file, `AGENTS.md`, or `Lessons Learned/`.
+
+A roadmap may describe future capabilities and user-visible direction, but not the private process used to shape or implement them.
+
 ## Project intent
 
 The target workflow is:
