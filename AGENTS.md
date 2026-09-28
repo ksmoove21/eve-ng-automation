@@ -52,6 +52,12 @@ current sprint and execution zone. Do not emit progress-only handoffs such as
 authorized work to perform. Continue tool execution until acceptance criteria or
 a true stop condition is reached.
 
+If an unfinished sprint resumes in a later conversation turn, treat the previous
+turn's final technical state as a checkpoint, not a new planning phase.
+Immediately continue from that active state without re-planning, re-summarizing
+completed intermediate work, or asking the owner to restate already-authorized
+scope. Re-read only the guidance or evidence needed to resume safely.
+
 Stop only when continuing would materially change the agreed architecture or
 intent, cross an unauthorized boundary, require unavailable
 credentials/resources, or remain technically blocked after reasonable
