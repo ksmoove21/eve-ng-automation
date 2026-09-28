@@ -127,6 +127,22 @@ placement as authoritative runtime-only state.
 
 `eve apply` is a reconciler, not a one-shot creation script.
 
+### EVE CPU Limit policy
+
+EVE-NG CPU Limit is disabled by default for automation-managed nodes
+(`cpulimit=0`). The limiter may suspend QEMU execution and interfere with
+deterministic boot and readiness behavior. This is a repository-wide runtime
+rule and must not be implemented as platform-specific adapter logic.
+
+The current topology model does not expose `cpulimit`, and `apply()` currently
+inherits that property from the EVE template during node creation. Generic
+enforcement therefore remains a known gap. When implemented, it belongs in
+`src/eve_lab/deploy.py` where node payloads and stopped-node updates are built,
+with corresponding validation in `src/eve_lab/topology.py`. Reconciliation must
+correct drift only within its existing ownership and stopped-node safety
+boundaries. An explicit opt-in should be added only if it fits the node schema
+cleanly; otherwise the desired/default state remains disabled.
+
 Expected behavior:
 
 - create missing declared objects

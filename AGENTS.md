@@ -69,4 +69,21 @@ Preserve unrelated user edits. Do not weaken validation or silently change
 human-authored intent to make a lab pass. Do not claim live success without
 live evidence.
 
+## EVE CPU Limit runtime policy
+
+Nodes created or reconciled by this automation must have EVE-NG CPU Limit
+disabled by default (`cpulimit=0`). EVE's limiter may suspend the complete QEMU
+process and interfere with deterministic guest boot and readiness behavior.
+
+Treat this as a generic EVE runtime policy, not a platform-adapter behavior.
+Platform-specific code must not independently enable CPU Limit. A future
+declarative opt-in may be supported only when it is explicit in the node schema;
+absence of such an opt-in means disabled.
+
+The current topology schema and deployment reconciler do not yet control the
+EVE `cpulimit` field. Until generic enforcement is implemented, do not assume an
+EVE template default satisfies this policy. Enforcement belongs in the generic
+node creation and stopped-node reconciliation path, with running-node safety
+preserved, rather than in CAT9Kv, IOS-XE, NX-OS, PAN-OS, ASA, or other adapters.
+
 When the owner changes a durable project convention, update the owning document under `docs/architecture/` alongside the implementation.
