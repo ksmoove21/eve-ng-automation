@@ -11,28 +11,59 @@ Read this file before changing the repository. Preserve unrelated user edits.
 
 ## Project intent
 
-The target workflow is:
+This fork extends the operating model of upstream `wcmder/eve-ng`; it does
+not replace it. The inherited lifecycle remains the foundation:
+
+```text
+lab definition + configs
+        |
+        v
+eve plan
+        |
+        v
+eve apply
+        |
+        v
+eve start
+        |
+        v
+eve init
+        |
+        v
+eve validate
+```
+
+New work should make that model do more: support more network operating
+systems, automate more initialization and lifecycle behavior, express more
+network features, and prove more of the resulting network state.
+
+The development workflow is iterative and continues through real integration
+testing when the capability interacts with EVE-NG or a guest NOS:
 
 ```text
 network engineering intent
         |
         v
-Git lab definition
+Git lab definition / engine change
         |
         v
-plan / reconcile
+offline implementation + tests
         |
         v
-EVE-NG runtime
+EVE deployment
         |
         v
-device initialization
+real NOS initialization
         |
         v
 read-only acceptance validation
         |
+        +---- FAIL ----> diagnose -> repair -> redeploy/retest
+        |                                      |
+        +--------------------------------------+
+        |
         v
-READY / FAIL with evidence
+PASS with evidence
 ```
 
 Git is the durable source of truth. AI assistants, editors, Codex, and local
@@ -51,11 +82,49 @@ The platform should outlive any particular agent or development environment.
 - Distinguish desired state from observed runtime state.
 - Destructive operations must be explicit and narrowly scoped.
 - Keep credentials and secrets out of Git.
-- Do not make live EVE-NG changes during code-only work unless explicitly
-  requested.
+- Treat designated disposable EVE development/test labs as part of the test
+  harness. When the sprint requires live proof, use them without an extra
+  permission checkpoint.
+- Do not extend that authority to parent or persistent infrastructure unless
+  the task explicitly authorizes it.
 - Preserve upstream behavior unless a change is intentional, understood, and
   tested.
 - Prefer reusable capabilities over one-off lab-specific code.
+
+## Development sandbox and autonomy
+
+A designated disposable EVE development/test lab is test infrastructure, not
+production infrastructure.
+
+When a sprint targets a capability that is intended to operate against EVE-NG
+or a network operating system and an appropriate test image/environment is
+available, the coding agent is expected to carry the sprint through:
+
+1. implement the smallest coherent change;
+2. run focused offline/unit tests;
+3. deploy or reconcile a focused EVE test fixture;
+4. start the required nodes and wait for usable device readiness;
+5. initialize/configure the guest through the automation being developed;
+6. execute the declared acceptance validation;
+7. capture failures and relevant evidence;
+8. repair implementation defects that remain within the agreed intent;
+9. repeat the offline and live tests until the acceptance criteria pass;
+10. run final regression tests and report the evidence.
+
+Intermediate failures do not require owner input merely because they occurred.
+They are part of the engineering loop.
+
+Autonomous sandbox authority includes creating, applying, starting, stopping,
+initializing, configuring, validating, resetting, recreating, and deleting
+objects and guest devices that belong to the designated disposable test lab.
+
+That authority does not include the EVE host operating system, vSphere,
+physical network devices, production or shared firewalls/routing, shared
+services, or persistent labs that were not designated for automation testing.
+
+Escalate only when remediation would materially change the agreed architecture
+or human-authored intent, cross the authorization boundary, require unavailable
+credentials/resources, or remain blocked after reasonable troubleshooting.
 
 ## Repository layers
 
@@ -299,6 +368,12 @@ Separate:
 1. offline/unit behavior
 2. live EVE integration validation
 
+Offline tests are the first validation layer, not the completion condition for
+runtime features. If a capability is intended to deploy, initialize, operate,
+or validate an EVE guest and an appropriate image exists in the authorized
+development sandbox, successful live integration is required before that
+capability is considered proven.
+
 A unit test must not require a live EVE server unless explicitly identified as
 an integration test.
 
@@ -386,13 +461,17 @@ Recommended flow:
 main
   -> feature branch
   -> implementation
-  -> focused tests
-  -> live integration test when required
-  -> review diff
+  -> focused offline tests
+  -> designated-sandbox live integration
+  -> diagnose / repair / retest until acceptance passes
+  -> final regression tests
+  -> review diff and evidence
   -> merge
 ```
 
-The owner approves live behavior and merges.
+Live testing in a designated disposable EVE development lab is part of the
+normal sprint and does not require a second approval checkpoint. The owner
+retains approval for merges and for operations outside the sandbox boundary.
 
 Codex or another coding agent may implement changes, but Git remains the durable
 record of both intent and implementation.
@@ -420,12 +499,20 @@ While coding:
 
 After coding:
 
-1. run relevant focused tests
-2. review the diff
-3. report what changed
-4. report what was tested
-5. identify what still requires live EVE verification
-6. do not claim live success without live evidence
+1. run relevant focused offline tests;
+2. when applicable, execute the feature against the designated EVE test lab;
+3. diagnose and repair failures that remain within the agreed intent;
+4. repeat testing until the defined acceptance criteria pass or a true stop
+   condition is reached;
+5. run final regression tests and review the diff;
+6. report what changed, what was tested, and the live evidence;
+7. identify only genuine unresolved blockers or verification that could not be
+   performed;
+8. do not claim live success without live evidence.
+
+Do not return control merely to announce that an intermediate phase completed.
+The unit of work is the sprint and its acceptance criteria, not an individual
+prompt or command.
 
 ## Current proven baseline
 
@@ -477,13 +564,21 @@ understandable and operable without AI.
 
 ## Lessons learned changelog
 
-Record implementation, test, and live-operation lessons in
-[`Lessons Learned/README.md`](Lessons%20Learned/README.md). Append an entry after
-each completed prompt. The entry should closely mirror the final completion
-report: outcome and root cause, summarized code and file changes, exact test
-results, offline-versus-live evidence, remaining limitations or verification,
-and commit/push/merge status. Code diffs may be summarized; do not omit the
-other review evidence.
+Record reusable implementation, test, and live-operation lessons in
+[`Lessons Learned/README.md`](Lessons%20Learned/README.md) at meaningful sprint
+boundaries or when live testing reveals a reusable platform/environment
+behavior. Do not append an entry merely because an intermediate prompt or
+implementation step completed.
+
+Failures encountered during a sprint should be captured as engineering evidence
+and folded into the final lesson when they reveal something reusable. Continue
+remediation without returning control solely to document the failure.
+
+A completed entry should closely mirror the sprint completion report: outcome
+and root cause, summarized code and file changes, exact test results,
+offline-versus-live evidence, remaining limitations or verification, and
+commit/push/merge status. Code diffs may be summarized; do not omit the other
+review evidence.
 
 This changelog is the only repository file an agent may automatically commit and
 push. Such commits must stage only `Lessons Learned/README.md`; all engine, lab,
