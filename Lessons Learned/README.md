@@ -746,3 +746,52 @@ docs/lessons-learned-panos branch. This keeps the remote update documentation
 only while preserving the local implementation work for separate review. No
 engine, test, lab, private workspace, or live infrastructure change is included
 in the publication branch.
+
+## 2026-09-27 - Private EVE context completion
+
+The private `ksmoove21/unsc-homelab` branch
+`automation/eve-environment-context` was completed and pushed at commit
+`1f64524` (`docs: complete private EVE context`). The change is documentation
+and environment-context only; no public engine code and no live EVE, vSphere,
+Nexus, PAN-OS, routing, or SSH operation was performed.
+
+The context now records the six-host EVE vSphere execution domain—Earth,
+Jupiter, Mars, Reach, Titan, and Venus—while explicitly treating image
+inventory, pnet exposure, datastore access, and external Cloud behavior as
+placement-dependent facts that require verification per host. It also records
+the historical vDS/nested-MAC forwarding failure domain. That history is a
+troubleshooting clue; it is not a universal instruction to disable MAC
+learning.
+
+Cloud0/pnet0 remains the authoritative VLAN 312 management attachment through
+UNSC-BORDER-01 and VRF `greenline_pc`. The approved management pools remain
+`172.18.3.0/24`, `172.19.3.0/24`, and `172.21.3.0/24`, each retaining its
+parent `/24` interface mask and `.1` gateway. Git-known allocation and live
+occupancy remain separate registries, and no allocation was silently assigned.
+The legacy `10.0.212.0/24` values remain historical/testing evidence only.
+Cloud1 is kept separate; the repository does not establish pnet1 as a current
+authoritative mapping, and the historical Nexus/STP incident is not promoted
+to architecture.
+
+A new `context/services-pod.yaml` records the intended `172.201.1.0/29`
+integration example: pod router `.1` is parent/external; Palo Alto `.2` and
+Catalyst Center `.3` ownership remain inferred/unknown; ISE `.4` is
+lab-owned and may consume parent connectivity without becoming a parent-shared
+service; Nexus `.5` is historical test-only. Deployment and initialization
+automation for this example remain out of scope.
+
+Offline verification completed:
+
+- Five context YAML files parsed successfully.
+- Six-host, pnet, management-pool, Services POD ownership, and historical-state
+  invariants passed.
+- Context README links resolved.
+- Secret-pattern scan returned no matches.
+- `git diff --check` passed.
+- The private branch is synchronized with
+  `origin/automation/eve-environment-context`.
+
+The unrelated untracked `VSCode Labs/EVE-Workspace/labs/UNSC-Home-Replica-01`
+directory was preserved and excluded from the commit. Remaining unknowns are
+live pool occupancy, a durable management allocation for that lab, exact
+pnet-to-port-group mappings on each EVE host, and DHCP stability.
