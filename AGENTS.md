@@ -12,6 +12,8 @@ intent to make a lab pass.
 When the owner changes a repository convention, update `structure.md`
 alongside the implementation.
 
+Keep the root README and user-facing docs product-focused. Do not expose internal design discussions, agent/Codex handoff flow, prompt strategy, implementation sequencing, or decision-history narration there. Keep that material in contributor/internal documentation.
+
 ## Initiative and follow-through
 
 Resolve repository-visible and otherwise retrievable prerequisites before asking
