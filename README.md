@@ -4,21 +4,16 @@ This repository is a fork of [wcmder/eve-ng](https://github.com/wcmder/eve-ng) t
 
 The goal is straightforward: a human or automation agent should be able to read the repository, understand the intended lab state, deploy it to an existing EVE-NG server, initialize supported devices, and prove the resulting network satisfies explicit acceptance criteria without guessing at hidden assumptions.
 
-> **Start here if you are a human or AI worker:** read [AGENTS.md](AGENTS.md), then [structure.md](structure.md), then [Lessons Learned/README.md](Lessons%20Learned/README.md) before making changes.
-
 ## What this fork adds
 
 Compared with the upstream baseline, this fork currently adds:
 
-- repository-wide architecture and safety conventions in `structure.md`
 - Windows PowerShell as a first-class control environment
 - declarative lab acceptance criteria under `validation:`
 - structured IOS XE validation for interface state, ping, route presence/absence, default route, BGP, OSPF, IS-IS, VRF ping, and MTU/DF ping
 - read-only validation console acquisition hardened against real EVE/Telnet/IOS XE terminal behavior
 - the `iosxe-baseline` regression fixture
 - the `gre-vrf-validation` live integration lab
-- a persistent [Lessons Learned](Lessons%20Learned/README.md) changelog that records implementation findings, test evidence, and live EVE results
-- explicit separation between topology intent, runtime reconciliation, initialization, and operational validation
 
 The reusable engine should remain hosting-platform agnostic. EVE-NG itself, DNS, routing to the EVE host, VPNs, cloud infrastructure, and firewall reachability are external prerequisites.
 
@@ -57,43 +52,6 @@ The smaller `iosxe-baseline` lab remains the regression fixture for basic topolo
 
 These are proven reference combinations, not claims that every EVE-NG/C8000V release behaves identically.
 
-## Repository operating model
-
-The intended workflow is:
-
-```text
-human intent
-    |
-    v
-Git topology/config/validation
-    |
-    v
-eve plan
-    |
-    v
-eve apply
-    |
-    v
-eve start
-    |
-    v
-eve init
-    |
-    v
-eve validate
-    |
-    v
-structured PASS/FAIL evidence
-```
-
-Important behavior:
-
-- `eve apply` reconciles declared topology; it is not a blind one-shot creator.
-- Running nodes are protected from unsafe mutation and may be reported as deferred.
-- `eve init` is allowed to configure guests and save configuration.
-- `eve validate` is read-only and must not alter device configuration or silently weaken human-authored acceptance criteria.
-- A failed required validation check returns a nonzero result.
-- EVE-NG API acceptance is not treated as proof that a guest is booted or operational.
 
 ## Keep private labs in a separate workspace
 
@@ -197,7 +155,7 @@ If a topology references an unavailable image, change the lab definition deliber
 python -m unittest discover -s tests -v
 ```
 
-Some inherited upstream tests still contain POSIX-specific assumptions. See `structure.md` for the current portability notes; do not confuse inherited chmod/`geteuid` test debt with a live EVE failure.
+Some inherited upstream tests still contain POSIX-specific assumptions; do not confuse inherited chmod/`geteuid` test debt with a live EVE failure.
 
 ### 6. Exercise the live validation fixture
 
@@ -215,37 +173,12 @@ Expected outcome on a compatible environment: the final command returns a struct
 
 Do not run live or destructive commands against an EVE instance you do not own or have permission to modify.
 
-## Guidance for AI/coding agents
-
-Before changing code:
-
-1. Read `AGENTS.md`.
-2. Read `structure.md`.
-3. Read the latest relevant entries in `Lessons Learned/README.md`.
-4. Inspect the existing implementation before proposing a new abstraction.
-5. Keep environment-specific values in lab definitions, not generic engine code.
-
-Do not:
-
-- change expected topology or validation intent merely to make a failing test pass
-- weaken read-only validation safeguards
-- perform live EVE operations without explicit human authorization
-- log secrets or full sensitive device configuration
-- assume an upstream/community behavior is identical to this fork
-- broaden terminal-sequence handling without evidence and regression coverage
-- develop substantial features directly on `main`
-
-When changing engine behavior, add focused offline tests first and clearly distinguish unit evidence from live EVE evidence.
 
 ## Where to look
 
 | Path | Purpose |
 | --- | --- |
-| `AGENTS.md` | Short mandatory instructions for coding/AI agents |
-| `structure.md` | Architecture, safety rules, platform boundaries, testing and Git workflow |
-| `Lessons Learned/README.md` | Changelog-style implementation and live-evidence record |
 | `docs/validation.md` | Validation schema, primitives, evidence and limitations |
-| `docs/ROADMAP.md` | Project direction and phased goals |
 | `docs/ENVIRONMENT.md` | Current UNSC environment assumptions/reference |
 | `docs/BASELINE_VALIDATION_WINDOWS.md` | Windows baseline/testing notes |
 | `labs/iosxe-baseline/` | Minimal known-good regression lab |
@@ -255,7 +188,7 @@ When changing engine behavior, add focused offline tests first and clearly disti
 
 ## Upstream-derived command reference
 
-The sections below retain the broader command and engine documentation inherited from the original project, updated over time by this fork. When this front matter and older examples differ, prefer the repository conventions in `structure.md` and the live evidence in `Lessons Learned/README.md`.
+The sections below retain the broader command and engine documentation inherited from the original project, updated over time by this fork. When examples differ, prefer the current command behavior and reference documentation.
 
 ## Setup
 
