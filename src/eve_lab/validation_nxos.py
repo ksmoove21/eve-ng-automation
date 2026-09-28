@@ -101,7 +101,10 @@ def _vpc(text):
     def state(pattern):
         found = re.search(pattern, text, re.I | re.M)
         if not found: raise RuntimeError('Unrecognized NX-OS vPC response')
-        return 'up' if re.search(r'up|enabled|ok|success|formed', found.group(1), re.I) else 'down'
+        value = found.group(1).strip().lower()
+        if re.search(r'\b(up|enabled|success|peer adjacency formed ok)\b', value): return 'up'
+        if re.search(r'\b(down|disabled|not formed|failed)\b', value): return 'down'
+        raise RuntimeError('Unrecognized NX-OS vPC state')
     link = re.search(r'^\s*\d+\s+Po\d+\s+(up|down)\b', text, re.I | re.M)
     if not link: raise RuntimeError('Unrecognized NX-OS vPC peer-link response')
     return {'state': state(r'^\s*vPC status\s*:\s*(.+)$'), 'peer_state': state(r'^\s*Peer status\s*:\s*(.+)$'), 'peer_link_state': link.group(1).lower(), 'consistency': state(r'^\s*Configuration consistency status\s*:\s*(.+)$')}

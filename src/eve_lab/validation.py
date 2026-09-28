@@ -245,8 +245,8 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
                 "Validation currently supports c8000v, paloalto, nxosv9k, and nxosv9k-9300v nodes only: " +
                 check["node"])
         kind = check["type"]
-        if template == "c8000v" and kind in validation_panos.FIELDS:
-            raise ValueError("PAN-OS validation check targets non-PAN-OS node: " + check["node"])
+        if template == "c8000v" and kind not in ({"interface", "ping"} | set(validation_iosxe.FIELDS)):
+            raise ValueError("c8000v validation requires IOS XE or legacy check types: " + check["name"])
         if template in ("nxosv9k", "nxosv9k-9300v") and kind not in validation_nxos.FIELDS:
             raise ValueError("NX-OS validation requires nxos-* check types: " + check["name"])
         if template == "paloalto" and kind not in validation_panos.FIELDS:
