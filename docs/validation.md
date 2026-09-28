@@ -18,12 +18,9 @@ behavior remain unchanged. The baseline lab has not been expanded.
 
 ## Implemented scope
 
-Only the existing `c8000v` template is enabled, using the IOS XE adapter in
-`src/eve_lab/validation_iosxe.py`. Other templates fail before console access.
-The template registry in `validation.py` is the extension point; additional
-platforms need explicit schemas/capabilities, commands, parsers and tests.
-This is not a claim of support for IOS XR, NX-OS, other vendors or other IOS
-XE templates.
+Only the existing `c8000v` template is currently enabled for this validation path.
+Other templates fail before console access. This is not a claim of support for
+IOS XR, NX-OS, other vendors, or other IOS XE templates.
 
 | Type | Required fields beyond name/type/node | Optional fields |
 | --- | --- | --- |
@@ -124,36 +121,3 @@ and [ping reference](https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/fundament
 Command references inform implementation; they do not replace image-specific
 live verification.
 
-## Offline and live verification
-
-Run from the repository root on Windows PowerShell, macOS or Linux:
-
-```text
-python -m unittest discover -s tests -p "test_validation*.py" -v
-python -m unittest discover -s tests -p test_device_console.py -v
-```
-
-The fixtures are synthetic and all API/SSH calls in runner tests are mocked.
-No new controller OS assumptions or dependencies are introduced.
-
-Still requires separately authorized live verification on the target C8000V
-IOS XE image and EVE-NG console path:
-
-1. Ctrl-R prompt redisplay, credential/enable authentication, rejection of
-   setup/configuration-mode prompts and safe failure with pending input.
-2. Existing baseline interface/ping results and JSON/exit-status behavior.
-3. Exact route presence/absence, default routes, connected and ECMP routes,
-   next-hop mismatches and nonexistent VRFs in global and VRF scopes.
-4. BGP summary syntax/output for IPv4/IPv6 unicast globally and in VRFs,
-   including established (zero prefixes), idle and administrative shutdown.
-5. OSPF router-ID/address matching, point-to-point and broadcast roles,
-   multiple adjacencies and missing/wrong states.
-6. IS-IS L1/L2 adjacency tables and dynamic hostname/system-ID resolution,
-   including missing/wrong states and duplicate-hostname rejection.
-7. VRF ping reachability and MTU probes with DF on/off at passing/failing
-   sizes, verifying the target image's packet-size semantics and counters.
-8. Session pagination, timeouts, cleanup, one connection per checked node,
-   required versus explicitly optional failure behavior and nonzero exits.
-
-Use a separate focused lab for new live cases; do not expand the baseline
-merely to exercise all types. No live EVE operation was performed for this work.
