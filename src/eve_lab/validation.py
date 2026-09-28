@@ -11,13 +11,15 @@ from .device_console import Console, credentials
 from .initialize import PaloConsole
 from .palo_ssh import connect_palo, management_targets
 from .topology import interface_key
-from . import validation_iosxe, validation_panos
+from . import validation_iosxe, validation_nxos, validation_panos
 
 
 # Register only templates with an implemented and tested adapter.
 PLATFORMS = {
     "c8000v": validation_iosxe,
     "paloalto": validation_panos,
+    "nxosv9k": validation_nxos,
+    "nxosv9k-9300v": validation_nxos,
 }
 
 
@@ -33,6 +35,8 @@ def _checks(topology):
                     for kind, fields in validation_iosxe.FIELDS.items()})
     allowed.update({kind: {"name", "type", "node"} | fields
                     for kind, fields in validation_panos.FIELDS.items()})
+    allowed.update({kind: {"name", "type", "node"} | fields
+                    for kind, fields in validation_nxos.FIELDS.items()})
     for fields in allowed.values():
         fields.add("required")
     names = set()
@@ -53,6 +57,8 @@ def _checks(topology):
             raise ValueError("Validation required must be a boolean")
         if kind in validation_iosxe.FIELDS:
             validation_iosxe.validate_check(check)
+        elif kind in validation_nxos.FIELDS:
+            validation_nxos.validate_check(check)
         elif kind in validation_panos.FIELDS:
             validation_panos.validate_check(check)
         elif kind == "interface":
@@ -168,7 +174,7 @@ def _validate_iosxe_node(ssh, node, node_name, checks, root, timeout, report):
     try:
         login = credentials(root, prefix="CISCO")
         channel, console = _open_console(ssh, node, login, timeout)
-        if any(check["type"] in validation_iosxe.FIELDS for check in checks):
+        if any(check["type"] in validation_iosxe.FIELDS or check["type"] in validation_nxos.FIELDS for check in checks):
             console.command("terminal length 0")
         for check in checks:
             try:
@@ -176,8 +182,10 @@ def _validate_iosxe_node(ssh, node, node_name, checks, root, timeout, report):
                     passed, evidence = _interface_check(console, check)
                 elif check["type"] == "ping":
                     passed, evidence = _ping_check(console, check)
-                else:
+                elif check["type"] in validation_iosxe.FIELDS:
                     passed, evidence = validation_iosxe.evaluate(console, check)
+                else:
+                    passed, evidence = validation_nxos.evaluate(console, check)
             except RuntimeError as error:
                 passed, evidence = False, {"reason": str(error)}
             _append_result(report, check, node_name, passed, evidence)
@@ -234,11 +242,13 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
         template = node.get("template")
         if template not in PLATFORMS:
             raise ValueError(
-                "Validation currently supports c8000v and paloalto nodes only: " +
+                "Validation currently supports c8000v, paloalto, nxosv9k, and nxosv9k-9300v nodes only: " +
                 check["node"])
         kind = check["type"]
         if template == "c8000v" and kind in validation_panos.FIELDS:
             raise ValueError("PAN-OS validation check targets non-PAN-OS node: " + check["node"])
+        if template in ("nxosv9k", "nxosv9k-9300v") and kind not in validation_nxos.FIELDS:
+            raise ValueError("NX-OS validation requires nxos-* check types: " + check["name"])
         if template == "paloalto" and kind not in validation_panos.FIELDS:
             raise ValueError(
                 "Palo Alto validation currently requires panos-* check types: " +

@@ -269,3 +269,39 @@ If management SSH cannot be established, running configuration cannot be
 retrieved, or the returned XML cannot be parsed, no assertion was actually
 evaluated. These execution failures make the overall validation result `fail`
 even when every declared check for that firewall has `required: false`.
+
+## NX-OS / Nexus 9000v validation
+
+`nxosv9k` and `nxosv9k-9300v` nodes use the existing verified EVE-host SSH and
+Telnet-console path with the existing `CISCO_USERNAME`, `CISCO_PASSWORD`, and
+`CISCO_ENABLE_SECRET` credential source. Read-only login safety is unchanged.
+The supported machine-readable checks are `nxos-interface`, `nxos-vlan`,
+`nxos-vrf`, `nxos-route`, `nxos-ping`, `nxos-vpc`, `nxos-port-channel`, and
+`nxos-bgp-neighbor`. All accept `required: false` under the same assertion and
+execution-failure rules described above.
+
+```yaml
+validation:
+  - {name: uplink, type: nxos-interface, node: leaf1, interface: Ethernet1/1, admin_state: up, oper_state: up}
+  - {name: tenant, type: nxos-vlan, node: leaf1, vlan: 10, state: active}
+  - {name: vrf, type: nxos-vrf, node: leaf1, vrf: BLUE}
+  - {name: route, type: nxos-route, node: leaf1, prefix: 192.0.2.0/24, expected: present, next_hop: 198.51.100.1}
+  - {name: reach, type: nxos-ping, node: leaf1, destination: 192.0.2.2, vrf: BLUE}
+  - {name: vpc, type: nxos-vpc, node: leaf1, state: up, peer_state: up, peer_link_state: up, consistency: up}
+  - {name: po, type: nxos-port-channel, node: leaf1, port_channel: Po1, oper_state: up, members: [Eth1/1, Eth1/2]}
+  - {name: bgp, type: nxos-bgp-neighbor, node: leaf1, neighbor: 192.0.2.2, state: established}
+```
+
+These parsers deliberately fail closed on pagination, CLI errors, malformed or
+unrecognized output. They cover IPv4 routes and IPv4/IPv6-unicast BGP summary
+syntax only. EVPN, VXLAN, NVE and VTEP assertions are intentionally deferred
+until image-specific output is verified live.
+
+NX-OS bootstrap is intentionally separate from validation. The immediate
+implementation seam is the generic `initialize()` template registry and its
+Cisco console implementation: add an NX-OS console initializer that owns
+configuration mode and save verification, with private lab files supplying
+hostname, management address/prefix, gateway and boot image. It must reuse
+`CISCO_*` credentials. The current generic Cisco initializer uses IOS-XE
+command and `write memory` semantics, so this validation change does not
+pretend it can safely bootstrap NX-OS.
