@@ -80,8 +80,7 @@ These checks do not deploy or modify a lab.
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-Known inherited POSIX-specific test assumptions are documented in
-`structure.md`.
+Some inherited tests contain POSIX-specific assumptions and may not apply cleanly on Windows.
 
 ## 7. Plan a generic fixture locally
 
@@ -90,7 +89,7 @@ eve plan iosxe-baseline --server default
 eve plan gre-vrf-validation --server default
 ```
 
-Planning validates local lab intent. Review referenced image names against the
+Planning validates the local lab definition. Review referenced image names against the
 target server before applying anything.
 
 ## Stop point
