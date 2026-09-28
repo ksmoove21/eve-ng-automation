@@ -1,168 +1,114 @@
 # EVE-NG Automation Roadmap
 
-This fork starts from `wcmder/eve-ng` and preserves its current declarative
-topology and lifecycle model while extending it for broader network-lab use.
+This fork extends `wcmder/eve-ng` into a reusable network-lab automation platform while preserving the explicit topology and lifecycle model that makes labs predictable and repeatable.
 
 ## Goal
 
-Create a reusable lab platform where network engineering intent is stored in
-Git, compiled into explicit EVE-NG topology and device configuration, deployed
-through the automation engine, and validated before the lab is considered
-ready.
+Make it possible to describe a lab, deploy it to an existing EVE-NG server, initialize supported devices, and verify that the resulting network satisfies declared acceptance criteria.
 
-The automation engine should remain usable without an AI agent. ChatGPT and
-Codex may assist with design and implementation, but Git and the automation
-code are the durable source of truth.
+The engine remains usable as a normal CLI and does not depend on any particular AI tool, hosting platform, or private environment.
 
-## Phase 0: Preserve the baseline
+## Current foundation
 
-- Keep the inherited `palo-lab1` example functional.
-- Inventory the current CLI, topology schema, supported templates, and tests.
-- Establish an offline regression-test workflow.
-- Establish a separate live-integration checklist for a target EVE-NG host.
-- Document the local development and Git branching workflow.
-- Do not redesign working upstream behavior before a baseline is established.
+The project currently provides:
 
-Exit criteria:
+- declarative EVE-NG topology definitions
+- topology reconciliation through `eve apply`
+- node lifecycle operations
+- device initialization
+- backup and restore workflows
+- reusable public lab fixtures
+- read-only IOS XE operational validation
+- Windows, Linux, and macOS controller support
+- separate public engine and private workspace support
 
-- Existing automated tests pass locally.
-- `eve plan palo-lab1` succeeds with local configuration.
-- The engine can authenticate to the target EVE-NG instance.
-- A non-destructive status/template query succeeds.
+## Platform support
 
-## Phase 1: Environment compatibility
+Expand device support beyond the currently proven platforms.
 
-Adapt the fork to the target EVE-NG installation without embedding
-environment-specific values in reusable engine code.
+Planned targets include:
 
-Candidate work:
+- Cisco IOSv and IOSvL2
+- Cisco NX-OSv
+- MikroTik CHR
+- additional IOS XE variants
+- additional firewall and network-platform integrations where practical
 
-- EVE server profile configuration.
-- Installed image/template inventory.
-- Management cloud/network mapping.
-- Interface-name compatibility checks.
-- Integration-test fixtures and dry-run procedures.
+Platform support may include topology handling, interface normalization, initialization, configuration persistence, backup/restore, and validation capabilities as appropriate for that platform.
 
-Exit criteria:
+## Reusable lab services
 
-- Existing example topology can be planned against the local image inventory.
-- No secrets or private infrastructure values are committed to Git.
+Reduce repetitive per-lab configuration through reusable services such as:
 
-## Phase 2: Platform expansion
+- IPv4 and IPv6 address allocation
+- loopback allocation
+- point-to-point subnet generation
+- ASN allocation
+- device-role defaults
+- common management configuration
+- configuration rendering
+- platform-aware interface mapping
 
-Add platform support incrementally, with one platform per feature branch where
-practical.
+These capabilities should remain independent of any specific private environment.
 
-Initial targets:
+## Network feature support
 
-1. Cisco IOSv / IOSvL2
-2. Cisco NX-OSv
-3. MikroTik CHR
-4. Additional IOS XE variants as needed
+Expand reusable support for commonly tested network behaviors, including:
 
-Each platform addition should define:
+- BGP and routing policy
+- OSPF
+- IS-IS
+- VRFs
+- MPLS and LDP
+- MP-BGP L3VPN
+- GRE
+- NAT
+- MTU and MSS behavior
 
-- EVE template/image handling.
-- Interface normalization.
-- Console or management bootstrap behavior.
-- Configuration save semantics.
-- Backup/restore behavior where supported.
-- Automated tests.
+Where possible, lab definitions should describe the desired network behavior without requiring every platform to use identical configuration syntax.
 
-## Phase 3: Reusable lab services
+## Validation and readiness
 
-Build reusable capabilities that reduce per-lab manual configuration.
+Continue expanding acceptance validation so a lab can prove operational readiness rather than only confirm that virtual nodes exist.
 
-Candidate capabilities:
+Target validation areas include:
 
-- IPv4/IPv6 address allocation.
-- Loopback allocation.
-- Point-to-point subnet generation.
-- ASN allocation.
-- Device-role defaults.
-- Common management configuration.
-- Configuration rendering.
-- Platform-aware interface mapping.
+- node runtime state
+- interface state
+- IGP adjacency
+- BGP session state
+- expected and forbidden routes
+- end-to-end reachability
+- VRF-specific reachability
+- MTU/DF behavior
+- feature-specific assertions
+- defined failure and recovery scenarios
 
-These should remain separate from concrete lab definitions.
+Readiness reporting should clearly distinguish node runtime, device accessibility, configuration application, protocol convergence, and network acceptance results.
 
-## Phase 4: Network feature modules
+## Higher-level lab definitions
 
-Introduce reusable configuration-generation components for commonly tested
-network behaviors.
+The explicit `topology.yaml` format remains the stable lower-level lab contract.
 
-Initial candidates:
+A future optional higher-level format may describe concepts such as:
 
-- BGP and policy controls.
-- OSPF.
-- IS-IS.
-- VRFs.
-- MPLS/LDP.
-- MP-BGP L3VPN.
-- GRE.
-- NAT.
-- MTU/MSS controls.
+- device roles and counts
+- logical links and site relationships
+- routing protocols
+- addressing pools
+- failure scenarios
+- acceptance criteria
 
-A feature module should describe intended network behavior while leaving
-platform-specific syntax to the appropriate renderer.
+That higher-level description can then produce the explicit topology, configuration, and validation artifacts consumed by the existing engine.
 
-## Phase 5: Validation and readiness
+## Portability
 
-A deployed lab is not considered ready merely because EVE nodes exist.
+The reusable engine should continue to avoid assumptions about a specific lab owner or infrastructure environment.
 
-Introduce acceptance checks for:
-
-- Node runtime state.
-- Interface state.
-- IGP adjacency.
-- BGP session state.
-- Expected route presence.
-- End-to-end reachability.
-- Feature-specific assertions.
-- Defined failure/recovery scenarios.
-
-Long-term readiness output should distinguish topology deployment, guest boot,
-configuration application, protocol convergence, and acceptance-test status.
-
-## Phase 6: Higher-level lab specification
-
-Keep the current explicit `topology.yaml` model as a stable lower-level
-contract.
-
-Add an optional higher-level specification that can describe intent such as:
-
-- device roles and counts;
-- logical links and site relationships;
-- routing protocols;
-- addressing pools;
-- failure scenarios;
-- acceptance criteria.
-
-A compiler/renderer may expand that intent into the explicit topology,
-configuration, and validation artifacts consumed by the existing engine.
-
-## Phase 7: Agent-assisted workflow
-
-Once the automation engine is stable, optimize the development workflow around
-ChatGPT/Codex assistance.
-
-Desired flow:
-
-1. Engineer and ChatGPT define the lab objective and architecture.
-2. Intent and acceptance criteria are committed to Git.
-3. Codex implements or reuses automation components on a feature branch.
-4. Offline tests run.
-5. The engineer approves live EVE-NG deployment.
-6. Integration and network acceptance tests run.
-7. Confirmed changes merge into this fork.
-
-MCP or another agent-control interface may be added later for interactive
-operation, but it is not a dependency of the core automation engine.
+EVE-NG hosting, DNS, routing, VPNs, firewall policy, image availability, and external services remain environment prerequisites unless a future feature explicitly manages them.
 
 ## Upstream relationship
 
 The original implementation is `wcmder/eve-ng`.
 
-This fork is intended for independent experimentation and extension. Changes
-remain in this fork unless a maintainer explicitly decides to contribute a
-specific change upstream.
+This fork is maintained independently and may continue to extend the original project with additional network-lab capabilities.
