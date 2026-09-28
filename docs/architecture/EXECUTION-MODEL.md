@@ -21,6 +21,18 @@ An intermediate failure is not a handoff point. If the repair remains inside
 the agreed architecture and authorization boundary, the coding agent should
 continue without waiting for another owner prompt.
 
+## Resume behavior
+
+A conversation turn ending does not end an unfinished sprint.
+
+When execution resumes later, the previous turn's final technical state is the
+checkpoint. Continue from the active lab/process/test state without restarting
+planning, repeating completed work, or asking for authorization that is already
+recorded in the sprint and repository guidance.
+
+Refresh remote guidance only when it may have changed, preserve local working
+state, then resume the next technical action. Keep restart overhead small.
+
 ## Diagnostic depth
 
 Use the highest-level supported interface first, but do not remain trapped at
