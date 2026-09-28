@@ -1,4 +1,5 @@
 """Read-only acceptance validation for running EVE-NG lab nodes."""
+from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
@@ -9,14 +10,18 @@ from .console_backup import palo_running
 from .deploy import lab_path, named
 from .device_console import Console, credentials
 from .initialize import PaloConsole
+from .initialize_cat9kv import (
+    TEMPLATE as CAT9KV_TEMPLATE, load_bootstrap as load_cat9kv_bootstrap,
+)
 from .palo_ssh import connect_palo, management_targets
 from .topology import interface_key
-from . import validation_iosxe, validation_nxos, validation_panos
+from . import validation_cat9kv, validation_iosxe, validation_nxos, validation_panos
 
 
 # Register only templates with an implemented and tested adapter.
 PLATFORMS = {
     "c8000v": validation_iosxe,
+    CAT9KV_TEMPLATE: validation_cat9kv,
     "paloalto": validation_panos,
     "nxosv9k": validation_nxos,
     "nxosv9k-9300v": validation_nxos,
@@ -37,6 +42,8 @@ def _checks(topology):
                     for kind, fields in validation_panos.FIELDS.items()})
     allowed.update({kind: {"name", "type", "node"} | fields
                     for kind, fields in validation_nxos.FIELDS.items()})
+    allowed.update({kind: {"name", "type", "node"} | fields
+                    for kind, fields in validation_cat9kv.FIELDS.items()})
     for fields in allowed.values():
         fields.add("required")
     names = set()
@@ -55,7 +62,9 @@ def _checks(topology):
         names.add(check["name"])
         if type(check.get("required", True)) is not bool:
             raise ValueError("Validation required must be a boolean")
-        if kind in validation_iosxe.FIELDS:
+        if kind in validation_cat9kv.FIELDS:
+            validation_cat9kv.validate_check(check)
+        elif kind in validation_iosxe.FIELDS:
             validation_iosxe.validate_check(check)
         elif kind in validation_nxos.FIELDS:
             validation_nxos.validate_check(check)
@@ -196,6 +205,57 @@ def _validate_iosxe_node(ssh, node, node_name, checks, root, timeout, report):
             channel.close()
 
 
+def _management_service(ssh, address, port):
+    channel = None
+    try:
+        channel = ssh.get_transport().open_channel(
+            'direct-tcpip', (address, port), ('127.0.0.1', 0), timeout=10)
+        return True
+    except (OSError, paramiko.SSHException):
+        return False
+    finally:
+        if channel is not None:
+            channel.close()
+
+
+def _validate_cat9kv_node(ssh, node, node_name, checks, intent, root, timeout, report):
+    channel = None
+    try:
+        login = credentials(root, prefix="CISCO")
+        channel, console = _open_console(ssh, node, login, timeout)
+        console.command("terminal length 0")
+        for check in checks:
+            try:
+                if check["type"] == "interface":
+                    passed, evidence = _interface_check(console, check)
+                elif check["type"] == "ping":
+                    passed, evidence = _ping_check(console, check)
+                elif check["type"] in validation_iosxe.FIELDS:
+                    passed, evidence = validation_iosxe.evaluate(console, check)
+                else:
+                    passed, evidence = validation_cat9kv.evaluate(
+                        console, check, intent, username=login[0])
+                    if check["type"] == "cat9kv-dnac-bootstrap":
+                        address = intent["management"]["address"]
+                        services = {
+                            "ssh_22": _management_service(ssh, address, 22),
+                            "netconf_830": _management_service(ssh, address, 830),
+                        }
+                        evidence.setdefault("observed", {})["management_services"] = services
+                        if not all(services.values()):
+                            passed = False
+                            evidence["reason"] = (
+                                "Management SSH or NETCONF is not reachable from the EVE host")
+            except RuntimeError as error:
+                passed, evidence = False, {"reason": str(error)}
+            _append_result(report, check, node_name, passed, evidence)
+    except RuntimeError as error:
+        _fail_node(report, node_name, checks, error)
+    finally:
+        if channel is not None:
+            channel.close()
+
+
 def _validate_panos_node(ssh, topology, node_name, checks, root, timeout, report):
     device = None
     channel = None
@@ -242,19 +302,43 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
         template = node.get("template")
         if template not in PLATFORMS:
             raise ValueError(
-                "Validation currently supports c8000v, paloalto, nxosv9k, and nxosv9k-9300v nodes only: " +
+                "Validation currently supports c8000v, cat9kvuadp, paloalto, nxosv9k, and nxosv9k-9300v nodes only: " +
                 check["node"])
         kind = check["type"]
         if template == "c8000v" and kind not in ({"interface", "ping"} | set(validation_iosxe.FIELDS)):
             raise ValueError("c8000v validation requires IOS XE or legacy check types: " + check["name"])
         if template in ("nxosv9k", "nxosv9k-9300v") and kind not in validation_nxos.FIELDS:
             raise ValueError("NX-OS validation requires nxos-* check types: " + check["name"])
+        if (template == CAT9KV_TEMPLATE
+                and kind not in ({"interface", "ping"}
+                                 | set(validation_iosxe.FIELDS)
+                                 | set(validation_cat9kv.FIELDS))):
+            raise ValueError(
+                "cat9kvuadp validation requires Cat9Kv or IOS-XE check types: "
+                + check["name"])
         if template == "paloalto" and kind not in validation_panos.FIELDS:
             raise ValueError(
                 "Palo Alto validation currently requires panos-* check types: " +
                 check["name"])
         if str(node.get("status")) != "2":
             raise RuntimeError("Start " + check["node"] + " before validation")
+
+    cat9kv_intents = {}
+    base = (Path(root) / "labs" / topology["name"] / "configs").resolve()
+    for node_name in {check["node"] for check in checks}:
+        if nodes[node_name].get("template") != CAT9KV_TEMPLATE:
+            continue
+        path = (base / (node_name + "-init.yaml")).resolve()
+        if not path.is_relative_to(base) or not path.is_file():
+            raise ValueError(
+                "Cat9Kv validation requires configs/" + node_name + "-init.yaml")
+        intent = load_cat9kv_bootstrap(path, root)
+        if (any(check["node"] == node_name
+                and check["type"] == "cat9kv-underlay" for check in checks)
+                and "ospf-underlay" not in intent["profiles"]):
+            raise ValueError(
+                "cat9kv-underlay validation requires the ospf-underlay profile")
+        cat9kv_intents[node_name] = intent
 
     server = load_server(root, server_name, auth="ssh")
     grouped = {}
@@ -274,6 +358,10 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
             if node["template"] == "paloalto":
                 _validate_panos_node(
                     ssh, topology, node_name, node_checks, root, timeout, report)
+            elif node["template"] == CAT9KV_TEMPLATE:
+                _validate_cat9kv_node(
+                    ssh, node, node_name, node_checks,
+                    cat9kv_intents[node_name], root, timeout, report)
             else:
                 _validate_iosxe_node(
                     ssh, node, node_name, node_checks, root, timeout, report)
@@ -287,4 +375,22 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
         raise RuntimeError("Cannot connect to EVE host SSH during validation") from None
     finally:
         ssh.close()
+    if cat9kv_intents:
+        report["readiness"] = {}
+        for node_name in cat9kv_intents:
+            results = [item for item in report["checks"] if item["node"] == node_name]
+            dnac = [item for item in results
+                    if item["type"] == "cat9kv-dnac-bootstrap"]
+            underlay = [item for item in results
+                        if item["type"] == "cat9kv-underlay"]
+            states = []
+            if dnac and all(item["result"] == "pass" for item in dnac):
+                states.append("DNAC_BOOTSTRAP_READY")
+            required_pass = all(
+                item["result"] == "pass" for item in results
+                if item.get("required", True))
+            if underlay and required_pass and all(
+                    item["result"] == "pass" for item in underlay):
+                states.append("UNDERLAY_READY")
+            report["readiness"][node_name] = states
     return report

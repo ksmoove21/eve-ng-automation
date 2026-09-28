@@ -23,11 +23,11 @@ behavior remain unchanged. The baseline lab has not been expanded.
 ## Implemented scope
 
 `c8000v` remains enabled through the IOS XE adapter in
-`src/eve_lab/validation_iosxe.py`. Palo Alto firewall nodes using the
-`paloalto` template are also enabled through
-`src/eve_lab/validation_panos.py` for committed-configuration assertions.
-Panorama is intentionally not registered for validation. NX-OS, IOS XR and
-other templates still fail preflight until explicit adapters are added.
+`src/eve_lab/validation_iosxe.py`. Catalyst 9000v UADP `cat9kvuadp` nodes use
+the profile-aware adapter in `src/eve_lab/validation_cat9kv.py`. Palo Alto
+firewall nodes use `src/eve_lab/validation_panos.py`, and supported Nexus 9000v
+templates use `src/eve_lab/validation_nxos.py`. Panorama, IOS XR, and templates
+without an explicit adapter still fail preflight.
 
 | Type | Required fields beyond name/type/node | Optional fields |
 | --- | --- | --- |
@@ -40,10 +40,29 @@ other templates still fail preflight until explicit adapters are added.
 | `isis-adjacency` | `neighbor`, `state` | none |
 | `vrf-ping` | `vrf`, `destination` | `min_success_rate` (default 100) |
 | `mtu-ping` | `destination`, `packet_size`, `df` | `min_success_rate` (default 100) |
+| `cat9kv-dnac-bootstrap` | none | none |
+| `cat9kv-underlay` | none | `neighbors` |
 
 All types additionally accept the common `required` boolean. Unknown fields,
 wrong types, unsupported scopes and command-injection characters are rejected.
 Definitions are never rewritten to match observations.
+
+The two `cat9kv-*` checks are composite profile checks. They load the node's
+structured `configs/NODE-init.yaml`, including its workspace-relative
+management-registry reference, so bootstrap and validation use the same human
+intent. `cat9kv-dnac-bootstrap` verifies hostname/domain, AAA and privilege 15,
+SSHv2, NETCONF, the presence (but never the values) of RO and RW SNMP
+communities, direct privilege-15 AAA policy and access, RSA keys, management
+interface/address/state, management default route, declared licensing, and
+EVE-host reachability of SSH/22 and NETCONF/830.
+Passing evidence reports `DNAC_BOOTSTRAP_READY`.
+
+`cat9kv-underlay` verifies IP routing, the declared loopback and routed
+interfaces, OSPF process/router ID, point-to-point uplink network type, and
+declared neighbor states. The `neighbors` list is optional: omitting it proves
+only the node-local underlay intent, while declaring neighbors makes those
+adjacencies acceptance requirements. Passing evidence reports
+`UNDERLAY_READY`.
 
 - Routes are IPv4 only, with canonical CIDR prefixes, for example
   `192.0.2.0/24`. Host bits and netmask notation are rejected. `expected` is

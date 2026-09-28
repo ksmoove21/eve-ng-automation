@@ -62,6 +62,22 @@ NX-OS is supported through the reusable initializer and read-only validator. A N
 
 Implemented acceptance checks cover `mgmt0` address/state, management-VRF presence, default route/next hop, and management-VRF reachability. This is a known-good reference combination, not a guarantee for every NX-OS release. See [NX-OS platform notes](docs/platforms/nxos.md) for command forms, output behavior, and limitations.
 
+## Catalyst 9000v UADP support
+
+The EVE `cat9kvuadp` template has a dedicated structured initializer and
+read-only validator. The `dnac-bootstrap` profile configures Catalyst Center
+prerequisites, including management VRF addressing resolved from a
+workspace-owned registry, privilege-15 local authentication that does not
+require a normal post-login enable step, SSHv2, NETCONF,
+runtime-only SNMP communities, RSA keys, and declared Network/DNA licensing.
+The optional `ospf-underlay` profile adds explicitly declared loopback and
+routed uplink intent. License changes use a controlled save/reload/reacquire
+cycle and are verified after the reload.
+
+Validation exposes `DNAC_BOOTSTRAP_READY` and `UNDERLAY_READY` states without
+printing SNMP community values. See [Catalyst 9000v UADP platform notes](docs/platforms/cat9kv-uadp.md)
+for the schema, lifecycle behavior, and current live-tested image boundary.
+
 ## Repository operating model
 
 The intended workflow is:

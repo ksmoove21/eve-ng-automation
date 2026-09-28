@@ -22,3 +22,8 @@ historical record of how they were discovered.
 
 Keep platform-specific behavior out of generic engine modules unless the code is
 implemented through an explicit platform adapter.
+
+Current platform notes:
+
+- [Catalyst 9000v UADP](cat9kv-uadp.md)
+- [NX-OS / Nexus 9000v](nxos.md)

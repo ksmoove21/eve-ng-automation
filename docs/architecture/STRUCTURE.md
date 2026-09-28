@@ -201,9 +201,11 @@ Implemented primitives include:
 - MTU/DF reachability (IPv4)
 
 `validation.py` owns schema dispatch, node grouping, transport orchestration
-and reports. `validation_iosxe.py` owns new IOS XE primitive schemas, fixed
-read-only commands and structured parsers. Only `c8000v` is registered;
-future platform adapters must explicitly define and test their capabilities.
+and reports. Platform adapters own their schemas, fixed read-only commands and
+structured parsers. Registered adapters include IOS XE `c8000v`, Catalyst
+9000v UADP `cat9kvuadp`, supported Nexus 9000v templates, and PAN-OS firewall
+validation; future platform adapters must explicitly define and test their
+capabilities.
 See [../operations/validation.md](../operations/validation.md) for exact fields and limitations.
 
 Checks are required by default. Only an explicit human-authored

@@ -835,3 +835,27 @@ was preserved and excluded. Remaining unresolved facts are live management-pool
 occupancy, durable management allocation for that lab, exact host-by-host
 pnet/port-group mappings including Cloud1, and future DHCP stability. No live
 success is claimed.
+
+## 2026-09-28 - Cat9Kv-UADP bootstrap and underlay qualification
+
+The reusable `cat9kvuadp` adapter was qualified on image
+`cat9kvuadp-17.15.01` in a two-node disposable lab. Both nodes completed the
+structured DNAC bootstrap and OSPF underlay profiles, retained the requested
+Network and DNA license tiers across reload, and completed an idempotent rerun
+without another reload. A fresh console login entered privilege level 15
+directly through local AAA; the enable secret remains a recovery credential and
+was not sent during normal login.
+
+The final read-only acceptance run passed all eight declared checks. Both nodes
+reported `DNAC_BOOTSTRAP_READY` and `UNDERLAY_READY`; SSH and NETCONF probes,
+management state and default routes, OSPF FULL adjacency, learned peer-loopback
+routes, and five-of-five peer pings all passed. Secret values were neither
+printed nor recorded in evidence.
+
+Two image/host behaviors required explicit handling. The image's first license
+reload selected a `packages.conf` GRUB entry that failed with `invalid magic
+number`; recovery selects the explicit `VNGWC - GOLDEN IMAGE` entry only after
+matching that exact bounded failure and menu. Separately, the EVE host repeatedly
+placed healthy QEMU processes in a stopped state. Host administration resumed
+only the verified processes during qualification; the automation remains
+bounded and does not infer guest failure or mutate host processes itself.

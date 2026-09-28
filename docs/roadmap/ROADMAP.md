@@ -60,6 +60,7 @@ Initial targets:
 3. Cisco IOSv / IOSvL2
 4. MikroTik CHR
 5. Additional IOS XE variants as needed
+6. Cisco Catalyst 9000v UADP bootstrap and Catalyst Center readiness
 
 Each platform addition should define:
 
