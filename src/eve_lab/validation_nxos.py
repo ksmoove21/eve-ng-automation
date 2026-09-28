@@ -12,7 +12,7 @@ FIELDS = {
     'nxos-bgp-neighbor': {'neighbor', 'state', 'vrf', 'address_family'},
 }
 TOKEN = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]*\Z')
-INTERFACE_TOKEN = re.compile(r'(?:Ethernet|Eth|port-channel|Po)\d+(?:/\d+){0,2}\Z', re.I)
+INTERFACE_TOKEN = re.compile(r'(?:(?:Ethernet|Eth|port-channel|Po)\d+(?:/\d+){0,2}|(?:mgmt|Management)\d+)\Z', re.I)
 BGP_STATES = {'idle', 'connect', 'active', 'opensent', 'openconfirm', 'established'}
 
 def _token(value, field):
@@ -70,8 +70,8 @@ def command_for(c):
     if kind == 'nxos-interface': return 'show interface ' + c['interface']
     if kind == 'nxos-vlan': return 'show vlan id ' + str(c['vlan'])
     if kind == 'nxos-vrf': return 'show vrf'
-    if kind == 'nxos-route': return 'show ip route' + (' vrf ' + c['vrf'] if 'vrf' in c else '') + ' ' + c['prefix']
-    if kind == 'nxos-ping': return 'ping' + (' vrf ' + c['vrf'] if 'vrf' in c else '') + ' ' + c['destination'] + ' count 5 timeout 2'
+    if kind == 'nxos-route': return 'show ip route ' + c['prefix'] + (' vrf ' + c['vrf'] if 'vrf' in c else '')
+    if kind == 'nxos-ping': return 'ping ' + c['destination'] + (' vrf ' + c['vrf'] if 'vrf' in c else '') + ' count 5 timeout 2'
     if kind == 'nxos-vpc': return 'show vpc brief'
     if kind == 'nxos-port-channel': return 'show interface ' + c['port_channel']
     return 'show bgp' + (' vrf ' + c['vrf'] if 'vrf' in c else '') + ' ' + c.get('address_family', 'ipv4-unicast').replace('-', ' ') + ' summary'
@@ -94,8 +94,10 @@ def _route(text):
     return True, str(IPv4Network(rows[0], strict=True)), sorted({str(IPv4Address(x)) for x in re.findall(r'\bvia (\d+\.\d+\.\d+\.\d+)', text)})
 def _ping(text):
     text = _clean(text); rows = re.findall(r'(\d+(?:\.\d+)?)%\s*\((\d+)/(\d+)\)', text)
-    if len(rows) != 1 or int(rows[0][2]) != 5 or float(rows[0][0]) != int(rows[0][1]) * 20: raise RuntimeError('Unrecognized NX-OS ping result')
-    return int(float(rows[0][0]))
+    if len(rows) == 1 and int(rows[0][2]) == 5 and float(rows[0][0]) == int(rows[0][1]) * 20: return int(float(rows[0][0]))
+    unix = re.findall(r'(\d+) packets transmitted, (\d+) packets received, (\d+(?:\.\d+)?)% packet loss', text)
+    if len(unix) == 1 and int(unix[0][0]) == 5 and 0 <= float(unix[0][2]) <= 100: return int(round(100 - float(unix[0][2])))
+    raise RuntimeError('Unrecognized NX-OS ping result')
 def _vpc(text):
     text = _clean(text)
     def state(pattern):

@@ -9,11 +9,12 @@ I='Ethernet1/1 is up\nadmin state is up\nInternet Address is 192.0.2.1/24\n'
 V='VLAN Name Status Ports\n10 USERS active Ethernet1/1\n'
 R='192.0.2.0/24, ubest/mbest: 1/0\n *via 198.51.100.1, Ethernet1/1\n'
 P='Success rate is 100.00% (5/5)\n'
+PU='5 packets transmitted, 5 packets received, 0.00% packet loss\n'
 VP='vPC status : Enabled\nPeer status : peer adjacency formed ok\nConfiguration consistency status : success\n1 Po1 up 1-10\n'
 B='Neighbor V AS MsgRcvd MsgSent TblVer InQ OutQ Up/Down State/PfxRcd\n192.0.2.2 4 65002 1 1 1 0 0 00:01 5\n'
 class NxosTests(unittest.TestCase):
  def test_primitives_positive_and_negative(self):
-  cases=[(check('nxos-interface',interface='Ethernet1/1',admin_state='up',oper_state='up'),[I]),(check('nxos-vlan',vlan=10,state='active'),[V]),(check('nxos-vrf',vrf='BLUE'),['Name ID State Reason\nBLUE 2 Up --\n']),(check('nxos-route',prefix='192.0.2.0/24',expected='present',next_hop='198.51.100.1'),[R]),(check('nxos-ping',destination='192.0.2.2'),[P]),(check('nxos-vpc',state='up',peer_state='up',peer_link_state='up',consistency='up'),[VP]),(check('nxos-port-channel',port_channel='Po1',members=['Ethernet1/1','Ethernet1/49']),['Po1 is up\n','1 Po1(SU) LACP Ethernet1/1(P) Ethernet1/49(P)\n']),(check('nxos-bgp-neighbor',neighbor='192.0.2.2',state='established'),[B])]
+  cases=[(check('nxos-interface',interface='Ethernet1/1',admin_state='up',oper_state='up'),[I]),(check('nxos-interface',interface='mgmt0',admin_state='up',oper_state='up',address='192.0.2.1/24'),['mgmt0 is up\nadmin state is up\nInternet Address is 192.0.2.1/24\n']),(check('nxos-vlan',vlan=10,state='active'),[V]),(check('nxos-vrf',vrf='BLUE'),['Name ID State Reason\nBLUE 2 Up --\n']),(check('nxos-route',prefix='192.0.2.0/24',expected='present',next_hop='198.51.100.1'),[R]),(check('nxos-ping',destination='192.0.2.2'),[P]),(check('nxos-ping',destination='192.0.2.2'),[PU]),(check('nxos-vpc',state='up',peer_state='up',peer_link_state='up',consistency='up'),[VP]),(check('nxos-port-channel',port_channel='Po1',members=['Ethernet1/1','Ethernet1/49']),['Po1 is up\n','1 Po1(SU) LACP Ethernet1/1(P) Ethernet1/49(P)\n']),(check('nxos-bgp-neighbor',neighbor='192.0.2.2',state='established'),[B])]
   for intent,output in cases:
    c=MagicMock(); c.command.side_effect=output
    with self.subTest(intent=intent): self.assertEqual(_checks({'validation':[intent]}),[intent]); self.assertTrue(evaluate(c,intent)[0])

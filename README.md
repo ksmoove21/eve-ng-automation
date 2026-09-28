@@ -17,7 +17,7 @@ Compared with the upstream baseline, this fork currently adds:
 - read-only validation console acquisition hardened against real EVE/Telnet/IOS XE terminal behavior
 - the `iosxe-baseline` regression fixture
 - the `gre-vrf-validation` live integration lab
-- a persistent [Lessons Learned](Lessons%20Learned/README.md) changelog that records implementation findings, test evidence, and live EVE results
+- a persistent [Lessons Learned](docs/lessons/README.md) changelog that records implementation findings, test evidence, and live EVE results
 - explicit separation between topology intent, runtime reconciliation, initialization, and operational validation
 
 The reusable engine should remain hosting-platform agnostic. EVE-NG itself, DNS, routing to the EVE host, VPNs, cloud infrastructure, and firewall reachability are external prerequisites.
@@ -56,6 +56,11 @@ The live-tested reference used C8000V `17.16.01a`. All 13 declared acceptance ch
 The smaller `iosxe-baseline` lab remains the regression fixture for basic topology creation, IOS XE initialization, interface validation, and bidirectional ping validation.
 
 These are proven reference combinations, not claims that every EVE-NG/C8000V release behaves identically.
+## NX-OS proven reference
+
+NX-OS is supported through the reusable initializer and read-only validator. A Nexus 9000v / 9300v running NX-OS 10.5.2 was proven in a real EVE-NG integration. Bootstrap handles observed first-boot auto-provisioning, initial admin-password, and `login:` interactions using the existing `CISCO_*` credential model; it configures hostname, `mgmt0`, management VRF routing, the boot setting, and saves the configuration.
+
+Implemented acceptance checks cover `mgmt0` address/state, management-VRF presence, default route/next hop, and management-VRF reachability. This is a known-good reference combination, not a guarantee for every NX-OS release. See [NX-OS platform notes](docs/platforms/nxos.md) for command forms, output behavior, and limitations.
 
 ## Repository operating model
 

@@ -184,7 +184,7 @@ class Console:
         secret_prompts = set()
         pattern = (r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
-                   r'Username:\s*$|Password:\s*$|Would you like to enter[^\n]*[?:]\s*$|'
+                   r'Username:\s*$|login:\s*$|Password:\s*$|Abort Power On Auto Provisioning[^\n]*[?:]|Enter the password for [^\n]*admin[^\n]*:|Would you like to enter[^\n]*[?:]\s*$|'
                    r'Press RETURN to get started[^\n]*$|' + _PROMPT)
         probe = read_only
         for _ in range(12):
@@ -222,12 +222,17 @@ class Console:
             elif prompt.startswith('Enter your selection'):
                 wake = False
                 self.send('2')  # Save the initial secret to NVRAM and exit setup.
-            elif prompt.startswith('Username:'):
+            elif prompt.startswith('Username:') or prompt.lower().startswith('login:'):
                 self.send(username)
+                wake = False
+            elif re.match(r'Enter the password for .*admin', prompt, re.I):
+                self.send(password)
                 wake = False
             elif prompt.startswith('Password:'):
                 self.send(password)
                 wake = False
+            elif re.match(r'Abort Power On Auto Provisioning', prompt, re.I):
+                self.send('yes')
             elif prompt.startswith('Would you like'):
                 self.send('no')
             elif prompt.startswith('Press RETURN'):
