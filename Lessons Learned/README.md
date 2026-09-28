@@ -318,3 +318,43 @@ sentence, and changes no engine, test, lab, or live infrastructure state.
 Future durable Lessons Learned entries intended for general project history
 should be published from a current `main`-derived documentation branch unless
 the lesson is intentionally feature-branch-specific.
+
+## 2026-09-27 - Private context cleanup
+
+The private `ksmoove21/unsc-homelab` branch
+`automation/eve-environment-context` received the focused cleanup commit
+`510893b` (`docs: clean up private EVE context references`) and was pushed to
+origin. No context redesign and no live infrastructure action occurred.
+
+Changed private files:
+
+- `VSCode Labs/EVE-Workspace/context/current-state.yaml` now preserves the
+  PAN-OS intent observations while marking the referenced init and topology
+  files as local, excluded, untracked evidence with
+  `repository_available: false` and `repository_resolvable: false`.
+- `VSCode Labs/EVE-Workspace/README.md` now displays `AGENTS.md` and
+  `context/` in the workspace layout.
+- `VSCode Labs/EVE-Workspace/context/services-pod.yaml` now describes the
+  Services POD as intended integration context from prior design history, with
+  complete deployment unconfirmed. Existing ownership distinctions remain:
+  pod router parent/external, ISE lab-owned, Palo Alto and Catalyst Center
+  unresolved, and Nexus historical test-only.
+- `VSCode Labs/EVE-Workspace/context/cloud-mappings.yaml` now states that
+  host-by-host Cloud1/pnet1 exposure is unestablished and must be verified
+  before placing a node that requires Cloud1. pnet1 remains inferred/unknown.
+
+Offline verification:
+
+- All five context YAML files parsed successfully.
+- Eleven committed source references resolved.
+- The two excluded lab paths are not Git-tracked and are explicitly marked
+  non-repository-resolvable.
+- Workspace and context README links resolved.
+- Secret-pattern scan returned no matches.
+- `git diff --check` passed.
+
+The untracked `VSCode Labs/EVE-Workspace/labs/UNSC-Home-Replica-01` directory
+was preserved and excluded. Remaining unresolved facts are live management-pool
+occupancy, durable management allocation for that lab, exact host-by-host
+pnet/port-group mappings including Cloud1, and future DHCP stability. No live
+success is claimed.
