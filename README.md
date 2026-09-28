@@ -4,13 +4,13 @@ This repository is a fork of [wcmder/eve-ng](https://github.com/wcmder/eve-ng) t
 
 The goal is straightforward: a human or automation agent should be able to read the repository, understand the intended lab state, deploy it to an existing EVE-NG server, initialize supported devices, and prove the resulting network satisfies explicit acceptance criteria without guessing at hidden assumptions.
 
-> **Start here if you are a human or AI worker:** read [AGENTS.md](AGENTS.md), then [structure.md](structure.md), then [Lessons Learned/README.md](Lessons%20Learned/README.md) before making changes.
+> **Start here:** humans should begin with [Project Intent](docs/architecture/PROJECT-INTENT.md). Coding agents should begin with [AGENTS.md](AGENTS.md), which points to the small set of authoritative architecture documents.
 
 ## What this fork adds
 
 Compared with the upstream baseline, this fork currently adds:
 
-- repository-wide architecture and safety conventions in `structure.md`
+- repository-wide architecture and safety conventions in `docs/architecture/STRUCTURE.md`
 - Windows PowerShell as a first-class control environment
 - declarative lab acceptance criteria under `validation:`
 - structured IOS XE validation for interface state, ping, route presence/absence, default route, BGP, OSPF, IS-IS, VRF ping, and MTU/DF ping
@@ -197,7 +197,7 @@ If a topology references an unavailable image, change the lab definition deliber
 python -m unittest discover -s tests -v
 ```
 
-Some inherited upstream tests still contain POSIX-specific assumptions. See `structure.md` for the current portability notes; do not confuse inherited chmod/`geteuid` test debt with a live EVE failure.
+Some inherited upstream tests still contain POSIX-specific assumptions. See `docs/architecture/STRUCTURE.md` for the current portability notes; do not confuse inherited chmod/`geteuid` test debt with a live EVE failure.
 
 ### 6. Exercise the live validation fixture
 
@@ -220,16 +220,16 @@ Do not run live or destructive commands against an EVE instance you do not own o
 Before changing code:
 
 1. Read `AGENTS.md`.
-2. Read `structure.md`.
-3. Read the latest relevant entries in `Lessons Learned/README.md`.
-4. Inspect the existing implementation before proposing a new abstraction.
+2. Follow the architecture documents under `docs/architecture/`.
+3. Read only the lessons and platform/operation documentation relevant to the sprint.
+4. Inspect the existing implementation and APIs before proposing a new abstraction.
 5. Keep environment-specific values in lab definitions, not generic engine code.
 
 Do not:
 
 - change expected topology or validation intent merely to make a failing test pass
 - weaken read-only validation safeguards
-- perform live EVE operations without explicit human authorization
+- cross outside the designated disposable EVE test boundary without explicit authorization
 - log secrets or full sensitive device configuration
 - assume an upstream/community behavior is identical to this fork
 - broaden terminal-sequence handling without evidence and regression coverage
@@ -242,12 +242,14 @@ When changing engine behavior, add focused offline tests first and clearly disti
 | Path | Purpose |
 | --- | --- |
 | `AGENTS.md` | Short mandatory instructions for coding/AI agents |
-| `structure.md` | Architecture, safety rules, platform boundaries, testing and Git workflow |
-| `Lessons Learned/README.md` | Changelog-style implementation and live-evidence record |
-| `docs/validation.md` | Validation schema, primitives, evidence and limitations |
-| `docs/ROADMAP.md` | Project direction and phased goals |
-| `docs/ENVIRONMENT.md` | Current UNSC environment assumptions/reference |
-| `docs/BASELINE_VALIDATION_WINDOWS.md` | Windows baseline/testing notes |
+| `docs/architecture/PROJECT-INTENT.md` | Why the project exists and who owns which decisions |
+| `docs/architecture/STRUCTURE.md` | Repository and engineering conventions |
+| `docs/architecture/EXECUTION-MODEL.md` | Sprint autonomy, sandbox authority, and stop conditions |
+| `docs/platforms/` | Durable platform-specific behavior and support notes |
+| `docs/operations/validation.md` | Validation schema, primitives, evidence and limitations |
+| `docs/operations/environment.md` | Environment/operator guidance |
+| `docs/roadmap/ROADMAP.md` | Project direction and phased goals |
+| `docs/lessons/README.md` | Chronological implementation and live-evidence record |
 | `labs/iosxe-baseline/` | Minimal known-good regression lab |
 | `labs/gre-vrf-validation/` | Full IOS XE operational validation fixture |
 | `src/eve_lab/` | Shared Python engine |
@@ -255,7 +257,7 @@ When changing engine behavior, add focused offline tests first and clearly disti
 
 ## Upstream-derived command reference
 
-The sections below retain the broader command and engine documentation inherited from the original project, updated over time by this fork. When this front matter and older examples differ, prefer the repository conventions in `structure.md` and the live evidence in `Lessons Learned/README.md`.
+The sections below retain the broader command and engine documentation inherited from the original project, updated over time by this fork. When this front matter and older examples differ, prefer the repository conventions in `docs/architecture/STRUCTURE.md` and the live evidence in `docs/lessons/README.md`.
 
 ## Setup
 

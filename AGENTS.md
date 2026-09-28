@@ -1,15 +1,13 @@
 # Repository guidance
 
-Read [structure.md](structure.md) before changing this repository.
+Read [PROJECT-INTENT.md](docs/architecture/PROJECT-INTENT.md), [STRUCTURE.md](docs/architecture/STRUCTURE.md), and [EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md) before changing this repository.
 
 This project extends the operating model of upstream `wcmder/eve-ng`; it does
 not replace it. Preserve the inherited declarative lab workflow and extend it
 with additional platform support, validation, orchestration, and reusable
 network-lab capabilities.
 
-Follow `structure.md` for architecture, lab-definition, reconciliation,
-validation, testing, platform-support, execution-boundary, and Git workflow
-conventions.
+Use `PROJECT-INTENT.md` for purpose, `STRUCTURE.md` for repository and engineering conventions, and `EXECUTION-MODEL.md` for sprint autonomy and authorization boundaries.
 
 ## Sprint execution contract
 
@@ -44,5 +42,4 @@ Preserve unrelated user edits. Do not weaken validation or silently change
 human-authored intent to make a lab pass. Do not claim live success without
 live evidence.
 
-When the owner changes a repository convention, update `structure.md`
-alongside the implementation.
+When the owner changes a durable project convention, update the owning document under `docs/architecture/` alongside the implementation.

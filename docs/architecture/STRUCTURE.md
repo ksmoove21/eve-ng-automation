@@ -9,67 +9,15 @@ automation belongs under `src/eve_lab/`.
 
 Read this file before changing the repository. Preserve unrelated user edits.
 
-## Project intent
+## Project intent and execution model
 
-This fork extends the operating model of upstream `wcmder/eve-ng`; it does
-not replace it. The inherited lifecycle remains the foundation:
+The project purpose and human/agent division of responsibility live in
+[PROJECT-INTENT.md](PROJECT-INTENT.md).
 
-```text
-lab definition + configs
-        |
-        v
-eve plan
-        |
-        v
-eve apply
-        |
-        v
-eve start
-        |
-        v
-eve init
-        |
-        v
-eve validate
-```
+The sprint lifecycle, sandbox authority, and stop conditions live in
+[EXECUTION-MODEL.md](EXECUTION-MODEL.md).
 
-New work should make that model do more: support more network operating
-systems, automate more initialization and lifecycle behavior, express more
-network features, and prove more of the resulting network state.
-
-The development workflow is iterative and continues through real integration
-testing when the capability interacts with EVE-NG or a guest NOS:
-
-```text
-network engineering intent
-        |
-        v
-Git lab definition / engine change
-        |
-        v
-offline implementation + tests
-        |
-        v
-EVE deployment
-        |
-        v
-real NOS initialization
-        |
-        v
-read-only acceptance validation
-        |
-        +---- FAIL ----> diagnose -> repair -> redeploy/retest
-        |                                      |
-        +--------------------------------------+
-        |
-        v
-PASS with evidence
-```
-
-Git is the durable source of truth. AI assistants, editors, Codex, and local
-shells are implementation tools, not authoritative state.
-
-The platform should outlive any particular agent or development environment.
+This file owns repository structure and engineering conventions.
 
 ## Core invariants
 
@@ -93,38 +41,9 @@ The platform should outlive any particular agent or development environment.
 
 ## Development sandbox and autonomy
 
-A designated disposable EVE development/test lab is test infrastructure, not
-production infrastructure.
-
-When a sprint targets a capability that is intended to operate against EVE-NG
-or a network operating system and an appropriate test image/environment is
-available, the coding agent is expected to carry the sprint through:
-
-1. implement the smallest coherent change;
-2. run focused offline/unit tests;
-3. deploy or reconcile a focused EVE test fixture;
-4. start the required nodes and wait for usable device readiness;
-5. initialize/configure the guest through the automation being developed;
-6. execute the declared acceptance validation;
-7. capture failures and relevant evidence;
-8. repair implementation defects that remain within the agreed intent;
-9. repeat the offline and live tests until the acceptance criteria pass;
-10. run final regression tests and report the evidence.
-
-Intermediate failures do not require owner input merely because they occurred.
-They are part of the engineering loop.
-
-Autonomous sandbox authority includes creating, applying, starting, stopping,
-initializing, configuring, validating, resetting, recreating, and deleting
-objects and guest devices that belong to the designated disposable test lab.
-
-That authority does not include the EVE host operating system, vSphere,
-physical network devices, production or shared firewalls/routing, shared
-services, or persistent labs that were not designated for automation testing.
-
-Escalate only when remediation would materially change the agreed architecture
-or human-authored intent, cross the authorization boundary, require unavailable
-credentials/resources, or remain blocked after reasonable troubleshooting.
+See [EXECUTION-MODEL.md](EXECUTION-MODEL.md). The designated disposable EVE
+development lab is part of the integration-test harness; parent and persistent
+infrastructure remain outside that standing authority.
 
 ## Repository layers
 
@@ -285,7 +204,7 @@ Implemented primitives include:
 and reports. `validation_iosxe.py` owns new IOS XE primitive schemas, fixed
 read-only commands and structured parsers. Only `c8000v` is registered;
 future platform adapters must explicitly define and test their capabilities.
-See [docs/validation.md](docs/validation.md) for exact fields and limitations.
+See [../operations/validation.md](../operations/validation.md) for exact fields and limitations.
 
 Checks are required by default. Only an explicit human-authored
 `required: false` makes a failed check advisory; its failure remains visible.
@@ -565,7 +484,7 @@ understandable and operable without AI.
 ## Lessons learned changelog
 
 Record reusable implementation, test, and live-operation lessons in
-[`Lessons Learned/README.md`](Lessons%20Learned/README.md) at meaningful sprint
+[`../lessons/README.md`](../lessons/README.md) at meaningful sprint
 boundaries or when live testing reveals a reusable platform/environment
 behavior. Do not append an entry merely because an intermediate prompt or
 implementation step completed.
@@ -581,7 +500,7 @@ commit/push/merge status. Code diffs may be summarized; do not omit the other
 review evidence.
 
 This changelog is the only repository file an agent may automatically commit and
-push. Such commits must stage only `Lessons Learned/README.md`; all engine, lab,
+push. Such commits must stage only `docs/lessons/README.md`; all engine, lab,
 test, documentation, and unrelated working-tree changes remain outside that
 commit. A task-specific instruction not to merge still applies to the working
 branch.
