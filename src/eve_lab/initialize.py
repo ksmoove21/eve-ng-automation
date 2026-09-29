@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 import paramiko
 
 from .config import load_server
-from . import iosxe_kg
+from . import iosxe_ipsec
 from .deploy import lab_path, named
 from .device_console import Console, credentials
 from .palo_ssh import management_targets, connect_palo
@@ -19,6 +19,17 @@ from .initialize_cat9kv import (
     Cat9kvConsole, TEMPLATE as CAT9KV_TEMPLATE,
     load_bootstrap as load_cat9kv_bootstrap, runtime_secrets as cat9kv_secrets,
 )
+
+
+IOS_TEMPLATES = ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol')
+
+
+def telnet_console_url(node):
+    """Return a usable serial URL, including EVE's blank native-IOL mode."""
+    url = urlsplit(node.get('url', ''))
+    mode = node.get('console')
+    native_iol = node.get('template') == 'iol' and mode in ('', None)
+    return url if (mode == 'telnet' or native_iol) and url.scheme == 'telnet' and url.port else None
 
 
 class PaloConsole(Console):
@@ -269,16 +280,16 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
         template = node.get('template')
         address = targets.get(name) if template in ('paloalto', 'panorama') else None
         reason = None
-        if template not in ('c8000v', CAT9KV_TEMPLATE, 'nxosv9k', 'nxosv9k-9300v', 'paloalto', 'panorama'):
+        if template not in (IOS_TEMPLATES + (CAT9KV_TEMPLATE, 'nxosv9k', 'nxosv9k-9300v', 'paloalto', 'panorama')):
             reason = 'Unsupported init template: ' + str(template)
-        elif node.get('console') != 'telnet' and not address:
+        elif not telnet_console_url(node) and node.get('console') != 'telnet' and not address:
             reason = 'Console type ' + str(node.get('console')) + ' is unsupported; init requires a working Telnet serial console'
             if template in ('paloalto', 'panorama'):
                 reason += '; stop the node and run eve init <lab> --node <name> --prepare-console, or use --management-ip after initial setup'
         elif not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*', name):
             reason = 'Node name is not a safe config filename'
-        kg_profile = template == 'c8000v' and (base / (name + '-init.yaml')).is_file()
-        yaml_init = kg_profile or template in ('nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE)
+        iosxe_ipsec_profile = template in IOS_TEMPLATES and (base / (name + '-init.yaml')).is_file()
+        yaml_init = iosxe_ipsec_profile or template in ('nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE)
         path = (base / (name + ('-init.yaml' if yaml_init else '-init.cfg'))).resolve()
         if not reason and (not path.is_relative_to(base) or not path.is_file()):
             reason = 'Missing init file: configs/' + name + ('-init.yaml' if yaml_init else '-init.cfg')
@@ -290,8 +301,8 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
             commands = load_nxos_bootstrap(path)
         elif template == CAT9KV_TEMPLATE:
             commands = load_cat9kv_bootstrap(path, root)
-        elif kg_profile:
-            commands = iosxe_kg.render(iosxe_kg.load_profile(path), root)
+        elif iosxe_ipsec_profile:
+            commands = iosxe_ipsec.render(iosxe_ipsec.load_profile(path), root)
         else:
             commands = config_commands(path, template)
         service_path = (base / (name + '-services.cfg')).resolve()
@@ -305,8 +316,8 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 commands += services
         if template == 'panorama' and not address:
             validate_panorama_network(commands)
-        url = urlsplit(node.get('url', ''))
-        if not address and (node.get('console') != 'telnet' or url.scheme != 'telnet' or not url.port):
+        url = telnet_console_url(node)
+        if not address and not url:
             raise ValueError('No Telnet console URL advertised for ' + name)
         if str(node.get('status')) == '0':
             raise ValueError('Start ' + name + ' with eve start before initialization')
@@ -350,12 +361,12 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 else:
                     console.login(*login)
                 if template == 'c8000v' and (base / (name + '-init.yaml')).is_file():
-                    if iosxe_kg.prepare_license(console):
+                    if iosxe_ipsec.prepare_license(console):
                         channel.close()
                         channel = _open_telnet_console(ssh, port)
                         console = Console(channel, boot_timeout=timeout)
                         console.login(*login)
-                        iosxe_kg.verify_license(console)
+                        iosxe_ipsec.verify_license(console)
                         result['reloaded'].append(name)
                 print('Applying init to ' + name + '...', file=sys.stderr, flush=True)
                 if template == CAT9KV_TEMPLATE:
@@ -376,7 +387,7 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 else:
                     console.initialize(commands, username=login[0], password=login[1])
                 result['completed'].append(name)
-                if template in ('c8000v', CAT9KV_TEMPLATE):
+                if template in IOS_TEMPLATES + (CAT9KV_TEMPLATE,):
                     try:
                         result['interface_status'][name] = console.interface_status()
                     except (RuntimeError, ValueError, OSError, paramiko.SSHException):

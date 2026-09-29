@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 
 from eve_lab.client import EveAPIError, EveClient
 from eve_lab.deploy import apply, delete, lab_path, lifecycle
-from eve_lab.topology import expand_links, load_lab_target, validate
+from eve_lab.topology import expand_links, interface_key, load_lab_target, load_topology, validate
 
 
 class FakeEve:
@@ -18,7 +18,8 @@ class FakeEve:
         self.networks = {}
         self.ports = {}
         self.writes = []
-        self.images = {"c8000v-17.15.06": "c8000v-17.15.06"}
+        self.images = {"c8000v-17.15.06": "c8000v-17.15.06",
+                       "iol-xe-l3-17.16.01a.bin": "iol-xe-l3-17.16.01a.bin"}
         self.fail_link = False
         self.list_ports = False
 
@@ -26,7 +27,7 @@ class FakeEve:
         if method in ("POST", "PUT", "DELETE") or path.endswith(("/start", "/stop")):
             self.writes.append((method, path, copy.deepcopy(payload)))
         if path.startswith("list/templates/"):
-            return {"type": "qemu", "options": {
+            return {"type": "iol" if path.endswith("/iol") else "qemu", "options": {
                 "image": {"list": self.images}, "ram": {"value": 6144},
                 "cpu": {"value": 2}, "ethernet": {"value": 4}}}
         if path == "list/networks":
@@ -62,7 +63,8 @@ class FakeEve:
                 if kind == "nodes":
                     objects[ident]["status"] = 0
                     # Deliberately nonzero/noncontiguous ID: never guess from Gi1.
-                    self.ports[ident] = {"7": {"name": "Gi1", "network_id": 0}}
+                    port_name = "e0/0" if payload["type"] == "iol" else "Gi1"
+                    self.ports[ident] = {"7": {"name": port_name, "network_id": 0}}
                 return None
         if method == "DELETE" and "/networks/" in path:
             ident = path.split("/networks/")[1]
@@ -132,6 +134,34 @@ class DeploymentTests(unittest.TestCase):
         apply(self.client, self.topology)
         self.assertEqual(self.client.nodes["1"]["cpulimit"], 1)
         self.assertFalse(self.client.writes)
+
+    def test_topology_accepts_native_iol_nodes(self):
+        topology = copy.deepcopy(self.topology)
+        topology['nodes'][0].update(template='iol', type='iol', image='iol-xe-l3-17.16.01a.bin')
+        topology['links'][0]['interface'] = 'Ethernet0/0'
+        validate(topology)
+        apply(self.client, topology)
+        self.assertNotIn('cpulimit', self.client.nodes['1'])
+        topology['nodes'][0]['type'] = 'docker'
+        with self.assertRaisesRegex(ValueError, 'QEMU and IOL'):
+            validate(topology)
+
+    def test_interface_keys_normalize_iol_and_ios_abbreviations(self):
+        self.assertEqual(interface_key('Ethernet0/0'), interface_key('e0/0'))
+        self.assertEqual(interface_key('FastEthernet0/1'), interface_key('Fa0/1'))
+        self.assertEqual(interface_key('GigabitEthernet1'), interface_key('Gi1'))
+
+    def test_named_scenario_retains_one_lab_identity(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            scenarios = root / 'labs' / 'palo-lab' / 'scenarios'
+            scenarios.mkdir(parents=True)
+            (scenarios / 'phase-1.yaml').write_text(
+                'name: palo-lab\nnodes: []\nnetworks: []\nlinks: []\n')
+            loaded = load_topology(root, 'palo-lab', 'phase-1')
+            self.assertEqual(loaded['name'], 'palo-lab')
+            with self.assertRaisesRegex(ValueError, 'Scenario names'):
+                load_topology(root, 'palo-lab', '../other')
 
     def test_pro_stop_mode_fallback(self):
         apply(self.client, self.topology)

@@ -8,7 +8,15 @@ import yaml
 
 
 def interface_key(name: str) -> str:
-    return re.sub(r"^(gigabitethernet|gi|g)(?=\d)", "gi", name.lower().replace(" ", ""))
+    key = name.lower().replace(" ", "")
+    aliases = (
+        (r"^(gigabitethernet|gi|g)(?=\d)", "gi"),
+        (r"^(fastethernet|fa|f)(?=\d)", "fa"),
+        (r"^(ethernet|et|e)(?=\d)", "e"),
+    )
+    for pattern, replacement in aliases:
+        key = re.sub(pattern, replacement, key)
+    return key
 
 
 def validate_folder(folder):
@@ -92,8 +100,8 @@ def validate(topology: dict):
         if "icon" in node and (not isinstance(node["icon"], str) or not node["icon"].strip()
                                or any(c in node["icon"] for c in ("/", "\\", "\n", "\r"))):
             raise ValueError("icon must be an EVE icon basename")
-        if node["type"] != "qemu":
-            raise ValueError("Deployment currently supports QEMU nodes only")
+        if node["type"] not in ("qemu", "iol"):
+            raise ValueError("Deployment currently supports QEMU and IOL nodes only")
         if "/" in node["image"] or "\\" in node["image"]:
             raise ValueError("image must be a directory basename, not a path")
         for field in ("cpu", "ram", "ethernet"):
@@ -111,11 +119,14 @@ def validate(topology: dict):
         endpoints.add(endpoint)
 
 
-def load_topology(root: Path, lab: str) -> dict:
+def load_topology(root: Path, lab: str, scenario=None) -> dict:
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", lab):
         raise ValueError("Lab names may contain letters, digits, underscores, and hyphens")
-    topology = yaml.safe_load((root / "labs" / lab / "topology.yaml").read_text())
+    if scenario is not None and not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", scenario):
+        raise ValueError("Scenario names may contain letters, digits, underscores, and hyphens")
+    filename = Path("topology.yaml") if scenario is None else Path("scenarios") / (scenario + ".yaml")
+    topology = yaml.safe_load((root / "labs" / lab / filename).read_text())
     if not isinstance(topology, dict) or topology.get("name") != lab:
-        raise ValueError("Topology name must match its lab directory")
+        raise ValueError("Topology name must match its lab directory for every scenario")
     validate(topology)
     return topology

@@ -1,11 +1,11 @@
 """IOS XE acceptance commands and parsers; no configuration operations.
 
-Only c8000v is enabled by the orchestrator. New platform adapters must provide
-explicit capabilities rather than inheriting IOS syntax by template guessing.
+The orchestrator enables this adapter only for its explicit IOS-family template
+registry. Other platforms must provide explicit capabilities.
 """
 from ipaddress import IPv4Address, IPv4Network, ip_address
 import re
-from . import validation_kg
+from . import validation_ipsec
 
 
 FIELDS = {
@@ -17,7 +17,7 @@ FIELDS = {
     'vrf-ping': {'vrf', 'destination', 'min_success_rate'},
     'mtu-ping': {'destination', 'packet_size', 'df', 'min_success_rate'},
 }
-FIELDS.update(validation_kg.FIELDS)
+FIELDS.update(validation_ipsec.FIELDS)
 FIELDS.update({"iosxe-vlan": {"vlan"}, "iosxe-switchport": {"interface", "mode", "vlans"}})
 BGP_STATES = {'idle', 'connect', 'active', 'opensent', 'openconfirm', 'established'}
 OSPF_STATES = {'down', 'attempt', 'init', '2way', 'exstart', 'exchange', 'loading', 'full'}
@@ -31,8 +31,8 @@ def _token(value, field):
 def validate_check(check):
     """Reject unsupported intent before connecting; never normalize caller data."""
     kind = check['type']
-    if kind in validation_kg.FIELDS:
-        return validation_kg.validate_check(check)
+    if kind in validation_ipsec.FIELDS:
+        return validation_ipsec.validate_check(check)
     if kind == "iosxe-vlan":
         if type(check.get("vlan")) is not int or not 1 <= check["vlan"] <= 4094:
             raise ValueError("vlan must be an integer from 1 to 4094")
@@ -269,8 +269,8 @@ def command_for(check):
 
 def evaluate(console, check):
     """Return measured evidence, failing closed on unsupported output."""
-    if check["type"] in validation_kg.FIELDS:
-        return validation_kg.evaluate(console, check)
+    if check["type"] in validation_ipsec.FIELDS:
+        return validation_ipsec.evaluate(console, check)
     validate_check(check)
     if check["type"] in ("iosxe-vlan", "iosxe-switchport"):
         return _evaluate_l2(console, check)

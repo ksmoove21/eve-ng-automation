@@ -94,6 +94,8 @@ def main():
             command.description = "Stop all remote nodes and permanently delete the entire remote lab. Local files are kept."
         if name == "apply":
             command.add_argument("--prune", action=argparse.BooleanOptionalAction, default=True, help="Reconcile stopped nodes and prune unused objects (default: enabled); preserve running node settings and ports")
+        if name in ("plan", "apply", "start", "validate"):
+            command.add_argument("--scenario", help="Load labs/<lab>/scenarios/<name>.yaml while retaining the same remote lab identity")
         if name == "start":
             command.add_argument("--node", help="Start only this remote node by exact name")
         if name == "stop":
@@ -156,7 +158,8 @@ def main():
         if args.command in ("stop", "backup", "restore", "init", "bootstrap") or (args.command == "start" and args.node):
             topology = load_lab_target(args.root, args.lab, getattr(args, "remote_folder", None))
         else:
-            topology = load_topology(args.root, args.lab) if getattr(args, "lab", None) else None
+            topology = (load_topology(args.root, args.lab, getattr(args, "scenario", None))
+                        if getattr(args, "lab", None) else None)
         if args.command == "plan":
             result = plan(topology, server)
         else:

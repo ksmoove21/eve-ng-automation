@@ -329,7 +329,7 @@ separate, read-only operation.
 
 ## Protected IOS-XE and service validation
 
-See [IOS-XE KG](../platforms/iosxe-kg.md) for `kg-boundary` requirements and
+See [IOS and IOS-XE route-based IPsec](../platforms/iosxe-ipsec.md) for `iosxe-ipsec` requirements and
 layer-specific evidence. The test source address is explicit so the probe
 represents declared PT traffic through downstream security policy.
 

@@ -4,24 +4,24 @@ import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 import yaml
-from eve_lab import iosxe_kg, validation_kg, validation_iosxe
+from eve_lab import iosxe_ipsec, validation_ipsec, validation_iosxe
 from eve_lab.validation import _checks
 
-PROFILE = dict(profile="kg-ipsec", hostname="KG-A", ct=dict(interface="GigabitEthernet1", address="192.0.2.1/30", peer="192.0.2.2"), pt=dict(interface="GigabitEthernet2", address="198.51.100.1/30"), tunnel=dict(interface="Tunnel10", address="203.0.113.1/30"), psk_env="LAB_PSK", routes=[])
-CHECK = dict(name="boundary",node="KG-A",type="kg-boundary",ct_interface="GigabitEthernet1",ct_peer="192.0.2.2",ct_prefix="192.0.2.0/30",pt_interface="GigabitEthernet2",tunnel="Tunnel10",remote_prefixes=["198.51.100.8/30"],local_prefixes=["198.51.100.0/30"],pt_destination="198.51.100.9",pt_source="198.51.100.1")
+PROFILE = dict(profile="iosxe-ipsec", hostname="VPN-A", underlay=dict(interface="GigabitEthernet1", address="192.0.2.1/30", peer="192.0.2.2"), inside=dict(interface="GigabitEthernet2", address="198.51.100.1/30"), tunnel=dict(interface="Tunnel10", address="203.0.113.1/30"), psk_env="LAB_PSK", routes=[])
+CHECK = dict(name="boundary",node="VPN-A",type="iosxe-ipsec",underlay_interface="GigabitEthernet1",peer="192.0.2.2",underlay_prefix="192.0.2.0/30",inside_interface="GigabitEthernet2",tunnel="Tunnel10",remote_prefixes=["198.51.100.8/30"],local_prefixes=["198.51.100.0/30"],protected_destination="198.51.100.9",protected_source="198.51.100.1")
 
-class KgTests(unittest.TestCase):
+class IosxeIpsecTests(unittest.TestCase):
     def load(self, data):
         with tempfile.TemporaryDirectory() as root:
             path=Path(root)/"init.yaml";path.write_text(yaml.safe_dump(data))
-            return iosxe_kg.load_profile(path)
+            return iosxe_ipsec.load_profile(path)
 
-    def test_profile_renders_ct_global_pt_red_and_passive_rip(self):
+    def test_profile_renders_global_underlay_red_inside_and_passive_rip(self):
         data=self.load(PROFILE)
-        with patch("eve_lab.iosxe_kg.environment_values",return_value={"LAB_PSK":"a"*32}):
-            commands=iosxe_kg.render(data,Path("."))
-        ct=commands[commands.index("interface GigabitEthernet1"):commands.index("interface GigabitEthernet2")]
-        self.assertNotIn("vrf forwarding Red",ct)
+        with patch("eve_lab.iosxe_ipsec.environment_values",return_value={"LAB_PSK":"a"*32}):
+            commands=iosxe_ipsec.render(data,Path("."))
+        underlay=commands[commands.index("interface GigabitEthernet1"):commands.index("interface GigabitEthernet2")]
+        self.assertNotIn("vrf forwarding Red",underlay)
         self.assertEqual(commands.count("vrf forwarding Red"),2)
         self.assertNotIn("tunnel vrf Red",commands)
         self.assertIn("match fvrf global",commands)
@@ -29,38 +29,60 @@ class KgTests(unittest.TestCase):
         self.assertNotIn("passive-interface Tunnel10",commands)
         self.assertLess(commands.index("address-family ipv4 vrf Red"),commands.index("network 198.51.100.0"))
 
+    def test_iol_ethernet_interfaces_are_supported(self):
+        profile = copy.deepcopy(PROFILE)
+        profile['underlay']['interface'] = 'Ethernet0/0'
+        profile['inside']['interface'] = 'Ethernet0/1'
+        self.assertEqual(self.load(profile)['underlay']['interface'], 'Ethernet0/0')
+        check = {**CHECK, 'underlay_interface': 'Ethernet0/0', 'inside_interface': 'Ethernet0/1'}
+        self.assertEqual(_checks({'validation': [check]}), [check])
+
+    def test_ikev1_profile_uses_isakmp_and_removes_ikev2_binding(self):
+        profile = {**copy.deepcopy(PROFILE), 'ike_version': 1}
+        data = self.load(profile)
+        with patch("eve_lab.iosxe_ipsec.environment_values", return_value={"LAB_PSK": "a" * 32}):
+            commands = iosxe_ipsec.render(data, Path("."))
+        self.assertIn("crypto isakmp policy 10", commands)
+        self.assertIn("crypto isakmp key " + "a" * 32 + " address 192.0.2.2", commands)
+        self.assertIn("no set ikev2-profile IPSEC-IKE", commands)
+        self.assertNotIn("crypto ikev2 proposal IPSEC-PROPOSAL", commands)
+
+    def test_profile_rejects_invalid_ike_version(self):
+        with self.assertRaisesRegex(ValueError, "ike_version"):
+            self.load({**copy.deepcopy(PROFILE), 'ike_version': 3})
+
     def test_profile_rejects_overlap_invalid_peer_and_extra_fields(self):
-        for mutate in (lambda d:d.update(role="kg"),lambda d:d["pt"].update(address="192.0.2.1/30"),lambda d:d["ct"].update(peer="192.0.2.1"),lambda d:d["ct"].update(interface="Gi1; reload"),lambda d:d.update(routes=[dict(prefix="192.0.2.0/30",next_hop="198.51.100.2")])):
+        for mutate in (lambda d:d.update(role="appliance"),lambda d:d["inside"].update(address="192.0.2.1/30"),lambda d:d["underlay"].update(peer="192.0.2.1"),lambda d:d["underlay"].update(interface="Gi1; reload"),lambda d:d.update(routes=[dict(prefix="192.0.2.0/30",next_hop="198.51.100.2")])):
             data=copy.deepcopy(PROFILE);mutate(data)
             with self.assertRaises(ValueError):self.load(data)
 
     def test_secret_is_required_and_not_in_error(self):
         for key in ("", "secret with newline\n", "x"):
-            with patch("eve_lab.iosxe_kg.environment_values",return_value={"LAB_PSK":key}):
-                with self.assertRaises(ValueError) as error:iosxe_kg.render(PROFILE,Path("."))
+            with patch("eve_lab.iosxe_ipsec.environment_values",return_value={"LAB_PSK":key}):
+                with self.assertRaises(ValueError) as error:iosxe_ipsec.render(PROFILE,Path("."))
                 self.assertNotIn("secret with newline",str(error.exception))
 
     def test_license_boot_transition_requires_save_and_observed_reload(self):
         c=MagicMock();c.command.side_effect=lambda command,**kw: 'License Level: \n' if command=='show version' else '[OK]'
-        self.assertTrue(iosxe_kg.prepare_license(c))
+        self.assertTrue(iosxe_ipsec.prepare_license(c))
         self.assertEqual(c.expect.call_count,2)
         self.assertEqual(c.pending,'')
         c=MagicMock();c.command.return_value='License Level: network-essentials\n'
-        self.assertFalse(iosxe_kg.prepare_license(c))
+        self.assertFalse(iosxe_ipsec.prepare_license(c))
         c.send.assert_not_called()
         c=MagicMock();c.command.side_effect=lambda command,**kw: 'License Level: \n' if command=='show version' else ''
-        with self.assertRaisesRegex(RuntimeError,'save was not confirmed'):iosxe_kg.prepare_license(c)
+        with self.assertRaisesRegex(RuntimeError,'save was not confirmed'):iosxe_ipsec.prepare_license(c)
         c.send.assert_not_called()
 
-    def test_kg_acceptance_schema(self):
+    def test_ipsec_acceptance_schema(self):
         self.assertEqual(_checks(dict(validation=[CHECK])),[CHECK])
-        for key,value in (("remote_prefixes",[]),("ct_peer","bad"),("tunnel","Tunnel10\nreload")):
+        for key,value in (("remote_prefixes",[]),("peer","bad"),("tunnel","Tunnel10\nreload")):
             c={**CHECK,key:value}
             with self.assertRaises(ValueError):_checks(dict(validation=[c]))
 
     def test_empty_response_fails_every_layer(self):
         console=MagicMock();console.command.return_value=""
-        passed,evidence=validation_kg.evaluate(console,CHECK)
+        passed,evidence=validation_ipsec.evaluate(console,CHECK)
         self.assertFalse(passed)
         self.assertEqual(len(evidence["failed_layers"]),8)
         for call in console.command.call_args_list:
@@ -75,7 +97,7 @@ class KgTests(unittest.TestCase):
 
 
 
-class KgEvidenceTests(unittest.TestCase):
+class IosxeIpsecEvidenceTests(unittest.TestCase):
     def responses(self):
         ping="Success rate is 100 percent (5/5)\n"
         route='Routing entry for 198.51.100.8/30\n Known via "rip", distance 120, metric 1\n Routing Descriptor Blocks:\n * 203.0.113.2, from 203.0.113.2\n Route metric is 1, traffic share count is 1\n'
@@ -85,7 +107,7 @@ class KgEvidenceTests(unittest.TestCase):
             "show ip vrf interfaces":"Interface IP-Address VRF Protocol\nGigabitEthernet2 198.51.100.1 Red up\nTunnel10 203.0.113.1 Red up\n",
             "show running-config interface GigabitEthernet1":"interface GigabitEthernet1\n ip address 192.0.2.1 255.255.255.252\n",
             "show interface Tunnel10":"Tunnel10 is up, line protocol is up\n",
-            "show running-config interface Tunnel10":"interface Tunnel10\n vrf forwarding Red\n tunnel mode ipsec ipv4\n tunnel protection ipsec profile KG-IPSEC\n",
+            "show running-config interface Tunnel10":"interface Tunnel10\n vrf forwarding Red\n tunnel mode ipsec ipv4\n tunnel protection ipsec profile IPSEC-PROFILE\n",
             "show crypto ikev2 sa":"Tunnel-id Local Remote fvrf/ivrf Status\n1 192.0.2.1/500 192.0.2.2/500 none/Red READY\n",
             "show crypto ipsec sa peer 192.0.2.2":"#pkts encaps: 5\n#pkts decaps: 5\ninbound esp sas:\n Status: ACTIVE\noutbound esp sas:\n Status: ACTIVE\n",
             "show running-config | section ^router rip":'router rip\n passive-interface default\n no passive-interface Tunnel10\n address-family ipv4 vrf Red\n  version 2\n  network 198.51.100.0\n  network 203.0.113.0\n exit-address-family\n',
@@ -99,9 +121,22 @@ class KgEvidenceTests(unittest.TestCase):
     def test_full_boundary_passes_with_operational_evidence(self):
         responses=self.responses();console=MagicMock()
         console.command.side_effect=lambda command,**kwargs:responses[command]
-        passed,evidence=validation_kg.evaluate(console,CHECK)
+        passed,evidence=validation_ipsec.evaluate(console,CHECK)
         self.assertTrue(passed,evidence)
         self.assertEqual(evidence["failed_layers"],[])
+
+    def test_ikev1_boundary_uses_isakmp_qm_idle(self):
+        responses = self.responses()
+        responses.pop("show crypto ikev2 sa")
+        responses["show crypto isakmp sa"] = (
+            "IPv4 Crypto ISAKMP SA\n"
+            "dst             src             state          conn-id status\n"
+            "192.0.2.1       192.0.2.2       QM_IDLE           1001 ACTIVE\n")
+        console = MagicMock()
+        console.command.side_effect = lambda command, **kwargs: responses[command]
+        passed, evidence = validation_ipsec.evaluate(console, {**CHECK, "ike_version": 1})
+        self.assertTrue(passed, evidence)
+        self.assertEqual(evidence["stages"]["ike"]["observed"]["version"], 1)
 
     @patch("eve_lab.reachability.time.sleep")
     def test_protected_probe_recovers_on_third_attempt_without_changing_source(self, sleep):
@@ -113,9 +148,9 @@ class KgEvidenceTests(unittest.TestCase):
         console = MagicMock()
         console.command.side_effect = lambda current, **kwargs: (
             next(outcomes) if current == command else responses[current])
-        passed, evidence = validation_kg.evaluate(console, CHECK)
+        passed, evidence = validation_ipsec.evaluate(console, CHECK)
         self.assertTrue(passed, evidence)
-        observed = evidence["stages"]["pt-reachability"]["observed"]
+        observed = evidence["stages"]["inside-reachability"]["observed"]
         self.assertEqual([a["success_rate"] for a in observed["attempts"]], [0, 80, 100])
         self.assertEqual([call.args for call in sleep.call_args_list], [(10,), (10,)])
         self.assertEqual(sum(call.args[0] == command for call in console.command.call_args_list), 3)
@@ -134,11 +169,11 @@ class KgEvidenceTests(unittest.TestCase):
             with self.subTest(layer=layer):
                 responses=self.responses();responses[command]=responses[command].replace(old,new)
                 console=MagicMock();console.command.side_effect=lambda command,**kwargs:responses[command]
-                passed,evidence=validation_kg.evaluate(console,CHECK)
+                passed,evidence=validation_ipsec.evaluate(console,CHECK)
                 self.assertFalse(passed);self.assertIn(layer,evidence["failed_layers"])
 
     def test_plaintext_route_in_global_table_fails_isolation(self):
         responses=self.responses()
         responses["show ip route 198.51.100.8 255.255.255.252"]=responses["show ip route vrf Red 198.51.100.8 255.255.255.252"]
         console=MagicMock();console.command.side_effect=lambda command,**kwargs:responses[command]
-        self.assertIn("vrf-isolation-routes",validation_kg.evaluate(console,CHECK)[1]["failed_layers"])
+        self.assertIn("vrf-isolation-routes",validation_ipsec.evaluate(console,CHECK)[1]["failed_layers"])

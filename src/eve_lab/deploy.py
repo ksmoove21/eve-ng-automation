@@ -229,10 +229,12 @@ def apply(client, topology, prune=True):
     deferred = []
     if prune:
         topology, direct, deferred = preserve_active(client, path, topology, direct, nodes, networks)
-    # Runtime policy is independent of template defaults. Preserve active nodes.
+    # EVE exposes/persists CPU Limit for QEMU nodes. Native IOL node records do
+    # not retain the template option, so they cannot participate in this policy.
     topology = {**topology, "nodes": [
         node if node['name'] in nodes and str(nodes[node['name']].get('status')) != '0' and prune
-        else {**node, 'cpulimit': 0} for node in topology['nodes']]}
+        else ({**node, 'cpulimit': 0} if node['type'] == 'qemu' else node)
+        for node in topology['nodes']]}
     # Preflight templates/images and network types before creating anything.
     payloads = {}
     for node in topology["nodes"]:

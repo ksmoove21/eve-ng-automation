@@ -140,7 +140,7 @@ Spend context on evidence that changes implementation decisions.
 
 ## EVE CPU Limit runtime policy
 
-Nodes created or reconciled by this automation must have EVE-NG CPU Limit
+QEMU nodes created or reconciled by this automation must have EVE-NG CPU Limit
 disabled by default (`cpulimit=0`). EVE's limiter may suspend the complete QEMU
 process and interfere with deterministic guest boot and readiness behavior.
 
@@ -150,7 +150,8 @@ declarative opt-in may be supported only when it is explicit in the node schema;
 absence of such an opt-in means disabled.
 
 The deployment reconciler enforces `cpulimit=0` on creation and stopped-node
-reconciliation. Running-node safety and race protections remain in effect.
+reconciliation for QEMU nodes. Native IOL records do not persist this QEMU
+setting. Running-node safety and race protections remain in effect.
 The topology schema does not expose an opt-in to CPU limiting.
 
 When the owner changes a durable project convention, update the owning document under `docs/architecture/` alongside the implementation.

@@ -7,7 +7,7 @@ import paramiko
 
 from .deploy import named, lab_path, interfaces
 from .device_console import Console, credentials
-from .initialize import PaloConsole
+from .initialize import IOS_TEMPLATES, PaloConsole, telnet_console_url
 from .topology import interface_key
 
 
@@ -30,9 +30,9 @@ def login(console, template, auth):
         if re.search('new password|old password|confirm password|enable secret|initial configuration|your selection|login incorrect|authentication failed', lower):
             raise DiscoveryError('Device needs initialization or rejected configured credentials')
         if prompt.endswith(('>', '#')):
-            if '(config' in lower or (template != 'c8000v' and prompt.endswith('#')):
+            if '(config' in lower or (template not in IOS_TEMPLATES and prompt.endswith('#')):
                 raise DiscoveryError('Console is in configuration mode; exit it before discovery')
-            if template == 'c8000v' and prompt.endswith('>'):
+            if template in IOS_TEMPLATES and prompt.endswith('>'):
                 if enabling:
                     raise DiscoveryError('Enable authentication failed')
                 enabling = True
@@ -75,24 +75,24 @@ def discover(client, topology, root, server, timeout=60):
             stage = 'checking node settings'
             try:
                 template = node.get('template')
-                if template not in ('c8000v', 'paloalto', 'panorama'):
+                if template not in IOS_TEMPLATES + ('paloalto', 'panorama'):
                     raise DiscoveryError('Unsupported console discovery template')
                 if str(node.get('status')) != '2':
                     raise DiscoveryError('Node is not running')
-                url = urlsplit(node.get('url', ''))
-                if node.get('console') != 'telnet' or url.scheme != 'telnet' or not url.port:
+                url = telnet_console_url(node)
+                if not url:
                     raise DiscoveryError('Working Telnet console required')
                 stage = 'loading device credentials'
-                auth = credentials(root, prefix='CISCO' if template == 'c8000v' else 'PALO')
+                auth = credentials(root, prefix='CISCO' if template in IOS_TEMPLATES else 'PALO')
                 stage = 'opening Telnet console'
                 channel = ssh.get_transport().open_session(timeout=10)
                 channel.get_pty(term='vt100', width=512, height=1000)
                 channel.exec_command('telnet 127.0.0.1 ' + str(url.port))
-                console = (Console if template == 'c8000v' else PaloConsole)(channel, boot_timeout=timeout)
+                console = (Console if template in IOS_TEMPLATES else PaloConsole)(channel, boot_timeout=timeout)
                 stage = 'logging into console'
                 login(console, template, auth)
                 stage = 'reading hostname and management IP'
-                if template == 'c8000v':
+                if template in IOS_TEMPLATES:
                     connected = {interface_key(port['name']) for port in interfaces(client, path, node).values()
                                  if str(port.get('network_id')) in management}
                     records = console.interface_status()

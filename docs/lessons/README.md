@@ -926,7 +926,7 @@ frontend uses `/stop/stopmode=3`; deployment falls back only for that specific
 The final disposable integration passed all 45 declared checks: both protected
 IOS-XE boundaries, committed PAN-OS services, Catalyst OOB bootstrap and L2,
 Nexus vPC, and service/OOB traffic through the protected path. All seven nodes
-were running with CPU Limit disabled, and the advertised KG icon was verified.
+were running with CPU Limit disabled, and the selected platform icon was verified.
 Private evidence retains addresses, exact topology, and machine-readable results.
 
 All 222 relevant automated tests passed. The full Windows run executed 286:

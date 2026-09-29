@@ -19,7 +19,7 @@ The project currently provides:
 - backup and restore workflows
 - reusable public lab fixtures
 - read-only IOS XE, NX-OS, Catalyst 9000v UADP, and PAN-OS validation
-- reusable KG behavioral and protected-path validation
+- reusable IOS/IOS-XE route-based IPsec capability validation
 - Windows, Linux, and macOS controller support
 - separate public engine and private workspace support
 

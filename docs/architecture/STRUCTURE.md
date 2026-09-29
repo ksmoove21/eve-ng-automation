@@ -123,6 +123,11 @@ Topology definitions should describe:
 - layout coordinates when useful
 - validation intent
 
+A reusable disposable lab may keep alternate desired states under
+`labs/<lab>/scenarios/<name>.yaml`. `eve apply <lab> --scenario <name>` feeds
+the selected state through the same reconciler and retains the topology `name`,
+so scenarios do not create separate permanent EVE labs.
+
 Do not derive or invent design intent merely because a device can support it.
 
 Exact image names are deployment inputs. Preflight must fail clearly when a
@@ -137,13 +142,14 @@ placement as authoritative runtime-only state.
 
 ### EVE CPU Limit policy
 
-EVE-NG CPU Limit is disabled by default for automation-managed nodes
+EVE-NG CPU Limit is disabled by default for automation-managed QEMU nodes
 (`cpulimit=0`). The limiter may suspend QEMU execution and interfere with
 deterministic boot and readiness behavior. This is a repository-wide runtime
 rule and must not be implemented as platform-specific adapter logic.
 
-The reconciler enforces `cpulimit=0` for newly created and stopped managed
-nodes, independent of EVE template defaults. Running nodes remain unchanged
+The reconciler enforces `cpulimit=0` for newly created and stopped managed QEMU
+nodes, independent of EVE template defaults. Native IOL node records do not
+persist this QEMU setting and are left without it. Running nodes remain unchanged
 under the existing deferral/race protection policy. There is no opt-in to CPU
 limiting in the topology schema. Optional `icon` values are checked against the
 live template inventory before writes.
@@ -565,6 +571,6 @@ restrictions and secret handling as init CFG files. Structured Nexus and Catalys
 bootstrap intent remains authoritative for management/bootstrap; lab-specific
 VLANs, vPC, and security intent stay in the active workspace.
 
-The IOS-XE `kg-ipsec` init profile is documented in
-[IOS-XE KG](../platforms/iosxe-kg.md). It is a semantic configuration profile,
+The generic IOS-XE `iosxe-ipsec` init profile is documented in
+[IOS and IOS-XE route-based IPsec](../platforms/iosxe-ipsec.md). It is a reusable configuration profile,
 not a separate platform adapter or a generic role framework.

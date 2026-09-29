@@ -28,4 +28,4 @@ Current platform notes:
 - [Catalyst 9000v UADP](cat9kv-uadp.md)
 - [NX-OS / Nexus 9000v](nxos.md)
 
-- [IOS-XE KG behavioral profile](iosxe-kg.md)
+- [IOS and IOS-XE route-based IPsec](iosxe-ipsec.md)

@@ -89,7 +89,7 @@ class RunnerTests(unittest.TestCase):
         topology = {'name': 'fixture', 'nodes': [{'name': 'edge'}], 'validation': [intent]}
         with patch('eve_lab.validation.named', return_value={'edge': {'template': 'other', 'status': '2'}}), \
                 patch('eve_lab.validation.paramiko.SSHClient') as ssh:
-            with self.assertRaisesRegex(ValueError, 'c8000v'):
+            with self.assertRaisesRegex(ValueError, 'IOS-family'):
                 validate_lab(MagicMock(), topology, ROOT)
             ssh.assert_not_called()
         topology['validation'][0]['vrf'] = 'BLUE\nreload'

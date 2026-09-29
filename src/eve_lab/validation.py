@@ -9,7 +9,7 @@ from .config import load_server
 from .console_backup import palo_running
 from .deploy import lab_path, named
 from .device_console import Console, credentials
-from .initialize import PaloConsole
+from .initialize import IOS_TEMPLATES, PaloConsole, telnet_console_url
 from .initialize_cat9kv import (
     TEMPLATE as CAT9KV_TEMPLATE, load_bootstrap as load_cat9kv_bootstrap,
 )
@@ -20,7 +20,7 @@ from . import validation_cat9kv, validation_iosxe, validation_nxos, validation_p
 
 # Register only templates with an implemented and tested adapter.
 PLATFORMS = {
-    "c8000v": validation_iosxe,
+    **{template: validation_iosxe for template in IOS_TEMPLATES},
     CAT9KV_TEMPLATE: validation_cat9kv,
     "paloalto": validation_panos,
     "nxosv9k": validation_nxos,
@@ -88,8 +88,8 @@ def _checks(topology):
 
 
 def _open_console(ssh, node, login, timeout):
-    url = urlsplit(node.get("url", ""))
-    if node.get("console") != "telnet" or url.scheme != "telnet" or not url.port:
+    url = telnet_console_url(node)
+    if not url:
         raise RuntimeError("Telnet console required for validation")
     channel = ssh.get_transport().open_session(timeout=10)
     try:
@@ -309,11 +309,11 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
         template = node.get("template")
         if template not in PLATFORMS:
             raise ValueError(
-                "Validation currently supports c8000v, cat9kvuadp, paloalto, nxosv9k, and nxosv9k-9300v nodes only: " +
+                "Validation currently supports IOS-family, cat9kvuadp, paloalto, nxosv9k, and nxosv9k-9300v nodes only: " +
                 check["node"])
         kind = check["type"]
-        if template == "c8000v" and kind not in ({"interface", "ping"} | set(validation_iosxe.FIELDS)):
-            raise ValueError("c8000v validation requires IOS XE or legacy check types: " + check["name"])
+        if template in IOS_TEMPLATES and kind not in ({"interface", "ping"} | set(validation_iosxe.FIELDS)):
+            raise ValueError("IOS validation requires IOS/IOS-XE or legacy check types: " + check["name"])
         if template in ("nxosv9k", "nxosv9k-9300v") and kind not in validation_nxos.FIELDS:
             raise ValueError("NX-OS validation requires nxos-* check types: " + check["name"])
         if (template == CAT9KV_TEMPLATE
