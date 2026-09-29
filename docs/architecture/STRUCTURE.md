@@ -241,6 +241,8 @@ Expected future primitives include:
 Prefer structured parsers over brittle substring checks.
 
 Each validation check should return structured evidence, not merely true/false.
+Reachability checks share a bounded three-attempt policy with 10 seconds between
+failed attempts; that timing never lowers a human-authored pass threshold.
 
 A failed acceptance check should cause `eve validate` to return a nonzero exit
 status.

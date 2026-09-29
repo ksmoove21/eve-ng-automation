@@ -17,8 +17,11 @@ failure to parse the collected configuration always fails the overall run and
 is reported with `failure_kind: execution`. Invalid definitions also cause a
 nonzero exit.
 
-The existing interface/ping fields, defaults, evidence and two-attempt ping
-behavior remain unchanged. The baseline lab has not been expanded.
+The existing interface/ping fields, defaults, and pass thresholds remain
+unchanged. Reachability checks make at most three five-packet attempts, waiting
+10 seconds only after a failed attempt. They return immediately on success and
+retain each parsed attempt in the evidence. Unparseable output still fails
+closed. The baseline lab has not been expanded.
 
 ## Implemented scope
 
@@ -93,8 +96,8 @@ adjacencies acceptance requirements. Passing evidence reports
   Multi-process/multi-topology IS-IS output is not implemented.
 - New ping primitives require literal IPv4 destinations. Rates are integers
   from 0 through 100. They send five probes, with a two-second per-probe
-  timeout and a 30-second command timeout. A second attempt is allowed if
-  the first misses the threshold, preserving the existing ping retry policy.
+  timeout and a 30-second command timeout. Up to three attempts are made,
+  10 seconds apart after failures; success returns without another wait.
   Evidence retains each attempt and the best rate. Unparseable responses
   always fail, including when the threshold is zero.
 - `packet_size` is the complete IP datagram size in bytes, not ICMP payload

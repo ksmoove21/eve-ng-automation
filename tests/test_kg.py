@@ -103,6 +103,23 @@ class KgEvidenceTests(unittest.TestCase):
         self.assertTrue(passed,evidence)
         self.assertEqual(evidence["failed_layers"],[])
 
+    @patch("eve_lab.reachability.time.sleep")
+    def test_protected_probe_recovers_on_third_attempt_without_changing_source(self, sleep):
+        responses = self.responses()
+        command = "ping vrf Red 198.51.100.9 source 198.51.100.1 repeat 5 timeout 2"
+        outcomes = iter(["Success rate is 0 percent (0/5)",
+                         "Success rate is 80 percent (4/5)",
+                         responses[command]])
+        console = MagicMock()
+        console.command.side_effect = lambda current, **kwargs: (
+            next(outcomes) if current == command else responses[current])
+        passed, evidence = validation_kg.evaluate(console, CHECK)
+        self.assertTrue(passed, evidence)
+        observed = evidence["stages"]["pt-reachability"]["observed"]
+        self.assertEqual([a["success_rate"] for a in observed["attempts"]], [0, 80, 100])
+        self.assertEqual([call.args for call in sleep.call_args_list], [(10,), (10,)])
+        self.assertEqual(sum(call.args[0] == command for call in console.command.call_args_list), 3)
+
     def test_layer_failures_cannot_be_hidden_by_other_passes(self):
         cases=[
             ("show crypto ikev2 sa","READY","NEGOTIATING","ike"),

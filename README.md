@@ -62,6 +62,23 @@ NX-OS is supported through the reusable initializer and read-only validator. A N
 
 Implemented acceptance checks cover `mgmt0` address/state, management-VRF presence, default route/next hop, and management-VRF reachability. This is a known-good reference combination, not a guarantee for every NX-OS release. See [NX-OS platform notes](docs/platforms/nxos.md) for command forms, output behavior, and limitations.
 
+## RED multi-platform integration status
+
+Reusable support now covers the IOS-XE KG behavioral profile, PAN-OS firewall
+bootstrap and validation, Catalyst 9000v UADP OOB initialization, and Nexus
+first-boot and vPC validation. A disposable seven-node RED integration recreated
+all 24 declared interface attachments from Git and initialized all seven nodes
+on the first automated pass, including fresh PAN-OS 12.1.4 and NX-OS boots.
+The RED-relevant offline regression passed 261/261.
+
+The latest clean live acceptance reached **44/45**. REMOTE-KG-initiated protected
+service reachability failed all three bounded probes, then succeeded repeatedly
+without a configuration change. Follow-up found no persistent underlay,
+control-plane, IPsec, PAN, Nexus, or endpoint defect. The exact transient
+dataplane loss remains unresolved, and deterministic first-run **45/45** is
+**not proven**. This limitation is accepted for sprint closure; a prior
+integration 45/45 result must not be treated as clean-rebuild proof.
+
 ## Catalyst 9000v UADP support
 
 The EVE `cat9kvuadp` template has a dedicated structured initializer and

@@ -280,16 +280,12 @@ def evaluate(console, check):
     try:
         kind = check['type']
         if kind in ('vrf-ping', 'mtu-ping'):
-            attempts = []
             minimum = check.get('min_success_rate', 100)
-            for _ in range(2):
-                attempts.append(parse_ping(console.command(command, timeout=30)))
-                if attempts[-1]['success_rate'] >= minimum:
-                    break
-            best = max(a['success_rate'] for a in attempts)
+            from .reachability import retry_ping
+            passed, best, attempts = retry_ping(
+                lambda: parse_ping(console.command(command, timeout=30)), minimum)
             evidence.update(destination=check['destination'], success_rate=best,
                             minimum_success_rate=minimum, attempts=attempts)
-            passed = best >= minimum
         else:
             output = console.command(command)
             if kind in ('route', 'default-route'):

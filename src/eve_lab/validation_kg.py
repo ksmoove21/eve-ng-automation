@@ -27,8 +27,11 @@ def evaluate(console, c):
         except RuntimeError as error:
             stages[layer] = {"pass": False, "reason": str(error)}
     def ping(vrf, address):
-        seen = parse_ping(console.command("ping " + ("vrf Red " if vrf else "") + address + (" source " + c["pt_source"] if vrf else "") + " repeat 5 timeout 2", timeout=30))
-        return seen["success_rate"] == 100, seen
+        from .reachability import retry_ping
+        command = "ping " + ("vrf Red " if vrf else "") + address + (" source " + c["pt_source"] if vrf else "") + " repeat 5 timeout 2"
+        passed, best, attempts = retry_ping(
+            lambda: parse_ping(console.command(command, timeout=30)))
+        return passed, {**attempts[-1], "success_rate": best, "attempts": attempts}
     run("ct-underlay", lambda: ping(False,c["ct_peer"]))
     def vrf():
         text=console.command("show ip vrf interfaces")

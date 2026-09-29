@@ -128,23 +128,23 @@ def _interface_check(console, check):
 
 
 def _ping_check(console, check):
+    from .reachability import retry_ping
     destination = check["destination"]
     if not re.fullmatch(r"[A-Za-z0-9:.%-]+", destination):
         raise ValueError("Ping destination contains unsupported characters")
     minimum = check.get("min_success_rate", 100)
-    best = 0
-    attempts = []
-    for _ in range(2):
+    def probe():
         output = console.command("ping " + destination + " repeat 5 timeout 2", timeout=30)
         match = re.search(r"Success rate is\s+(\d+)\s+percent\s+\((\d+)/(\d+)\)", output, re.I)
         if not match:
-            return False, {"destination": destination, "reason": "unrecognized ping result"}
+            raise RuntimeError("unrecognized ping result")
         rate, received, sent = map(int, match.groups())
-        attempts.append({"success_rate": rate, "received": received, "sent": sent})
-        best = max(best, rate)
-        if best >= minimum:
-            break
-    return best >= minimum, {
+        return {"success_rate": rate, "received": received, "sent": sent}
+    try:
+        passed, best, attempts = retry_ping(probe, minimum)
+    except RuntimeError as error:
+        return False, {"destination": destination, "reason": str(error)}
+    return passed, {
         "destination": destination,
         "success_rate": best,
         "minimum_success_rate": minimum,
