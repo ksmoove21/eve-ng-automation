@@ -661,7 +661,9 @@ it does not wipe or reboot nodes. Interactive commands and multiline constructs
 are unsupported. A login prompt does not guarantee every firewall service has
 finished booting; if PAN-OS rejects a command or commit, inspect the reported
 failure and retry after it is ready. Cisco and Panorama serial init have been
-tested live; the Palo firewall serial first-boot test is pending.
+tested live. Fresh Palo firewall serial first boot and automated configuration
+also passed on PAN-OS 12.1.4 in the RED integration. See the RED status above
+for the separate unresolved clean-acceptance limitation.
 
 ### Palo Alto initialization over management SSH
 
@@ -804,7 +806,9 @@ If YAML explicitly specifies `console: vnc`, update that field to match. All nod
 in the checked-in `palo-lab1` topology now specify `console: telnet`; existing VNC
 nodes can be updated by stopping the lab and running `eve apply palo-lab1`, or
 by using `--prepare-console` on a stopped node. Panorama serial initialization has been tested on 12.1.5. Firewall serial login
-is configured in the inspected 12.1.7 image; its live first-boot test is pending.
+is configured in the inspected 12.1.7 image. A fresh PAN-OS 12.1.4 firewall
+completed serial first-boot initialization in the RED integration; that result
+does not establish first-boot compatibility for the 12.1.7 image.
 
 Palo Alto firewall nodes also support `--prepare-console`:
 

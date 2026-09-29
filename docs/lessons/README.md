@@ -381,8 +381,9 @@ with this convention:
 - tests/test_validation_panos_runner.py covers optional and required assertion
   outcomes plus transport, retrieval, parsing, and success cases.
 - Panorama validation remains unsupported.
-- The only implemented PAN-OS validation transport remains the explicit
-  EVE-tunneled direct-tcpip path.
+- At the time of this work, the only implemented PAN-OS validation transport
+  was the explicit EVE-tunneled direct-tcpip path. Read-only serial-console
+  validation was added later.
 
 Verification:
 

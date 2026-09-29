@@ -1,8 +1,14 @@
 # Repository guidance
 
-At the start of every new Codex chat or sprint, first read [.codex/workspace-context.md](.codex/workspace-context.md) to re-establish the authoritative local repository roots and public/private boundary.
+At the start of every new Codex chat or sprint, read [`.codex/workspace-context.md`](.codex/workspace-context.md) and this file to re-establish the authoritative workspace, repository boundary, execution rules, and current operating conventions.
 
-Read [PROJECT-INTENT.md](docs/architecture/PROJECT-INTENT.md), [STRUCTURE.md](docs/architecture/STRUCTURE.md), and [EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md) before changing this repository.
+The architecture documents remain authoritative, but do not read all of them mechanically at every start. Read only the document(s) relevant to the task or decision being changed:
+
+- [PROJECT-INTENT.md](docs/architecture/PROJECT-INTENT.md) when the task changes project scope, architectural responsibility, portability goals, or the intended end state.
+- [STRUCTURE.md](docs/architecture/STRUCTURE.md) when the task changes repository structure, schemas, reusable engine behavior, platform-adapter boundaries, reconciliation, or durable engineering conventions.
+- [EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md) when the task changes sprint autonomy, live-lab authorization, lifecycle behavior, stop conditions, or proof requirements.
+
+Do not re-read unchanged guidance already established in the same active sprint unless new evidence makes it relevant.
 
 This project extends the operating model of upstream `wcmder/eve-ng`; it does
 not replace it. Preserve the inherited declarative lab workflow and extend it
@@ -68,6 +74,21 @@ remediation and evidence gathering.
 Preserve unrelated user edits. Do not weaken validation or silently change
 human-authored intent to make a lab pass. Do not claim live success without
 live evidence.
+
+## Context and usage efficiency
+
+Spend context on evidence that changes implementation decisions.
+
+- Search before reading whole files when the relevant location is unknown.
+- Read only the needed file ranges when practical; read a complete file when editing it or when local context is required for correctness.
+- Do not repeatedly dump complete configs, generated artifacts, large diffs, or long logs into the conversation. Capture the narrow evidence needed to diagnose the current failure.
+- Bound commands that may return large output. Prefer filters, targeted show commands, relevant log ranges, and structured summaries.
+- During implementation, run the smallest test set that can falsify the current change. Run broader regression suites at meaningful acceptance gates rather than after every edit.
+- Poll long-running boots, jobs, commits, and controllers at bounded intervals. Do not create tight polling loops that consume context without new evidence.
+- Preserve durable decisions, evidence, and sprint state in Git-backed files. Do not rely on an indefinitely growing chat as project memory.
+- At a true sprint boundary, prefer a fresh Codex thread. For an unfinished active sprint, resume from the existing checkpoint instead of rehydrating the whole project from scratch.
+- Keep sprint prompts task-specific. Standing architecture, repository, safety, and autonomy rules belong in checked-in guidance rather than being repeated verbatim in every prompt.
+- If the client supports context compaction or summarization, use it only after current state and important evidence are durable in the repository or sprint artifacts.
 
 ## EVE CPU Limit runtime policy
 

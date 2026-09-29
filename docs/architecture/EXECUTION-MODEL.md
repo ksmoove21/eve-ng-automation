@@ -33,6 +33,38 @@ recorded in the sprint and repository guidance.
 Refresh remote guidance only when it may have changed, preserve local working
 state, then resume the next technical action. Keep restart overhead small.
 
+At a true sprint boundary, prefer a fresh Codex thread so the next task does not
+inherit unrelated tool output and troubleshooting history. Do not restart an
+actively progressing sprint solely to obtain a smaller context.
+
+## Context discipline
+
+Context is an engineering resource. Use enough evidence to make the next
+technical decision, but avoid repeatedly carrying information that is already
+durable in Git.
+
+- Start with `.codex/workspace-context.md` and `AGENTS.md`; load additional
+  architecture documents only when the current task needs their owning
+  decisions.
+- Search first when the relevant location is unknown, then read the smallest
+  useful range. Read complete files when editing them or when surrounding
+  context is necessary for correctness.
+- Bound potentially large command, log, diff, config, and test output. Prefer
+  targeted commands and relevant ranges over full dumps.
+- During iteration, run focused tests that can falsify the current change.
+  Reserve broad regression suites for meaningful acceptance gates.
+- Poll long-running NOS boots, controller jobs, commits, and other asynchronous
+  operations at bounded intervals rather than tight loops.
+- Keep standing project rules in checked-in guidance and sprint-specific
+  requirements in the prompt. Do not restate the complete project architecture
+  in every sprint prompt.
+- Before compaction or a sprint handoff, persist important state, decisions, and
+  evidence in Git-backed artifacts so continuation does not depend on chat
+  history.
+
+These rules optimize context use without weakening live proof, test coverage, or
+failure evidence.
+
 ## Diagnostic depth
 
 Use the highest-level supported interface first, but do not remain trapped at

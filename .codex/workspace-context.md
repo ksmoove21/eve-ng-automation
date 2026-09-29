@@ -20,14 +20,28 @@ Before implementation work:
 2. Verify that `H:\Github\unsc-homelab` exists.
 3. Treat the public repository as the primary working root unless the sprint explicitly requires private-repository changes.
 4. Read the public root `AGENTS.md`.
-5. Read the architecture documents referenced by `AGENTS.md`.
-6. When private lab or environment context is required, read the applicable guidance under the private EVE workspace.
+5. Read only the architecture documents that `AGENTS.md` identifies as relevant to the current task. Do not mechanically load the entire architecture set.
+6. When private lab or environment context is required, read only the applicable guidance under the private EVE workspace.
 7. Use absolute paths when crossing between the public and private repositories.
 8. Do not clone duplicate repositories or silently substitute another drive/path because a new chat starts without the prior shell context.
 9. If `H:` is unavailable, report that as the blocker rather than inventing an alternate workspace.
 10. Verify the current Git branch and working-tree status before modifying either repository.
 
 Git and repository guidance are the durable source of project context. Prior chat memory is supplemental and must not override checked-in project guidance or current repository state.
+
+## Operator model policy
+
+The normal Codex operating profile for this project is:
+
+- Model: GPT-6 Sol
+- Reasoning: Medium
+- Speed: Standard
+
+Escalate to Sol High for difficult root-cause analysis, version-specific platform behavior, or complex integration failures that need materially more reasoning.
+
+Use Astra High only as an escalation for genuinely difficult architectural ambiguity or troubleshooting that Sol cannot resolve with gathered evidence.
+
+Do not stop an otherwise healthy active sprint merely to request a stronger or weaker model. Model changes happen at a response or sprint boundary.
 
 ## Repository boundary
 

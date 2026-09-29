@@ -187,13 +187,15 @@ merely to exercise all types. No live EVE operation was performed for this work.
 
 ## PAN-OS firewall validation
 
-PAN-OS validation uses the firewall management plane rather than the EVE serial
-console. The controller first connects to the EVE host over SSH, then opens a
+PAN-OS validation can use management SSH or the read-only EVE serial console.
+For management SSH, the controller first connects to the EVE host, then opens a
 `direct-tcpip` tunnel to the firewall management address declared in
 `labs/LAB/init.yaml`. Device authentication uses `PALO_USERNAME` and
-`PALO_PASSWORD`. This EVE-tunneled path is currently the only implemented
-PAN-OS validation transport. The validator does not silently fall back to a
-direct controller connection. The firewall SSH key must be present in the
+`PALO_PASSWORD`. This is the management-SSH transport described in this section.
+A separately implemented read-only serial-console path is described below and
+is used when
+no management target is declared. The validator does not silently fall back to
+a direct controller connection. The firewall SSH key must be present in the
 controller trust store. A new key may be enrolled only with explicit owner
 authorization for that exact address through the verified EVE connection; a
 changed saved key is never accepted automatically.
@@ -224,9 +226,9 @@ Supported PAN-OS types in this first slice:
 
 `expected` defaults to `present`. `vsys` defaults to `vsys1`, and
 `virtual_router` defaults to `default` for route checks. Route checks in
-this slice inspect committed IPv4 static routes. Dynamic routing state, runtime
-interface state, session/policy counters and packet probes remain future live
-validation work.
+this slice inspect committed IPv4 static routes. Dynamic routing state,
+session/policy counters and packet probes remain future live validation work. Operational interface state is supported by the separate
+`panos-operational-interface` check described below.
 
 Example:
 

@@ -6,7 +6,7 @@ Nexus 9000v `nxosv9k-9300v-10.5.2.F` completed a disposable EVE-NG integration o
 
 ## Bootstrap
 
-The initializer reuses `CISCO_USERNAME`, `CISCO_PASSWORD`, and `CISCO_ENABLE_SECRET`. First boot may show Power On Auto Provisioning, request the initial `admin` password, then use `login:` rather than `Username:`. The console state machine handles these states before applying the six-key private bootstrap intent and saving with `copy running-config startup-config`.
+The initializer reuses `CISCO_USERNAME`, `CISCO_PASSWORD`, and `CISCO_ENABLE_SECRET`. First boot may show Power On Auto Provisioning, request secure-password and initial `admin` setup input, then use `login:` rather than `Username:`. The RED clean rebuild exercised this first-boot path on a fresh NX1 guest. The console state machine handles these states before applying the six-key private bootstrap intent and saving with `copy running-config startup-config`.
 
 ## Validation
 
