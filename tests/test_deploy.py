@@ -121,6 +121,38 @@ class DeploymentTests(unittest.TestCase):
         }
         self.client = FakeEve()
 
+    def test_cpu_limit_default_drift_and_running_preservation(self):
+        apply(self.client, self.topology)
+        self.assertEqual(self.client.nodes["1"]["cpulimit"], 0)
+        self.client.nodes["1"]["cpulimit"] = 1
+        apply(self.client, self.topology)
+        self.assertEqual(self.client.nodes["1"]["cpulimit"], 0)
+        self.client.nodes["1"].update(status=2, cpulimit=1)
+        self.client.writes.clear()
+        apply(self.client, self.topology)
+        self.assertEqual(self.client.nodes["1"]["cpulimit"], 1)
+        self.assertFalse(self.client.writes)
+
+    def test_pro_stop_mode_fallback(self):
+        apply(self.client, self.topology)
+        self.client.nodes["1"]["status"] = 2
+        original = self.client.request
+        def request(method, path, payload=None):
+            if path.endswith("/stop"):
+                raise EveAPIError("Request not valid (60027).", 400)
+            if path.endswith("/stopmode=3"):
+                return original(method, path.removesuffix("/stopmode=3"), payload)
+            return original(method, path, payload)
+        self.client.request = request
+        result = lifecycle(self.client, self.topology, "stop", node_name="R1")
+        self.assertEqual(result["changed_nodes"], ["R1"])
+
+    def test_unadvertised_icon_fails_before_writes(self):
+        self.topology["nodes"][0]["icon"] = "missing.png"
+        with self.assertRaisesRegex(ValueError, "Icon"):
+            apply(self.client, self.topology)
+        self.assertFalse(self.client.writes)
+
     def test_create_and_rerun_without_duplicates(self):
         apply(self.client, self.topology)
         self.assertEqual(self.client.nodes["1"]["cpu"], 4)

@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 import paramiko
 
 from .config import load_server
+from . import iosxe_kg
 from .deploy import lab_path, named
 from .device_console import Console, credentials
 from .palo_ssh import management_targets, connect_palo
@@ -50,8 +51,11 @@ class PaloConsole(Console):
     def initialize(self, commands, username=None, password=None):
         self.command('set cli pager off')
         self.command('configure')
-        for command in commands:
-            self.command(command)
+        for index, command in enumerate(commands, start=1):
+            try:
+                self.command(command)
+            except RuntimeError as error:
+                raise RuntimeError(f'PAN-OS configuration command {index} failed: {error}') from error
         output = self.command('commit', timeout=self.boot_timeout)
         if not re.search(r'Configuration committed successfully|There are no changes to commit', output, re.I):
             raise RuntimeError('Palo Alto commit not confirmed; inspect candidate config and commit jobs')
@@ -78,9 +82,9 @@ class PaloSerialConsole(PaloConsole):
                    r'^login incorrect\s*$|^authentication failed[^\n]*$)|'
                    r'^[\w.@()/:\-]+[>#]\s*$')
         for _ in range(16):
-            _, match = self.expect(pattern, timeout=self.boot_timeout, wake=not stages)
+            observed, match = self.expect(pattern, timeout=self.boot_timeout, wake=not stages, latest=True)
             prompt = match.group().strip().lower()
-            if 'incorrect' in prompt or 'authentication failed' in prompt:
+            if re.search(r'login incorrect|authentication failed', observed, re.I):
                 if 'password' not in stages and not {'old', 'new', 'confirm'} & stages and stale_failures < 1:
                     # Shared EVE consoles may still be at a password prompt;
                     # our initial Enter can finish that abandoned attempt.
@@ -93,6 +97,9 @@ class PaloSerialConsole(PaloConsole):
                     used_factory = True
                     stages.clear()
                     print('Configured Palo Alto credentials rejected; trying factory credentials once...', file=sys.stderr, flush=True)
+                    if prompt.endswith('login:') or prompt.startswith('username:'):
+                        self.send(username)
+                        stages.add('username')
                     continue
                 attempted = 'configured and factory credentials' if used_factory else 'configured credentials'
                 raise RuntimeError('Palo Alto rejected ' + attempted + '; check the console for boot readiness, account lockout, or a different current password')
@@ -253,7 +260,8 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 reason += '; stop the node and run eve init <lab> --node <name> --prepare-console, or use --management-ip after initial setup'
         elif not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*', name):
             reason = 'Node name is not a safe config filename'
-        yaml_init = template in ('nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE)
+        kg_profile = template == 'c8000v' and (base / (name + '-init.yaml')).is_file()
+        yaml_init = kg_profile or template in ('nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE)
         path = (base / (name + ('-init.yaml' if yaml_init else '-init.cfg'))).resolve()
         if not reason and (not path.is_relative_to(base) or not path.is_file()):
             reason = 'Missing init file: configs/' + name + ('-init.yaml' if yaml_init else '-init.cfg')
@@ -265,8 +273,19 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
             commands = load_nxos_bootstrap(path)
         elif template == CAT9KV_TEMPLATE:
             commands = load_cat9kv_bootstrap(path, root)
+        elif kg_profile:
+            commands = iosxe_kg.render(iosxe_kg.load_profile(path), root)
         else:
             commands = config_commands(path, template)
+        service_path = (base / (name + '-services.cfg')).resolve()
+        if service_path.is_file():
+            if not service_path.is_relative_to(base):
+                raise ValueError('Service configuration must remain inside configs')
+            services = config_commands(service_path, template)
+            if template == CAT9KV_TEMPLATE:
+                commands['service_commands'] = services
+            else:
+                commands += services
         if template == 'panorama' and not address:
             validate_panorama_network(commands)
         url = urlsplit(node.get('url', ''))
@@ -313,6 +332,14 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                     console.login(*login, auto_factory=not bool(targets.get(name)))
                 else:
                     console.login(*login)
+                if template == 'c8000v' and (base / (name + '-init.yaml')).is_file():
+                    if iosxe_kg.prepare_license(console):
+                        channel.close()
+                        channel = _open_telnet_console(ssh, port)
+                        console = Console(channel, boot_timeout=timeout)
+                        console.login(*login)
+                        iosxe_kg.verify_license(console)
+                        result['reloaded'].append(name)
                 print('Applying init to ' + name + '...', file=sys.stderr, flush=True)
                 if template == CAT9KV_TEMPLATE:
                     snmp_ro, snmp_rw = cat9kv_snmp[name]

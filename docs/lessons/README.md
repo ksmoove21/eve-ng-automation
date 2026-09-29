@@ -859,3 +859,47 @@ matching that exact bounded failure and menu. Separately, the EVE host repeatedl
 placed healthy QEMU processes in a stopped state. Host administration resumed
 only the verified processes during qualification; the automation remains
 bounded and does not infer guest failure or mutate host processes itself.
+
+## 2026-09-28 - IOS-XE protected boundary and service integration
+
+C8000V 17.15.01a requires a nonempty network boot tier before it exposes crypto
+commands. A blank tier is initialized to Essentials, saved and reloaded once;
+the console must observe the actual reboot and disable pagination after login.
+IOS-XE RIP passive-interface policy is configured globally and inherited by
+the Red address family; this image rejects it inside the address family.
+
+PAN-OS 12.1.4 serial first login can contain repeated stale login prompts. Match
+the latest prompt while checking the whole observed response for authentication
+failure. Aggregate Ethernet LACP is under `layer3 lacp`; create the aggregate
+before assigning members. Static routes need destination and next hop together.
+
+NX-OS 10.5(2)F supports the two independent Nexus vPC arrangement. Configure
+port-channels before channel members and avoid changing member switchport mode
+on reruns. Real VLAN output includes a second footer table; real `show vpc brief`
+may omit the separate enabled-status field while reporting formed adjacency,
+live keepalive and successful consistency.
+
+EVE Pro 7.2 returned error 60027 for the legacy node stop URL. Its installed
+frontend uses `/stop/stopmode=3`; deployment falls back only for that specific
+400/60027 response. No host process manipulation is required by this fallback.
+
+The final disposable integration passed all 45 declared checks: both protected
+IOS-XE boundaries, committed PAN-OS services, Catalyst OOB bootstrap and L2,
+Nexus vPC, and service/OOB traffic through the protected path. All seven nodes
+were running with CPU Limit disabled, and the advertised KG icon was verified.
+Private evidence retains addresses, exact topology, and machine-readable results.
+
+All 222 relevant automated tests passed. The full Windows run executed 286:
+262 passed, three inherited POSIX-mode assertions failed, and 21 DHCP/NAT tests
+errored because Windows lacks `os.geteuid`. These platform limitations were not
+suppressed or changed as part of the sprint.
+
+A Catalyst license-reload attempt stalled inside the guest kernel despite a
+running QEMU process and available host resources. A fresh disposable Catalyst
+using Essentials for its L2 role initialized without a licensing reload. Initial
+service startup was slower than prompt availability. PAN-OS likewise rejected
+login during early startup and accepted the configured credentials after its
+services became ready. A single post-restart PT probe lost one packet; the final
+unchanged read-only run passed every five-packet probe. No acceptance threshold
+was reduced. Cold-start timing and arbitrary-image compatibility remain bounded
+failure conditions, not automatic READY claims.

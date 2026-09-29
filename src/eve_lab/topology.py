@@ -68,7 +68,7 @@ def validate(topology: dict):
     topology, _ = expand_links(topology)
     validate_folder(topology.get("remote_folder", "/"))
     allowed = {
-        "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top"},
+        "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top", "icon"},
         "networks": {"name", "type", "left", "top"},
         "links": {"node", "interface", "network"},
     }
@@ -89,6 +89,9 @@ def validate(topology: dict):
                 raise ValueError(f"Duplicate {kind} name: {item['name']}")
             names[kind].add(item["name"])
     for node in topology["nodes"]:
+        if "icon" in node and (not isinstance(node["icon"], str) or not node["icon"].strip()
+                               or any(c in node["icon"] for c in ("/", "\\", "\n", "\r"))):
+            raise ValueError("icon must be an EVE icon basename")
         if node["type"] != "qemu":
             raise ValueError("Deployment currently supports QEMU nodes only")
         if "/" in node["image"] or "\\" in node["image"]:

@@ -5,6 +5,7 @@ explicit capabilities rather than inheriting IOS syntax by template guessing.
 """
 from ipaddress import IPv4Address, IPv4Network, ip_address
 import re
+from . import validation_kg
 
 
 FIELDS = {
@@ -16,6 +17,8 @@ FIELDS = {
     'vrf-ping': {'vrf', 'destination', 'min_success_rate'},
     'mtu-ping': {'destination', 'packet_size', 'df', 'min_success_rate'},
 }
+FIELDS.update(validation_kg.FIELDS)
+FIELDS.update({"iosxe-vlan": {"vlan"}, "iosxe-switchport": {"interface", "mode", "vlans"}})
 BGP_STATES = {'idle', 'connect', 'active', 'opensent', 'openconfirm', 'established'}
 OSPF_STATES = {'down', 'attempt', 'init', '2way', 'exstart', 'exchange', 'loading', 'full'}
 
@@ -28,6 +31,21 @@ def _token(value, field):
 def validate_check(check):
     """Reject unsupported intent before connecting; never normalize caller data."""
     kind = check['type']
+    if kind in validation_kg.FIELDS:
+        return validation_kg.validate_check(check)
+    if kind == "iosxe-vlan":
+        if type(check.get("vlan")) is not int or not 1 <= check["vlan"] <= 4094:
+            raise ValueError("vlan must be an integer from 1 to 4094")
+        return
+    if kind == "iosxe-switchport":
+        if not isinstance(check.get("interface"), str) or not re.fullmatch(r"GigabitEthernet1/0/[1-9][0-9]*", check["interface"]):
+            raise ValueError("Invalid switchport interface")
+        if check.get("mode") not in ("access", "trunk") or not isinstance(check.get("vlans"), list) or not check["vlans"]:
+            raise ValueError("Switchport requires mode and vlans")
+        if any(type(v) is not int or not 1 <= v <= 4094 for v in check["vlans"]):
+            raise ValueError("Invalid switchport VLAN")
+        if check["mode"] == "access" and len(check["vlans"]) != 1: raise ValueError("Access port requires one VLAN")
+        return
     if 'vrf' in check or kind == 'vrf-ping':
         _token(check.get('vrf'), 'vrf')
     if kind in ('route', 'default-route'):
@@ -251,7 +269,11 @@ def command_for(check):
 
 def evaluate(console, check):
     """Return measured evidence, failing closed on unsupported output."""
+    if check["type"] in validation_kg.FIELDS:
+        return validation_kg.evaluate(console, check)
     validate_check(check)
+    if check["type"] in ("iosxe-vlan", "iosxe-switchport"):
+        return _evaluate_l2(console, check)
     command = command_for(check)
     evidence = {'command': command, 'expected': {k: v for k, v in check.items()
                                                 if k not in ('name', 'node', 'type', 'required')}}
@@ -310,3 +332,28 @@ def evaluate(console, check):
     except RuntimeError as error:
         evidence['reason'] = str(error)
         return False, evidence
+
+
+def _evaluate_l2(console, c):
+    try:
+        if c["type"] == "iosxe-vlan":
+            text = _clean(console.command("show vlan id " + str(c["vlan"])))
+            if not re.search(r"VLAN\s+Name\s+Status", text): raise RuntimeError("Unrecognized VLAN table")
+            active = bool(re.search(r"^\s*"+str(c["vlan"])+r"\s+\S+\s+active\b", text, re.M))
+            return active, {"vlan": c["vlan"], "active": active}
+        text = _clean(console.command("show interfaces " + c["interface"] + " switchport"))
+        admin = re.search(r"Administrative Mode: (.+)", text)
+        op = re.search(r"Operational Mode: (.+)", text)
+        field = "Trunking VLANs Enabled" if c["mode"] == "trunk" else "Access Mode VLAN"
+        found = re.search(field+r": ([0-9,-]+)",text)
+        if not admin or not op or not found: raise RuntimeError("Incomplete switchport response")
+        vlans=set()
+        for item in found[1].split(','):
+            ends=list(map(int,item.split('-')))
+            if len(ends)>2 or not 1<=ends[0]<=ends[-1]<=4094: raise RuntimeError("Invalid switchport VLAN range")
+            vlans.update(range(ends[0],ends[-1]+1))
+        mode = "static access" if c["mode"] == "access" else "trunk"
+        passed=admin[1].strip()==mode and op[1].strip() in (mode,c["mode"]) and vlans==set(c["vlans"])
+        return passed,{"administrative_mode":admin[1].strip(),"operational_mode":op[1].strip(),"vlans":sorted(vlans)}
+    except RuntimeError as error:
+        return False,{"reason":str(error),"failed_layer":"vlan-l2"}

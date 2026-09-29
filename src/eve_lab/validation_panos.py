@@ -21,6 +21,9 @@ FIELDS = {
 }
 
 
+OPERATIONAL = {"panos-operational-interface", "panos-readiness"}
+FIELDS.update({"panos-operational-interface": {"interface"}, "panos-readiness": set()})
+
 def _token(value, field):
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", value):
         raise ValueError(field + " must be a single token (letters, digits, _, ., -)")
@@ -35,6 +38,10 @@ def _interface(value):
 
 
 def validate_check(check):
+    if check["type"] == "panos-readiness": return
+    if check["type"] == "panos-operational-interface":
+        _interface(check.get("interface"))
+        return
     expected = check.get("expected", "present")
     if expected not in ("present", "absent"):
         raise ValueError("PAN-OS expected must be present or absent")
@@ -105,12 +112,16 @@ def evaluate(root, check):
 
     if kind == "panos-interface":
         interface = check["interface"]
-        entry = device.find(f"./network/interface/ethernet/entry[@name='{interface}']")
+        base, dot, unit = interface.partition(".")
+        branch = "aggregate-ethernet" if base.startswith("ae") else "ethernet"
+        path = f"./network/interface/{branch}/entry[@name='{base}']"
+        if dot: path += f"/layer3/units/entry[@name='{interface}']"
+        entry = device.find(path)
         matches = [] if entry is None else [entry]
         passed, present = _presence(matches, expected)
         addresses = []
         if entry is not None:
-            addresses = [item.get("name") for item in entry.findall("./layer3/ip/entry") if item.get("name")]
+            addresses = [item.get("name") for item in entry.findall("./ip/entry" if dot else "./layer3/ip/entry") if item.get("name")]
         if "address" in check and expected == "present":
             passed = passed and check["address"] in addresses
         evidence.update(interface=interface, present=present, addresses=addresses)
@@ -156,3 +167,22 @@ def evaluate(root, check):
     if not passed:
         evidence["reason"] = "Observed result does not match acceptance criteria"
     return passed, evidence
+
+
+def evaluate_operational(console, check):
+    validate_check(check)
+    try:
+        if check["type"] == "panos-readiness":
+            text = console.command("show chassis-ready")
+            ready = bool(re.search(r"(?:^|\n)\s*yes\s*(?:$|\n)", text, re.I))
+            jobs = console.command("show jobs all")
+            rows = [line.split() for line in jobs.splitlines() if re.search(r"\bCommit\b", line)]
+            committed = any("FIN" in row and "OK" in row for row in rows)
+            outstanding = any("FIN" not in row or "FAIL" in row for row in rows)
+            return ready and committed and not outstanding, {"chassis_ready":ready,"successful_commit":committed,"unfinished_or_failed_commit":outstanding}
+        text = console.command("show interface " + check["interface"])
+        state = re.search(r"(?:Runtime link speed/duplex/state|Link status):[^\n]*\b(up|down)\b", text, re.I)
+        if not state: raise RuntimeError("Unrecognized PAN-OS operational interface state")
+        return state[1].lower()=="up", {"interface":check["interface"],"state":state[1].lower()}
+    except RuntimeError as error:
+        return False,{"reason":str(error),"failed_layer":"panos-operational"}

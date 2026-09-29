@@ -46,8 +46,11 @@ class NxosConsole(Console):
     """NX-OS configuration-mode initialization; credentials are shared CISCO_* values."""
     def initialize(self, commands, username=None, password=None):
         self.command('configure terminal')
-        for command in commands:
-            self.command(command)
+        for index, command in enumerate(commands, start=1):
+            try:
+                self.command(command)
+            except RuntimeError as error:
+                raise RuntimeError(f"NX-OS configuration command {index} failed: {error}") from error
         self.command('end')
         saved = self.command('copy running-config startup-config', timeout=120)
         if re.search(r'%\s*(?:Invalid|Error|Failed)', saved, re.I):

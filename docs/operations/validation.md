@@ -316,11 +316,33 @@ unrecognized output. They cover IPv4 routes and IPv4/IPv6-unicast BGP summary
 syntax only. EVPN, VXLAN, NVE and VTEP assertions are intentionally deferred
 until image-specific output is verified live.
 
-NX-OS bootstrap is intentionally separate from validation. The immediate
-implementation seam is the generic `initialize()` template registry and its
-Cisco console implementation: add an NX-OS console initializer that owns
-configuration mode and save verification, with private lab files supplying
-hostname, management address/prefix, gateway and boot image. It must reuse
-`CISCO_*` credentials. The current generic Cisco initializer uses IOS-XE
-command and `write memory` semantics, so this validation change does not
-pretend it can safely bootstrap NX-OS.
+NX-OS initialization uses the existing six-field structured bootstrap YAML and
+optionally appends `configs/NODE-services.cfg`. Configure port-channels before
+members so repeated application remains valid on NX-OS. Validation remains a
+separate, read-only operation.
+
+
+## Protected IOS-XE and service validation
+
+See [IOS-XE KG](../platforms/iosxe-kg.md) for `kg-boundary` requirements and
+layer-specific evidence. The test source address is explicit so the probe
+represents declared PT traffic through downstream security policy.
+
+`iosxe-vlan` accepts an integer `vlan` and requires an active operational row.
+`iosxe-switchport` requires `interface`, `mode` (`trunk` or `access`), and
+`vlans` (an integer list). Both administrative and operational mode must match;
+trunks require the exact allowed set, and access ports require one VLAN.
+
+`nxos-vpc` additionally accepts `keepalive: up`, `domain_id`, and `vpc_id`.
+The requested downstream vPC must be operational and consistent. Independent
+`nxos-port-channel` checks verify peer-link and uplink state and members.
+
+PAN-OS checks may use the advertised Telnet serial console through the verified
+EVE SSH connection when no management target is declared. Read-only login
+refuses setup, configuration mode and forced password changes. It does not
+initialize a firewall. `panos-interface` supports Ethernet and aggregate
+Ethernet subinterfaces. `panos-readiness` requires chassis readiness and a
+finished successful commit with no pending or failed commit in the returned
+job table. `panos-operational-interface` requires a named interface with a
+recognized runtime link state of up. Committed XML still supplies zone,
+virtual-router, address and static-route assertions.

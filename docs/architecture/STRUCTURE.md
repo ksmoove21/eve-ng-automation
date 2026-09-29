@@ -134,14 +134,11 @@ EVE-NG CPU Limit is disabled by default for automation-managed nodes
 deterministic boot and readiness behavior. This is a repository-wide runtime
 rule and must not be implemented as platform-specific adapter logic.
 
-The current topology model does not expose `cpulimit`, and `apply()` currently
-inherits that property from the EVE template during node creation. Generic
-enforcement therefore remains a known gap. When implemented, it belongs in
-`src/eve_lab/deploy.py` where node payloads and stopped-node updates are built,
-with corresponding validation in `src/eve_lab/topology.py`. Reconciliation must
-correct drift only within its existing ownership and stopped-node safety
-boundaries. An explicit opt-in should be added only if it fits the node schema
-cleanly; otherwise the desired/default state remains disabled.
+The reconciler enforces `cpulimit=0` for newly created and stopped managed
+nodes, independent of EVE template defaults. Running nodes remain unchanged
+under the existing deferral/race protection policy. There is no opt-in to CPU
+limiting in the topology schema. Optional `icon` values are checked against the
+live template inventory before writes.
 
 Expected behavior:
 
@@ -522,3 +519,15 @@ push. Such commits must stage only `docs/lessons/README.md`; all engine, lab,
 test, documentation, and unrelated working-tree changes remain outside that
 commit. A task-specific instruction not to merge still applies to the working
 branch.
+
+## Platform service configuration
+
+Optional `configs/NODE-services.cfg` files extend an existing initializer with
+configuration-mode commands before its save/commit. They use the same command
+restrictions and secret handling as init CFG files. Structured Nexus and Catalyst
+bootstrap intent remains authoritative for management/bootstrap; lab-specific
+VLANs, vPC, and security intent stay in the active workspace.
+
+The IOS-XE `kg-ipsec` init profile is documented in
+[IOS-XE KG](../platforms/iosxe-kg.md). It is a semantic configuration profile,
+not a separate platform adapter or a generic role framework.

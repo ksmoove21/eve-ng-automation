@@ -6,7 +6,7 @@ from eve_lab.validation_nxos import evaluate
 ROOT = Path(__file__).resolve().parents[1]
 def check(kind, **values): return {'name':'x','node':'n','type':kind,**values}
 I='Ethernet1/1 is up\nadmin state is up\nInternet Address is 192.0.2.1/24\n'
-V='VLAN Name Status Ports\n10 USERS active Ethernet1/1\n'
+V='VLAN Name Status Ports\n10 USERS active Ethernet1/1\n\nVLAN Type  Vlan-mode\n10 enet CE\n'
 R='192.0.2.0/24, ubest/mbest: 1/0\n *via 198.51.100.1, Ethernet1/1\n'
 P='Success rate is 100.00% (5/5)\n'
 PU='5 packets transmitted, 5 packets received, 0.00% packet loss\n'
@@ -30,6 +30,19 @@ class NxosTests(unittest.TestCase):
   for output in ('Ethernet1/1 is up\nadmin state is bad\n',VP.replace('Enabled','mystery')):
    c=MagicMock(); c.command.return_value=output
    self.assertFalse(evaluate(c,check('nxos-vpc',state='up') if 'vPC' in output else check('nxos-interface',interface='Ethernet1/1',oper_state='up'))[0])
+ def test_live_vpc_domain_and_downstream_fail_closed(self):
+  text = ('vPC domain id : 40\nPeer status : peer adjacency formed ok\n'
+          'vPC keep-alive status : peer is alive\nConfiguration consistency status : success\n'
+          'vPC Peer-link status\n1 Po1 up 110\nvPC status\n10 Po10 up success - 110\n')
+  intent = check('nxos-vpc', state='up', keepalive='up', domain_id=40, vpc_id=10)
+  for output, expected in ((text, True), (text.replace('id : 40','id : 41'),False),
+                           (text.replace('Po10 up success','Po10 down failed'),False),
+                           (text.replace('10 Po10 up success - 110',''),False)):
+   c=MagicMock();c.command.return_value=output
+   self.assertEqual(evaluate(c,intent)[0],expected)
+ def test_port_channel_rejects_unbundled_members(self):
+  c=MagicMock();c.command.side_effect=['port-channel1 is up\n','1 Po1(SU) LACP Ethernet1/1(P) Ethernet1/2(D)\n']
+  self.assertFalse(evaluate(c,check('nxos-port-channel',port_channel='Po1',oper_state='up',members=['Ethernet1/1','Ethernet1/2']))[0])
  def test_platform_family_rejection(self):
   topology={'name':'x','nodes':[{'name':'n'}],'validation':[check('nxos-vlan',vlan=10)]}
   for template in ('c8000v','paloalto'):

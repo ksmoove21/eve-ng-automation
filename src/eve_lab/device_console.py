@@ -203,7 +203,7 @@ class Console:
                     continue
             else:
                 observed, match = self.expect(
-                    pattern, timeout=self.boot_timeout, wake=wake, latest=read_only)
+                    pattern, timeout=self.boot_timeout, wake=wake, latest=True)
             prompt = match.group().strip()
             if read_only and _READ_ONLY_UNSAFE.search(observed):
                 raise RuntimeError('Read-only login refused interactive or configuration-mode prompt')
@@ -273,8 +273,11 @@ class Console:
             if not password or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in password):
                 raise ValueError('Cisco init password must be a nonempty CLI token')
         self.command('configure terminal')
-        for command in commands:
-            self.command(command)
+        for index, command in enumerate(commands, start=1):
+            try:
+                self.command(command)
+            except RuntimeError as error:
+                raise RuntimeError(f'Cisco configuration command {index} failed: {error}') from error
         self.command('end')
         if username is not None:
             # Return to global configuration even if the file ends in a submode.

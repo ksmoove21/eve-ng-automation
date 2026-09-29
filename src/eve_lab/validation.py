@@ -256,24 +256,31 @@ def _validate_cat9kv_node(ssh, node, node_name, checks, intent, root, timeout, r
             channel.close()
 
 
-def _validate_panos_node(ssh, topology, node_name, checks, root, timeout, report):
+def _validate_panos_node(ssh, topology, node_name, checks, root, timeout, report, node=None):
     device = None
     channel = None
     try:
         targets = management_targets(root, topology["name"])
-        if node_name not in targets:
-            raise RuntimeError(
-                "PAN-OS validation requires management_ip for " + node_name +
-                " in labs/" + topology["name"] + "/init.yaml")
         login = credentials(root, prefix="PALO")
-        device, channel = connect_palo(
-            ssh, targets[node_name], login[0], login[1], timeout)
-        console = PaloConsole(channel, boot_timeout=timeout)
-        console.login(*login)
+        if node_name in targets:
+            device, channel = connect_palo(ssh, targets[node_name], login[0], login[1], timeout)
+            console = PaloConsole(channel, boot_timeout=timeout)
+            console.login(*login)
+        else:
+            url = urlsplit((node or {}).get("url", ""))
+            if (node or {}).get("console") != "telnet" or url.scheme != "telnet" or not url.port:
+                raise RuntimeError("PAN-OS validation requires management_ip or an advertised Telnet console")
+            channel = ssh.get_transport().open_session(timeout=10)
+            channel.get_pty(term="vt100", width=512, height=1000)
+            channel.exec_command("telnet 127.0.0.1 " + str(url.port))
+            console = PaloReadOnlyConsole(channel, boot_timeout=timeout)
+            console.login(*login)
         root_xml = validation_panos.parse_running_config(palo_running(console, timeout))
         for check in checks:
             try:
-                passed, evidence = validation_panos.evaluate(root_xml, check)
+                passed, evidence = (validation_panos.evaluate_operational(console, check)
+                                    if check["type"] in validation_panos.OPERATIONAL
+                                    else validation_panos.evaluate(root_xml, check))
             except RuntimeError as error:
                 passed, evidence = False, {"reason": str(error)}
             _append_result(report, check, node_name, passed, evidence)
@@ -357,7 +364,7 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
             node = nodes[node_name]
             if node["template"] == "paloalto":
                 _validate_panos_node(
-                    ssh, topology, node_name, node_checks, root, timeout, report)
+                    ssh, topology, node_name, node_checks, root, timeout, report, node=node)
             elif node["template"] == CAT9KV_TEMPLATE:
                 _validate_cat9kv_node(
                     ssh, node, node_name, node_checks,
@@ -394,3 +401,23 @@ def validate_lab(client, topology, root, server_name="default", timeout=60):
                 states.append("UNDERLAY_READY")
             report["readiness"][node_name] = states
     return report
+
+
+class PaloReadOnlyConsole(PaloConsole):
+    """Serial validation never performs first-boot setup or leaves config mode."""
+    def login(self, username, password, secret=None):
+        # Clear any unfinished command before requesting an empty prompt.
+        self.channel.sendall("\x15\r")
+        pattern = r"(?im:^[^\n]*login:\s*$|^username:\s*$|^password:\s*$|^(?:enter )?(?:old|new|confirm|retype)[^\n]*password[^\n]*$)|^[\w.@()/:\-]+[>#]\s*$"
+        for _ in range(6):
+            _, match = self.expect(pattern, timeout=self.boot_timeout, wake=False)
+            prompt = match.group().strip()
+            if re.search(r"old|new|confirm|retype", prompt, re.I) or prompt.endswith("#"):
+                raise RuntimeError("PAN-OS validation refuses setup/configuration prompts")
+            if prompt.endswith(">"):
+                return
+            if prompt.lower().endswith(("login:", "username:")):
+                self.send(username)
+            elif prompt.lower() == "password:":
+                self.send(password)
+        raise RuntimeError("PAN-OS read-only login failed")

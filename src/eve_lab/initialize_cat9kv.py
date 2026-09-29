@@ -372,6 +372,11 @@ class Cat9kvConsole(Console):
                 "crypto key generate rsa general-keys modulus "
                 + str(intent["dnac"]["rsa_modulus"]), timeout=180)
             self.command("end")
+        if intent.get("service_commands"):
+            self.command("configure terminal")
+            for command in intent["service_commands"]:
+                self.command(command)
+            self.command("end")
         saved = self.command("write memory", timeout=120)
         if "[OK]" not in saved:
             raise RuntimeError("Device did not confirm write memory; inspect startup-config")
@@ -440,6 +445,8 @@ class Cat9kvConsole(Console):
             self.expect(
                 r"(?i:Proceed with reload[^\n]*\[confirm\]\s*$)", timeout=30)
         self.send("")
+        self.expect(r"(?i:reload requested|reloading|initializing hardware|system bootstrap|linux version)", timeout=120)
+        self.pending = ""
 
     def verify_license(self, intent):
         desired = set(intent["dnac"]["license"].values())
