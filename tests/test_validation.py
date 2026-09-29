@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from eve_lab.validation import _checks, _interface_check, _ping_check
 
@@ -35,24 +35,30 @@ class ValidationTests(unittest.TestCase):
             "Success rate is 80 percent (4/5)",
             "Success rate is 100 percent (5/5)",
         ]
-        passed, evidence = _ping_check(console, {
-            "destination": "10.255.0.2", "min_success_rate": 100
-        })
+        with patch("eve_lab.reachability.time.sleep") as sleep:
+            passed, evidence = _ping_check(console, {
+                "destination": "10.255.0.2", "min_success_rate": 100
+            })
         self.assertTrue(passed)
         self.assertEqual(evidence["success_rate"], 100)
         self.assertEqual(len(evidence["attempts"]), 2)
+        sleep.assert_called_once_with(10)
 
     def test_ping_failure_is_reported(self):
         console = MagicMock()
         console.command.side_effect = [
             "Success rate is 0 percent (0/5)",
             "Success rate is 0 percent (0/5)",
+            "Success rate is 0 percent (0/5)",
         ]
-        passed, evidence = _ping_check(console, {
-            "destination": "10.255.0.2", "min_success_rate": 100
-        })
+        with patch("eve_lab.reachability.time.sleep") as sleep:
+            passed, evidence = _ping_check(console, {
+                "destination": "10.255.0.2", "min_success_rate": 100
+            })
         self.assertFalse(passed)
         self.assertEqual(evidence["success_rate"], 0)
+        self.assertEqual(len(evidence["attempts"]), 3)
+        self.assertEqual([call.args for call in sleep.call_args_list], [(10,), (10,)])
 
 
 if __name__ == "__main__":

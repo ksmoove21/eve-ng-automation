@@ -52,6 +52,45 @@ The smaller `iosxe-baseline` lab remains the regression fixture for basic topolo
 
 These are proven reference combinations, not claims that every EVE-NG/C8000V release behaves identically.
 
+## NX-OS proven reference
+
+NX-OS is supported through the reusable initializer and read-only validator. A Nexus 9000v / 9300v running NX-OS 10.5.2 was proven in a real EVE-NG integration. Bootstrap handles observed first-boot auto-provisioning, initial admin-password, and `login:` interactions using the existing `CISCO_*` credential model; it configures hostname, `mgmt0`, management VRF routing, the boot setting, and saves the configuration.
+
+Implemented acceptance checks cover `mgmt0` address/state, management-VRF presence, default route/next hop, and management-VRF reachability. This is a known-good reference combination, not a guarantee for every NX-OS release. See [NX-OS platform notes](docs/platforms/nxos.md) for command forms, output behavior, and limitations.
+
+## RED multi-platform integration status
+
+Reusable support now covers the IOS-XE KG behavioral profile, PAN-OS firewall
+bootstrap and validation, Catalyst 9000v UADP OOB initialization, and Nexus
+first-boot and vPC validation. A disposable seven-node RED integration recreated
+all 24 declared interface attachments from Git and initialized all seven nodes
+on the first automated pass, including fresh PAN-OS 12.1.4 and NX-OS boots.
+The RED-relevant offline regression passed 261/261.
+
+The latest clean live acceptance reached **44/45**. REMOTE-KG-initiated protected
+service reachability failed all three bounded probes, then succeeded repeatedly
+without a configuration change. Follow-up found no persistent underlay,
+control-plane, IPsec, PAN, Nexus, or endpoint defect. The exact transient
+dataplane loss remains unresolved, and deterministic first-run **45/45** is
+**not proven**. This limitation is accepted for sprint closure; a prior
+integration 45/45 result must not be treated as clean-rebuild proof.
+
+## Catalyst 9000v UADP support
+
+The EVE `cat9kvuadp` template has a dedicated structured initializer and
+read-only validator. The `dnac-bootstrap` profile configures Catalyst Center
+prerequisites, including management VRF addressing resolved from a
+workspace-owned registry, privilege-15 local authentication that does not
+require a normal post-login enable step, SSHv2, NETCONF,
+runtime-only SNMP communities, RSA keys, and declared Network/DNA licensing.
+The optional `ospf-underlay` profile adds explicitly declared loopback and
+routed uplink intent. License changes use a controlled save/reload/reacquire
+cycle and are verified after the reload.
+
+Validation exposes `DNAC_BOOTSTRAP_READY` and `UNDERLAY_READY` states without
+printing SNMP community values. See [Catalyst 9000v UADP platform notes](docs/platforms/cat9kv-uadp.md)
+for the schema, lifecycle behavior, and current live-tested image boundary.
+
 
 ## Keep private labs in a separate workspace
 
@@ -155,7 +194,7 @@ If a topology references an unavailable image, change the lab definition deliber
 python -m unittest discover -s tests -v
 ```
 
-Some inherited upstream tests still contain POSIX-specific assumptions; do not confuse inherited chmod/`geteuid` test debt with a live EVE failure.
+Some inherited upstream tests still contain POSIX-specific assumptions. See `docs/architecture/STRUCTURE.md` for the current portability notes; do not confuse inherited chmod/`geteuid` test debt with a live EVE failure.
 
 ### 6. Exercise the live validation fixture
 
@@ -178,9 +217,12 @@ Do not run live or destructive commands against an EVE instance you do not own o
 
 | Path | Purpose |
 | --- | --- |
-| `docs/validation.md` | Validation schema, primitives, evidence and limitations |
-| `docs/ENVIRONMENT.md` | Current UNSC environment assumptions/reference |
-| `docs/BASELINE_VALIDATION_WINDOWS.md` | Windows baseline/testing notes |
+| `docs/operations/validation.md` | Validation schema, evidence and limitations |
+| `docs/operations/environment.md` | Environment and operator setup |
+| `docs/operations/baseline-validation-windows.md` | Windows baseline/testing notes |
+| `docs/platforms/` | Platform-specific support and limitations |
+| `docs/roadmap/ROADMAP.md` | Product direction |
+| `docs/lessons/README.md` | Historical engineering and live-evidence record |
 | `labs/iosxe-baseline/` | Minimal known-good regression lab |
 | `labs/gre-vrf-validation/` | Full IOS XE operational validation fixture |
 | `src/eve_lab/` | Shared Python engine |
@@ -554,7 +596,9 @@ it does not wipe or reboot nodes. Interactive commands and multiline constructs
 are unsupported. A login prompt does not guarantee every firewall service has
 finished booting; if PAN-OS rejects a command or commit, inspect the reported
 failure and retry after it is ready. Cisco and Panorama serial init have been
-tested live; the Palo firewall serial first-boot test is pending.
+tested live. Fresh Palo firewall serial first boot and automated configuration
+also passed on PAN-OS 12.1.4 in the RED integration. See the RED status above
+for the separate unresolved clean-acceptance limitation.
 
 ### Palo Alto initialization over management SSH
 
@@ -697,7 +741,9 @@ If YAML explicitly specifies `console: vnc`, update that field to match. All nod
 in the checked-in `palo-lab1` topology now specify `console: telnet`; existing VNC
 nodes can be updated by stopping the lab and running `eve apply palo-lab1`, or
 by using `--prepare-console` on a stopped node. Panorama serial initialization has been tested on 12.1.5. Firewall serial login
-is configured in the inspected 12.1.7 image; its live first-boot test is pending.
+is configured in the inspected 12.1.7 image. A fresh PAN-OS 12.1.4 firewall
+completed serial first-boot initialization in the RED integration; that result
+does not establish first-boot compatibility for the 12.1.7 image.
 
 Palo Alto firewall nodes also support `--prepare-console`:
 

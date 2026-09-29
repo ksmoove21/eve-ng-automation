@@ -99,7 +99,7 @@ class RunnerTests(unittest.TestCase):
             named.assert_not_called()
 
     def test_baseline_definition_and_legacy_report_shape(self):
-        topology = yaml.safe_load((ROOT / 'labs/unsc-baseline/topology.yaml').read_text())
+        topology = yaml.safe_load((ROOT / 'labs/iosxe-baseline/topology.yaml').read_text())
         checks = _checks(topology)
         self.assertEqual([c['type'] for c in checks], ['interface', 'interface', 'ping', 'ping'])
         checks = [{**c, 'node': 'edge' if c['node'] == 'R1' else 'core'} for c in checks]

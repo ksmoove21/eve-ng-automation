@@ -137,7 +137,7 @@ class Console:
     def send(self, line):
         self.channel.sendall(line + '\r')
 
-    def expect(self, pattern, timeout=60, wake=False, latest=False, return_on_timeout=False):
+    def expect(self, pattern, timeout=60, wake=False, latest=False, return_on_timeout=False, redisplay=False):
         data, self.pending = self.pending, ''
         started = time.monotonic()
         deadline = started + timeout
@@ -151,6 +151,12 @@ class Console:
                 self.pending = clean[match.end():]
                 return clean[:match.end()], match
             now = time.monotonic()
+            if (redisplay and now >= started + 2
+                    and re.search(r'^[ \t]*[\w.()/:-]+#(?=[ \t]*[^ \t\n])', clean, re.M)):
+                # Async startup/interface messages can overwrite an exec prompt.
+                # Redisplay once without submitting input or repeating the command.
+                self.channel.sendall('\x12')
+                redisplay = False
             if wake and now >= next_wake:
                 self.send('')
                 next_wake = now + 10
@@ -184,7 +190,7 @@ class Console:
         secret_prompts = set()
         pattern = (r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
-                   r'Username:\s*$|Password:\s*$|Would you like to enter[^\n]*[?:]\s*$|'
+                   r'Username:\s*$|login:\s*$|Password:\s*$|Abort Power On Auto Provisioning[^\n]*[?:]|Do you want to enforce secure password standard[^\n]*[?:]|(?:Enter|Confirm) the password for [^\n]*admin[^\n]*:|Would you like to enter[^\n]*[?:]\s*$|'
                    r'Press RETURN to get started[^\n]*$|' + _PROMPT)
         probe = read_only
         for _ in range(12):
@@ -203,7 +209,7 @@ class Console:
                     continue
             else:
                 observed, match = self.expect(
-                    pattern, timeout=self.boot_timeout, wake=wake, latest=read_only)
+                    pattern, timeout=self.boot_timeout, wake=wake, latest=True)
             prompt = match.group().strip()
             if read_only and _READ_ONLY_UNSAFE.search(observed):
                 raise RuntimeError('Read-only login refused interactive or configuration-mode prompt')
@@ -222,12 +228,21 @@ class Console:
             elif prompt.startswith('Enter your selection'):
                 wake = False
                 self.send('2')  # Save the initial secret to NVRAM and exit setup.
-            elif prompt.startswith('Username:'):
+            elif prompt.startswith('Username:') or prompt.lower().startswith('login:'):
                 self.send(username)
+                wake = False
+            elif re.match(r'(?:Enter|Confirm) the password for .*admin', prompt, re.I):
+                self.send(password)
                 wake = False
             elif prompt.startswith('Password:'):
                 self.send(password)
                 wake = False
+            elif re.match(r'Abort Power On Auto Provisioning', prompt, re.I):
+                wake = False
+                self.send('yes')
+            elif re.match(r'Do you want to enforce secure password standard', prompt, re.I):
+                wake = False
+                self.send('yes')
             elif prompt.startswith('Would you like'):
                 self.send('no')
             elif prompt.startswith('Press RETURN'):
@@ -252,7 +267,7 @@ class Console:
 
     def command(self, command, timeout=60):
         self.send(command)
-        output, match = self.expect(_PRIVILEGED_PROMPT, timeout)
+        output, match = self.expect(_PRIVILEGED_PROMPT, timeout, latest=True, redisplay=True)
         if re.search(r'^%\s*(?:Invalid|Incomplete|Ambiguous|Error|Authorization|Access denied)', output, re.M | re.I):
             raise RuntimeError('Cisco rejected a command; inspect the console (output omitted)')
         self.prompt = match.group().strip()
@@ -268,8 +283,11 @@ class Console:
             if not password or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in password):
                 raise ValueError('Cisco init password must be a nonempty CLI token')
         self.command('configure terminal')
-        for command in commands:
-            self.command(command)
+        for index, command in enumerate(commands, start=1):
+            try:
+                self.command(command)
+            except RuntimeError as error:
+                raise RuntimeError(f'Cisco configuration command {index} failed: {error}') from error
         self.command('end')
         if username is not None:
             # Return to global configuration even if the file ends in a submode.

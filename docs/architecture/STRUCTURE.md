@@ -13,40 +13,19 @@ Read this file before changing the repository. Preserve unrelated user edits.
 
 Keep public-facing documentation focused on the product: supported capabilities, observable behavior, requirements, setup, commands, examples, limitations, and operator safety.
 
-Do not put internal design discussions, agent handoff flows, prompt strategy, implementation sequencing, branch choreography, or decision-history narration in the root README or user-facing docs. Those belong in contributor/internal material such as this file, `AGENTS.md`, or `Lessons Learned/`.
+Do not put internal design discussions, agent handoff flows, prompt strategy, implementation sequencing, branch choreography, or decision-history narration in the root README or user-facing docs. Those belong in contributor/internal material such as this file, `AGENTS.md`, or `docs/lessons/`.
 
 A roadmap may describe future capabilities and user-visible direction, but not the private process used to shape or implement them.
 
-## Project intent
+## Project intent and execution model
 
-The target workflow is:
+The project purpose and human/agent division of responsibility live in
+[PROJECT-INTENT.md](PROJECT-INTENT.md).
 
-```text
-network engineering intent
-        |
-        v
-Git lab definition
-        |
-        v
-plan / reconcile
-        |
-        v
-EVE-NG runtime
-        |
-        v
-device initialization
-        |
-        v
-read-only acceptance validation
-        |
-        v
-READY / FAIL with evidence
-```
+The sprint lifecycle, sandbox authority, and stop conditions live in
+[EXECUTION-MODEL.md](EXECUTION-MODEL.md).
 
-Git is the durable source of truth. AI assistants, editors, Codex, and local
-shells are implementation tools, not authoritative state.
-
-The platform should outlive any particular agent or development environment.
+This file owns repository structure and engineering conventions.
 
 ## Core invariants
 
@@ -59,11 +38,20 @@ The platform should outlive any particular agent or development environment.
 - Distinguish desired state from observed runtime state.
 - Destructive operations must be explicit and narrowly scoped.
 - Keep credentials and secrets out of Git.
-- Do not make live EVE-NG changes during code-only work unless explicitly
-  requested.
+- Treat designated disposable EVE development/test labs as part of the test
+  harness. When the sprint requires live proof, use them without an extra
+  permission checkpoint.
+- Do not extend that authority to parent or persistent infrastructure unless
+  the task explicitly authorizes it.
 - Preserve upstream behavior unless a change is intentional, understood, and
   tested.
 - Prefer reusable capabilities over one-off lab-specific code.
+
+## Development sandbox and autonomy
+
+See [EXECUTION-MODEL.md](EXECUTION-MODEL.md). The designated disposable EVE
+development lab is part of the integration-test harness; parent and persistent
+infrastructure remain outside that standing authority.
 
 ## Repository layers
 
@@ -147,6 +135,19 @@ placement as authoritative runtime-only state.
 
 `eve apply` is a reconciler, not a one-shot creation script.
 
+### EVE CPU Limit policy
+
+EVE-NG CPU Limit is disabled by default for automation-managed nodes
+(`cpulimit=0`). The limiter may suspend QEMU execution and interfere with
+deterministic boot and readiness behavior. This is a repository-wide runtime
+rule and must not be implemented as platform-specific adapter logic.
+
+The reconciler enforces `cpulimit=0` for newly created and stopped managed
+nodes, independent of EVE template defaults. Running nodes remain unchanged
+under the existing deferral/race protection policy. There is no opt-in to CPU
+limiting in the topology schema. Optional `icon` values are checked against the
+live template inventory before writes.
+
 Expected behavior:
 
 - create missing declared objects
@@ -221,10 +222,12 @@ Implemented primitives include:
 - MTU/DF reachability (IPv4)
 
 `validation.py` owns schema dispatch, node grouping, transport orchestration
-and reports. `validation_iosxe.py` owns new IOS XE primitive schemas, fixed
-read-only commands and structured parsers. Only `c8000v` is registered;
-future platform adapters must explicitly define and test their capabilities.
-See [docs/validation.md](docs/validation.md) for exact fields and limitations.
+and reports. Platform adapters own their schemas, fixed read-only commands and
+structured parsers. Registered adapters include IOS XE `c8000v`, Catalyst
+9000v UADP `cat9kvuadp`, supported Nexus 9000v templates, and PAN-OS firewall
+validation; future platform adapters must explicitly define and test their
+capabilities.
+See [../operations/validation.md](../operations/validation.md) for exact fields and limitations.
 
 Checks are required by default. Only an explicit human-authored
 `required: false` makes a failed check advisory; its failure remains visible.
@@ -246,6 +249,8 @@ Expected future primitives include:
 Prefer structured parsers over brittle substring checks.
 
 Each validation check should return structured evidence, not merely true/false.
+Reachability checks share a bounded three-attempt policy with 10 seconds between
+failed attempts; that timing never lowers a human-authored pass threshold.
 
 A failed acceptance check should cause `eve validate` to return a nonzero exit
 status.
@@ -307,6 +312,12 @@ Separate:
 1. offline/unit behavior
 2. live EVE integration validation
 
+Offline tests are the first validation layer, not the completion condition for
+runtime features. If a capability is intended to deploy, initialize, operate,
+or validate an EVE guest and an appropriate image exists in the authorized
+development sandbox, successful live integration is required before that
+capability is considered proven.
+
 A unit test must not require a live EVE server unless explicitly identified as
 an integration test.
 
@@ -355,7 +366,10 @@ Never commit:
 Repository examples may include variable names but not real secret values.
 
 System SSH host-key verification should remain enabled. Do not add insecure
-fallbacks merely to bypass trust errors.
+fallbacks merely to bypass trust errors. A previously unseen lab-device key may
+be enrolled only with explicit owner authorization, scoped to the exact device
+address through an already verified EVE connection. Report its fingerprint and
+never replace a saved key automatically; a changed key remains a hard failure.
 
 TLS validation should remain enabled. Private/internal deployments may use a
 private CA, but the control workstation should trust that CA rather than disabling verification.
@@ -391,13 +405,17 @@ Recommended flow:
 main
   -> feature branch
   -> implementation
-  -> focused tests
-  -> live integration test when required
-  -> review diff
+  -> focused offline tests
+  -> designated-sandbox live integration
+  -> diagnose / repair / retest until acceptance passes
+  -> final regression tests
+  -> review diff and evidence
   -> merge
 ```
 
-The owner approves live behavior and merges.
+Live testing in a designated disposable EVE development lab is part of the
+normal sprint and does not require a second approval checkpoint. The owner
+retains approval for merges and for operations outside the sandbox boundary.
 
 Codex or another coding agent may implement changes, but Git remains the durable
 record of both intent and implementation.
@@ -452,12 +470,20 @@ While coding:
 
 After coding:
 
-1. run relevant focused tests
-2. review the diff
-3. report what changed
-4. report what was tested
-5. identify what still requires live EVE verification
-6. do not claim live success without live evidence
+1. run relevant focused offline tests;
+2. when applicable, execute the feature against the designated EVE test lab;
+3. diagnose and repair failures that remain within the agreed intent;
+4. repeat testing until the defined acceptance criteria pass or a true stop
+   condition is reached;
+5. run final regression tests and review the diff;
+6. report what changed, what was tested, and the live evidence;
+7. identify only genuine unresolved blockers or verification that could not be
+   performed;
+8. do not claim live success without live evidence.
+
+Do not return control merely to announce that an intermediate phase completed.
+The unit of work is the sprint and its acceptance criteria, not an individual
+prompt or command.
 
 ## Current proven baseline
 
@@ -509,16 +535,36 @@ understandable and operable without AI.
 
 ## Lessons learned changelog
 
-Record implementation, test, and live-operation lessons in
-[`Lessons Learned/README.md`](Lessons%20Learned/README.md). Append an entry after
-each completed prompt. The entry should closely mirror the final completion
-report: outcome and root cause, summarized code and file changes, exact test
-results, offline-versus-live evidence, remaining limitations or verification,
-and commit/push/merge status. Code diffs may be summarized; do not omit the
-other review evidence.
+Record reusable implementation, test, and live-operation lessons in
+[`../lessons/README.md`](../lessons/README.md) at meaningful sprint
+boundaries or when live testing reveals a reusable platform/environment
+behavior. Do not append an entry merely because an intermediate prompt or
+implementation step completed.
+
+Failures encountered during a sprint should be captured as engineering evidence
+and folded into the final lesson when they reveal something reusable. Continue
+remediation without returning control solely to document the failure.
+
+A completed entry should closely mirror the sprint completion report: outcome
+and root cause, summarized code and file changes, exact test results,
+offline-versus-live evidence, remaining limitations or verification, and
+commit/push/merge status. Code diffs may be summarized; do not omit the other
+review evidence.
 
 This changelog is the only repository file an agent may automatically commit and
-push. Such commits must stage only `Lessons Learned/README.md`; all engine, lab,
+push. Such commits must stage only `docs/lessons/README.md`; all engine, lab,
 test, documentation, and unrelated working-tree changes remain outside that
 commit. A task-specific instruction not to merge still applies to the working
 branch.
+
+## Platform service configuration
+
+Optional `configs/NODE-services.cfg` files extend an existing initializer with
+configuration-mode commands before its save/commit. They use the same command
+restrictions and secret handling as init CFG files. Structured Nexus and Catalyst
+bootstrap intent remains authoritative for management/bootstrap; lab-specific
+VLANs, vPC, and security intent stay in the active workspace.
+
+The IOS-XE `kg-ipsec` init profile is documented in
+[IOS-XE KG](../platforms/iosxe-kg.md). It is a semantic configuration profile,
+not a separate platform adapter or a generic role framework.

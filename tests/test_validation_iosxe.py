@@ -1,7 +1,7 @@
 """Synthetic offline IOS XE fixtures: these are not live verification."""
 from copy import deepcopy
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from eve_lab.validation import _checks
 from eve_lab.validation_iosxe import (
@@ -270,7 +270,8 @@ class PrimitiveTests(unittest.TestCase):
         console.command.side_effect = [ISIS.replace('0000.0000.0002', 'peer'), HOSTS + '1 0000.0000.0003 peer\n']
         self.assertFalse(evaluate(console, CASES[4][0])[0])
 
-    def test_new_pings_retry_bounded_and_keep_threshold(self):
+    @patch("eve_lab.reachability.time.sleep")
+    def test_new_pings_retry_bounded_and_keep_threshold(self, sleep):
         for intent, _, _ in CASES[5:]:
             console = MagicMock()
             console.command.side_effect = ['Success rate is 80 percent (4/5)', PING]
@@ -278,7 +279,7 @@ class PrimitiveTests(unittest.TestCase):
             self.assertTrue(passed)
             self.assertEqual(len(evidence['attempts']), 2)
             self.assertEqual(evidence['minimum_success_rate'], 100)
-            console.command.side_effect = ['Success rate is 0 percent (0/5)'] * 2
+            console.command.side_effect = ['Success rate is 0 percent (0/5)'] * 3
             self.assertFalse(evaluate(console, intent)[0])
             console.command.side_effect = None
             console.command.return_value = 'Success rate is 80 percent (4/5)'

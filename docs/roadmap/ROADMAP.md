@@ -18,7 +18,8 @@ The project currently provides:
 - device initialization
 - backup and restore workflows
 - reusable public lab fixtures
-- read-only IOS XE operational validation
+- read-only IOS XE, NX-OS, Catalyst 9000v UADP, and PAN-OS validation
+- reusable KG behavioral and protected-path validation
 - Windows, Linux, and macOS controller support
 - separate public engine and private workspace support
 
@@ -29,7 +30,6 @@ Expand device support beyond the currently proven platforms.
 Planned targets include:
 
 - Cisco IOSv and IOSvL2
-- Cisco NX-OSv
 - MikroTik CHR
 - additional IOS XE variants
 - additional firewall and network-platform integrations where practical

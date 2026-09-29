@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import sys
+import time
 from ipaddress import IPv4Address, IPv4Network
 from urllib.parse import quote
 from urllib.parse import urlsplit
@@ -9,9 +10,15 @@ from urllib.parse import urlsplit
 import paramiko
 
 from .config import load_server
+from . import iosxe_kg
 from .deploy import lab_path, named
 from .device_console import Console, credentials
 from .palo_ssh import management_targets, connect_palo
+from .initialize_nxos import NxosConsole, load_bootstrap as load_nxos_bootstrap
+from .initialize_cat9kv import (
+    Cat9kvConsole, TEMPLATE as CAT9KV_TEMPLATE,
+    load_bootstrap as load_cat9kv_bootstrap, runtime_secrets as cat9kv_secrets,
+)
 
 
 class PaloConsole(Console):
@@ -44,8 +51,11 @@ class PaloConsole(Console):
     def initialize(self, commands, username=None, password=None):
         self.command('set cli pager off')
         self.command('configure')
-        for command in commands:
-            self.command(command)
+        for index, command in enumerate(commands, start=1):
+            try:
+                self.command(command)
+            except RuntimeError as error:
+                raise RuntimeError(f'PAN-OS configuration command {index} failed: {error}') from error
         output = self.command('commit', timeout=self.boot_timeout)
         if not re.search(r'Configuration committed successfully|There are no changes to commit', output, re.I):
             raise RuntimeError('Palo Alto commit not confirmed; inspect candidate config and commit jobs')
@@ -67,14 +77,19 @@ class PaloSerialConsole(PaloConsole):
         login_password = password
         used_factory = False
         stale_failures = 0
+        auth_retry = False
+        deadline = time.monotonic() + self.boot_timeout
         pattern = (r'(?im:^[^\n]*login:\s*$|^username:\s*$|^password:\s*$|'
                    r'^(?:enter )?(?:old|new|confirm|retype)[^\n]*password[^\n]*$|'
                    r'^login incorrect\s*$|^authentication failed[^\n]*$)|'
                    r'^[\w.@()/:\-]+[>#]\s*$')
         for _ in range(16):
-            _, match = self.expect(pattern, timeout=self.boot_timeout, wake=not stages)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError('Palo Alto login did not become ready before the boot timeout')
+            observed, match = self.expect(pattern, timeout=remaining, wake=not stages, latest=True)
             prompt = match.group().strip().lower()
-            if 'incorrect' in prompt or 'authentication failed' in prompt:
+            if re.search(r'login incorrect|authentication failed', observed, re.I):
                 if 'password' not in stages and not {'old', 'new', 'confirm'} & stages and stale_failures < 1:
                     # Shared EVE consoles may still be at a password prompt;
                     # our initial Enter can finish that abandoned attempt.
@@ -87,6 +102,21 @@ class PaloSerialConsole(PaloConsole):
                     used_factory = True
                     stages.clear()
                     print('Configured Palo Alto credentials rejected; trying factory credentials once...', file=sys.stderr, flush=True)
+                    if prompt.endswith('login:') or prompt.startswith('username:'):
+                        self.send(username)
+                        stages.add('username')
+                    continue
+                if used_factory and not auth_retry and time.monotonic() + 300 < deadline:
+                    auth_retry = True
+                    time.sleep(300)
+                    stages.clear()
+                    login_password = password
+                    used_factory = False
+                    print('Palo Alto rejected both credentials during startup; retrying once after 300s...',
+                          file=sys.stderr, flush=True)
+                    if prompt.endswith('login:') or prompt.startswith('username:'):
+                        self.send(username)
+                        stages.add('username')
                     continue
                 attempted = 'configured and factory credentials' if used_factory else 'configured credentials'
                 raise RuntimeError('Palo Alto rejected ' + attempted + '; check the console for boot readiness, account lockout, or a different current password')
@@ -185,6 +215,41 @@ def config_commands(path, template):
     return commands
 
 
+def _open_telnet_console(ssh, port):
+    channel = ssh.get_transport().open_session(timeout=10)
+    channel.get_pty(term='vt100', width=512, height=1000)
+    channel.exec_command('telnet 127.0.0.1 ' + str(port))
+    return channel
+
+
+def _reacquire_cat9kv(ssh, port, login, intent, timeout):
+    """Acquire a fresh console after reload using bounded readiness polling."""
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        channel = _open_telnet_console(ssh, port)
+        console = Cat9kvConsole(
+            channel, boot_timeout=max(1, deadline - time.monotonic()))
+        try:
+            recovered = console.login_after_reload(*login)
+        except RuntimeError as error:
+            last_error = error
+            channel.close()
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(2, remaining))
+            continue
+        try:
+            active = console.verify_license(intent)
+            active["golden_image_fallback"] = recovered
+            return channel, console, active
+        except Exception:
+            channel.close()
+            raise
+    raise RuntimeError(
+        'Timed out reacquiring Cat9Kv-UADP console after reload; inspect boot state') from last_error
+
+
 def initialize(client, topology, root, server_name, node_name=None, check=False, timeout=600, management_ip=None):
     if not 1 <= timeout <= 3600:
         raise ValueError('--timeout must be between 1 and 3600 seconds')
@@ -197,14 +262,14 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
             raise ValueError('Node not found: ' + node_name)
         nodes = {node_name: nodes[node_name]}
     result = {'lab': topology['name'], 'check': check, 'planned': [], 'completed': [], 'skipped': [], 'failed': [],
-              'interface_status': {}, 'warnings': []}
+              'interface_status': {}, 'lifecycle': {}, 'reloaded': [], 'warnings': []}
     pending = []
     base = (Path(root) / 'labs' / topology['name'] / 'configs').resolve()
     for name, node in nodes.items():
         template = node.get('template')
         address = targets.get(name) if template in ('paloalto', 'panorama') else None
         reason = None
-        if template not in ('c8000v', 'paloalto', 'panorama'):
+        if template not in ('c8000v', CAT9KV_TEMPLATE, 'nxosv9k', 'nxosv9k-9300v', 'paloalto', 'panorama'):
             reason = 'Unsupported init template: ' + str(template)
         elif node.get('console') != 'telnet' and not address:
             reason = 'Console type ' + str(node.get('console')) + ' is unsupported; init requires a working Telnet serial console'
@@ -212,14 +277,32 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 reason += '; stop the node and run eve init <lab> --node <name> --prepare-console, or use --management-ip after initial setup'
         elif not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*', name):
             reason = 'Node name is not a safe config filename'
-        path = (base / (name + '-init.cfg')).resolve()
+        kg_profile = template == 'c8000v' and (base / (name + '-init.yaml')).is_file()
+        yaml_init = kg_profile or template in ('nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE)
+        path = (base / (name + ('-init.yaml' if yaml_init else '-init.cfg'))).resolve()
         if not reason and (not path.is_relative_to(base) or not path.is_file()):
-            reason = 'Missing init file: configs/' + name + '-init.cfg'
+            reason = 'Missing init file: configs/' + name + ('-init.yaml' if yaml_init else '-init.cfg')
         if reason:
             result['skipped'].append({'node': name, 'reason': reason})
             print(f'Skipped {name}: {reason}', file=sys.stderr)
             continue
-        commands = config_commands(path, template)
+        if template in ('nxosv9k', 'nxosv9k-9300v'):
+            commands = load_nxos_bootstrap(path)
+        elif template == CAT9KV_TEMPLATE:
+            commands = load_cat9kv_bootstrap(path, root)
+        elif kg_profile:
+            commands = iosxe_kg.render(iosxe_kg.load_profile(path), root)
+        else:
+            commands = config_commands(path, template)
+        service_path = (base / (name + '-services.cfg')).resolve()
+        if service_path.is_file():
+            if not service_path.is_relative_to(base):
+                raise ValueError('Service configuration must remain inside configs')
+            services = config_commands(service_path, template)
+            if template == CAT9KV_TEMPLATE:
+                commands['service_commands'] = services
+            else:
+                commands += services
         if template == 'panorama' and not address:
             validate_panorama_network(commands)
         url = urlsplit(node.get('url', ''))
@@ -237,6 +320,9 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
     # Validate all credentials before touching devices.
     logins = {template: credentials(root, prefix='PALO' if template in ('paloalto', 'panorama') else 'CISCO')
               for _, template, _, _ in pending}
+    cat9kv_snmp = {name: cat9kv_secrets(intent, root)
+                   for name, template, _, intent in pending
+                   if template == CAT9KV_TEMPLATE}
     ssh = paramiko.SSHClient()
     try:
         ssh.load_system_host_keys()
@@ -253,20 +339,44 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 if template in ('paloalto', 'panorama') and targets.get(name):
                     device, channel = connect_palo(ssh, targets[name], login[0], login[1], timeout)
                 else:
-                    channel = ssh.get_transport().open_session(timeout=10)
-                    channel.get_pty(term='vt100', width=512, height=1000)
-                    channel.exec_command('telnet 127.0.0.1 ' + str(port))
+                    channel = _open_telnet_console(ssh, port)
                 console_type = {'paloalto': PaloConsole if targets.get(name) else PaloSerialConsole,
-                                'panorama': PanoramaConsole}.get(template, Console)
+                                'panorama': PanoramaConsole, 'nxosv9k': NxosConsole,
+                                'nxosv9k-9300v': NxosConsole,
+                                CAT9KV_TEMPLATE: Cat9kvConsole}.get(template, Console)
                 console = console_type(channel, boot_timeout=timeout)
                 if template == 'panorama' or (template == 'paloalto' and not targets.get(name)):
                     console.login(*login, auto_factory=not bool(targets.get(name)))
                 else:
                     console.login(*login)
+                if template == 'c8000v' and (base / (name + '-init.yaml')).is_file():
+                    if iosxe_kg.prepare_license(console):
+                        channel.close()
+                        channel = _open_telnet_console(ssh, port)
+                        console = Console(channel, boot_timeout=timeout)
+                        console.login(*login)
+                        iosxe_kg.verify_license(console)
+                        result['reloaded'].append(name)
                 print('Applying init to ' + name + '...', file=sys.stderr, flush=True)
-                console.initialize(commands, username=login[0], password=login[1])
+                if template == CAT9KV_TEMPLATE:
+                    snmp_ro, snmp_rw = cat9kv_snmp[name]
+                    lifecycle = console.initialize(
+                        commands, username=login[0], password=login[1],
+                        secret=login[2], snmp_ro=snmp_ro, snmp_rw=snmp_rw)
+                    result['lifecycle'][name] = lifecycle
+                    if lifecycle['reload_required']:
+                        channel.close()
+                        channel = None
+                        print('Waiting for ' + name + ' after license reload...',
+                              file=sys.stderr, flush=True)
+                        channel, console, active = _reacquire_cat9kv(
+                            ssh, port, login, commands, timeout)
+                        lifecycle['license_active'] = active
+                        result['reloaded'].append(name)
+                else:
+                    console.initialize(commands, username=login[0], password=login[1])
                 result['completed'].append(name)
-                if template == 'c8000v':
+                if template in ('c8000v', CAT9KV_TEMPLATE):
                     try:
                         result['interface_status'][name] = console.interface_status()
                     except (RuntimeError, ValueError, OSError, paramiko.SSHException):

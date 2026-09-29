@@ -64,13 +64,33 @@ class PanoramaInitTests(unittest.TestCase):
         self.assertEqual([c.args[0] for c in console.send.call_args_list],
                          ['', 'admin', 'new-secret'])
 
-    def test_factory_fallback_is_attempted_only_once(self):
+    @patch('eve_lab.initialize.time.sleep')
+    def test_factory_fallback_retries_once_after_early_boot_rejection(self, sleep):
         console = self.console(iter(['login:', 'Password:', 'Login incorrect',
+                                     'login:', 'Password:', 'Login incorrect',
+                                     'login:', 'Password:', 'Login incorrect',
+                                     'login:', 'Password:', 'Enter old password :',
+                                     'Enter new password :', 'Confirm password :',
+                                     'admin@Panorama>']))
+        console.boot_timeout = 900
+        console.login('admin', 'new-secret')
+        sleep.assert_called_once_with(300)
+        self.assertEqual([c.args[0] for c in console.send.call_args_list],
+                         ['', 'admin', 'new-secret', 'admin', 'admin',
+                          'admin', 'new-secret', 'admin', 'admin',
+                          'admin', 'new-secret', 'new-secret'])
+
+    @patch('eve_lab.initialize.time.sleep')
+    def test_persistent_factory_rejection_stops_after_one_retry(self, sleep):
+        console = self.console(iter(['login:', 'Password:', 'Login incorrect',
+                                     'login:', 'Password:', 'Login incorrect',
+                                     'login:', 'Password:', 'Login incorrect',
                                      'login:', 'Password:', 'Login incorrect']))
+        console.boot_timeout = 900
         with self.assertRaisesRegex(RuntimeError, 'configured and factory credentials'):
             console.login('admin', 'new-secret')
-        self.assertEqual([c.args[0] for c in console.send.call_args_list],
-                         ['', 'admin', 'new-secret', 'admin', 'admin'])
+        sleep.assert_called_once_with(300)
+        self.assertEqual([c.args[0] for c in console.send.call_args_list].count('admin'), 6)
 
     def test_abandoned_login_failure_before_our_credentials_is_ignored_once(self):
         console = self.console(iter(['Login incorrect', 'Panorama login:', 'Password:', 'admin@pano>']))

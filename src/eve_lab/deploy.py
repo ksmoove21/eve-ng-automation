@@ -182,7 +182,7 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     result = {**topology}
     result['nodes'] = []
     declared = {node['name'] for node in topology['nodes']}
-    fields = ('name', 'template', 'type', 'image', 'cpu', 'ram', 'ethernet', 'console', 'left', 'top')
+    fields = ('name', 'template', 'type', 'image', 'cpu', 'ram', 'ethernet', 'console', 'left', 'top', 'icon', 'cpulimit')
     for desired in topology['nodes'] + [nodes[name] for name in sorted(active - declared)]:
         name = desired['name']
         result['nodes'].append({key: nodes[name][key] for key in fields if key in nodes[name]}
@@ -229,6 +229,10 @@ def apply(client, topology, prune=True):
     deferred = []
     if prune:
         topology, direct, deferred = preserve_active(client, path, topology, direct, nodes, networks)
+    # Runtime policy is independent of template defaults. Preserve active nodes.
+    topology = {**topology, "nodes": [
+        node if node['name'] in nodes and str(nodes[node['name']].get('status')) != '0' and prune
+        else {**node, 'cpulimit': 0} for node in topology['nodes']]}
     # Preflight templates/images and network types before creating anything.
     payloads = {}
     for node in topology["nodes"]:
@@ -240,6 +244,8 @@ def apply(client, topology, prune=True):
         options = template["options"]
         if node["image"] not in options.get("image", {}).get("list", {}):
             raise ValueError(f"Image {node['image']} is not available for {node['template']}")
+        if 'icon' in node and node['icon'] not in options.get('icon', {}).get('list', {}):
+            raise ValueError(f"Icon {node['icon']} is not available for {node['template']}")
         defaults = {key: option["value"] for key, option in options.items()
                     if "value" in option and key != "uuid"}
         payloads[node["name"]] = {
@@ -259,7 +265,7 @@ def apply(client, topology, prune=True):
         for desired in topology[kind]:
             if desired["name"] in existing:
                 actual = existing[desired["name"]]
-                resources = {key: desired[key] for key in ("cpu", "ram", "ethernet", "console", "left", "top")
+                resources = {key: desired[key] for key in ("cpu", "ram", "ethernet", "console", "left", "top", "icon", "cpulimit")
                              if kind == "nodes" and key in desired
                              and str(desired[key]) != str(actual.get(key))}
                 if kind == "networks":
@@ -488,6 +494,18 @@ def lifecycle(client, topology, action, node_name=None):
     return {"lab": topology["name"], "action": action, "changed_nodes": completed}
 
 
+def request_stop(client, path, ident):
+    """CE stop endpoint with the confirmed Pro automatic-stop route fallback."""
+    endpoint = f"{path}/nodes/{ident}/stop"
+    try:
+        client.request("GET", endpoint)
+    except EveAPIError as error:
+        if error.code != 400 or "(60027)" not in str(error):
+            raise
+        # Pro 7.x Vue frontend supplies stopmode=3 (template-selected stop).
+        client.request("GET", endpoint + "/stopmode=3")
+
+
 def stop_all(client, topology, node_name=None):
     path = lab_path(topology)
     nodes = indexed(client.request("GET", path + "/nodes"))
@@ -502,7 +520,7 @@ def stop_all(client, topology, node_name=None):
         if str(node.get("status")) == "0":
             continue
         try:
-            client.request("GET", f"{path}/nodes/{ident}/stop")
+            request_stop(client, path, ident)
             requested[ident] = node["name"]
         except RuntimeError as error:
             failures.append(f"{node['name']} (ID {ident}): {error}")
@@ -541,7 +559,7 @@ def delete(client, topology):
         nodes = indexed(client.request("GET", path + "/nodes"))
         for ident, node in nodes.items():
             if str(node.get("status")) != "0":
-                client.request("GET", f"{path}/nodes/{ident}/stop")
+                request_stop(client, path, ident)
                 result["stopped_nodes"].append(node["name"])
         remaining = wait_for_stopped(client, path)
         if any(str(node.get("status")) != "0" for node in remaining.values()):
