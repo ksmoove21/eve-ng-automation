@@ -53,6 +53,20 @@ class ConsoleTests(unittest.TestCase):
             c.login('admin', 'loginpass', 'enablepass')
         self.assertEqual([call.kwargs['wake'] for call in c.expect.call_args_list], [True, False, False])
 
+    def test_poap_answer_stops_wakeup_enters_during_admin_setup(self):
+        import re
+        c = Console(MagicMock())
+        c.expect = MagicMock(side_effect=[('', re.match('.*', text)) for text in
+                            ['Abort Power On Auto Provisioning (yes/no)[no]:',
+                             'Do you want to enforce secure password standard (yes/no) [y]:',
+                             'Enter the password for "admin":',
+                             'Confirm the password for "admin":', 'switch#']])
+        c.login('admin', 'test-password', 'enablepass')
+        self.assertEqual([call.kwargs['wake'] for call in c.expect.call_args_list],
+                         [True, False, False, False, False])
+        self.assertEqual([call.args[0] for call in c.channel.sendall.call_args_list],
+                         ['\r', 'yes\r', 'yes\r', 'test-password\r', 'test-password\r'])
+
     def test_initial_wait_wakes_console_after_early_enter_is_lost(self):
         channel = MagicMock()
         channel.closed = False
@@ -82,6 +96,57 @@ class ConsoleTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'Timed out'):
                 c.expect(r'Password:')
         channel.sendall.assert_not_called()
+
+    def interrupted_console(self, response, redraw=True):
+        import itertools
+        channel = MagicMock()
+        channel.closed = False
+        channel.exit_status_ready.return_value = False
+        pending = [response.encode()]
+        channel.recv_ready.side_effect = lambda: bool(pending)
+        channel.recv.side_effect = lambda size: pending.pop(0)
+        def send(value):
+            if value == '\x12' and redraw:
+                pending.append(b'\r\n\x12R0(config-if)#')
+        channel.sendall.side_effect = send
+        return Console(channel), channel, itertools.count().__next__
+
+    def test_command_redisplays_prompt_interrupted_by_async_output(self):
+        for message in ('Guestshell destroyed successfully',
+                        '01: %SYS-5-RESTART: System restarted --',
+                        ' 2026 Sep 29 switch %$ VDC-1 %$ interface event'):
+            c, ch, clock = self.interrupted_console(
+                'no shutdown\r\nR0(config-if)#' + message + '\r\n')
+            with patch('eve_lab.device_console.time.monotonic', side_effect=clock), \
+                    patch('eve_lab.device_console.time.sleep'):
+                output = c.command('no shutdown')
+            self.assertIn(message, output)
+            self.assertEqual([x.args[0] for x in ch.sendall.call_args_list],
+                             ['no shutdown\r', '\x12'])
+
+    def test_redisplay_keeps_command_errors_and_is_bounded(self):
+        for response, redraw, error in (
+                ('bad command\n% Invalid input\nR0#Startup message\n', True, 'rejected'),
+                ('no shutdown\nR0#Startup message\n', False, 'Timed out')):
+            c, ch, clock = self.interrupted_console(response, redraw)
+            with patch('eve_lab.device_console.time.monotonic', side_effect=clock), \
+                    patch('eve_lab.device_console.time.sleep'), patch('sys.stderr'):
+                with self.assertRaisesRegex(RuntimeError, error):
+                    c.command('no shutdown', timeout=8)
+            self.assertEqual([x.args[0] for x in ch.sendall.call_args_list],
+                             ['no shutdown\r', '\x12'])
+
+    def test_command_consumes_buffered_prompt_redraw_before_next_response(self):
+        c, ch = self.console([
+            'write memory\nBuilding configuration...\n[OK]\nR0#\n'
+            '%SYS-5-CONFIG_I: Configured from console\nR0#',
+            'show version\nTechnology Package License Information:\n'
+            'network-essentials Smart License network-essentials\nR0#'])
+        self.assertIn('[OK]', c.command('write memory'))
+        output = c.command('show version')
+        self.assertIn('Technology Package License Information:', output)
+        self.assertEqual(c.pending, '')
+        self.assertEqual(ch.recv.call_count, 2)
 
     def test_backup_strips_echo_and_checks_complete(self):
         c, _ = self.console(['terminal length 0\nR0#',

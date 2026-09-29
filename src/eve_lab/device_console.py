@@ -137,7 +137,7 @@ class Console:
     def send(self, line):
         self.channel.sendall(line + '\r')
 
-    def expect(self, pattern, timeout=60, wake=False, latest=False, return_on_timeout=False):
+    def expect(self, pattern, timeout=60, wake=False, latest=False, return_on_timeout=False, redisplay=False):
         data, self.pending = self.pending, ''
         started = time.monotonic()
         deadline = started + timeout
@@ -151,6 +151,12 @@ class Console:
                 self.pending = clean[match.end():]
                 return clean[:match.end()], match
             now = time.monotonic()
+            if (redisplay and now >= started + 2
+                    and re.search(r'^[ \t]*[\w.()/:-]+#(?=[ \t]*[^ \t\n])', clean, re.M)):
+                # Async startup/interface messages can overwrite an exec prompt.
+                # Redisplay once without submitting input or repeating the command.
+                self.channel.sendall('\x12')
+                redisplay = False
             if wake and now >= next_wake:
                 self.send('')
                 next_wake = now + 10
@@ -184,7 +190,7 @@ class Console:
         secret_prompts = set()
         pattern = (r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
-                   r'Username:\s*$|login:\s*$|Password:\s*$|Abort Power On Auto Provisioning[^\n]*[?:]|Enter the password for [^\n]*admin[^\n]*:|Would you like to enter[^\n]*[?:]\s*$|'
+                   r'Username:\s*$|login:\s*$|Password:\s*$|Abort Power On Auto Provisioning[^\n]*[?:]|Do you want to enforce secure password standard[^\n]*[?:]|(?:Enter|Confirm) the password for [^\n]*admin[^\n]*:|Would you like to enter[^\n]*[?:]\s*$|'
                    r'Press RETURN to get started[^\n]*$|' + _PROMPT)
         probe = read_only
         for _ in range(12):
@@ -225,13 +231,17 @@ class Console:
             elif prompt.startswith('Username:') or prompt.lower().startswith('login:'):
                 self.send(username)
                 wake = False
-            elif re.match(r'Enter the password for .*admin', prompt, re.I):
+            elif re.match(r'(?:Enter|Confirm) the password for .*admin', prompt, re.I):
                 self.send(password)
                 wake = False
             elif prompt.startswith('Password:'):
                 self.send(password)
                 wake = False
             elif re.match(r'Abort Power On Auto Provisioning', prompt, re.I):
+                wake = False
+                self.send('yes')
+            elif re.match(r'Do you want to enforce secure password standard', prompt, re.I):
+                wake = False
                 self.send('yes')
             elif prompt.startswith('Would you like'):
                 self.send('no')
@@ -257,7 +267,7 @@ class Console:
 
     def command(self, command, timeout=60):
         self.send(command)
-        output, match = self.expect(_PRIVILEGED_PROMPT, timeout)
+        output, match = self.expect(_PRIVILEGED_PROMPT, timeout, latest=True, redisplay=True)
         if re.search(r'^%\s*(?:Invalid|Incomplete|Ambiguous|Error|Authorization|Access denied)', output, re.M | re.I):
             raise RuntimeError('Cisco rejected a command; inspect the console (output omitted)')
         self.prompt = match.group().strip()

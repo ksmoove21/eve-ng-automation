@@ -77,12 +77,17 @@ class PaloSerialConsole(PaloConsole):
         login_password = password
         used_factory = False
         stale_failures = 0
+        auth_retry = False
+        deadline = time.monotonic() + self.boot_timeout
         pattern = (r'(?im:^[^\n]*login:\s*$|^username:\s*$|^password:\s*$|'
                    r'^(?:enter )?(?:old|new|confirm|retype)[^\n]*password[^\n]*$|'
                    r'^login incorrect\s*$|^authentication failed[^\n]*$)|'
                    r'^[\w.@()/:\-]+[>#]\s*$')
         for _ in range(16):
-            observed, match = self.expect(pattern, timeout=self.boot_timeout, wake=not stages, latest=True)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError('Palo Alto login did not become ready before the boot timeout')
+            observed, match = self.expect(pattern, timeout=remaining, wake=not stages, latest=True)
             prompt = match.group().strip().lower()
             if re.search(r'login incorrect|authentication failed', observed, re.I):
                 if 'password' not in stages and not {'old', 'new', 'confirm'} & stages and stale_failures < 1:
@@ -97,6 +102,18 @@ class PaloSerialConsole(PaloConsole):
                     used_factory = True
                     stages.clear()
                     print('Configured Palo Alto credentials rejected; trying factory credentials once...', file=sys.stderr, flush=True)
+                    if prompt.endswith('login:') or prompt.startswith('username:'):
+                        self.send(username)
+                        stages.add('username')
+                    continue
+                if used_factory and not auth_retry and time.monotonic() + 300 < deadline:
+                    auth_retry = True
+                    time.sleep(300)
+                    stages.clear()
+                    login_password = password
+                    used_factory = False
+                    print('Palo Alto rejected both credentials during startup; retrying once after 300s...',
+                          file=sys.stderr, flush=True)
                     if prompt.endswith('login:') or prompt.startswith('username:'):
                         self.send(username)
                         stages.add('username')
