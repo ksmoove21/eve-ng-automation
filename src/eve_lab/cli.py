@@ -170,7 +170,7 @@ def main():
                 client.login(server["username"], server["password"])
             try:
                 if args.command == "apply":
-                    result = apply(client, topology, prune=args.prune)
+                    result = apply(client, topology, prune=args.prune, root=args.root, server_name=args.server)
                 elif args.command == "init":
                     if args.prepare_console:
                         if args.management_ip:

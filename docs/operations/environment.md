@@ -63,6 +63,25 @@ PALO_PASSWORD
 Keep device credentials independent from EVE credentials. Store real values only
 in the local environment or a gitignored `.env`.
 
+
+## Concurrent automation workers
+
+EVE permits only one active API login per username. Interactive GUI users must
+not be reused by automation, and concurrent automation processes must not share
+an EVE identity: a later login invalidates the earlier session.
+
+Assign one generic worker identity to each concurrently active execution slot.
+Keep the assignment workload-independent so the same slots can run different
+platform sprints over time. Each Git worktree may carry its own gitignored
+`.env` with that worker's `EVE_USERNAME` and `EVE_PASSWORD`; never copy generated
+passwords into tracked examples, documentation, fixtures, logs, or commits.
+
+When the engine source checkout and private lab workspace differ, export the
+worktree-specific credential values into the worker process before selecting the
+private workspace with `--root`. Environment values take precedence over the
+private workspace's `.env`, preserving independent sessions even when workers
+share the same lab workspace.
+
 ## TLS
 
 TLS verification should remain enabled. If an EVE deployment uses a privately

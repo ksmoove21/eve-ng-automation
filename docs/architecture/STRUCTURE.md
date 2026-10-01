@@ -133,6 +133,24 @@ Do not derive or invent design intent merely because a device can support it.
 Exact image names are deployment inputs. Preflight must fail clearly when a
 requested image is unavailable rather than silently selecting a different image.
 
+A QEMU node assigned to a satellite declares its positive `satellite` ID.
+`required_storage_gib` declares the required free satellite storage and
+`required_image_disks` declares the exact expected QCOW2 disk count (default
+one when omitted). Before any deployment writes, the reconciler checks EVE
+cluster capacity and uses the configured manager SSH transport for a read-only
+inspection of that selected satellite's image directory. It returns structured
+`READY`, `COPYING/UNSTABLE`, `MISSING`, or `INVALID` evidence from bounded file
+metadata, `qemu-img info`, disk-layout, and relevant writer-process checks. It
+does not checksum, copy, repair, or alter satellite images. A manager hostname
+lookup may fall back to the EVE inventory's WireGuard public-key mapping, still
+under strict SSH host-key checking.
+Satellite preflight deliberately does not require a local `pnet0`, OVS bridge,
+or a static VXLAN device. Those are not generic cluster prerequisites: EVE Pro
+creates the lab-specific plumbing through its native manager/satellite control
+plane. A failed native satellite sync/start must be reported as such with its
+structured evidence; the engine must not attempt to recreate cluster bridges,
+WireGuard, tunnels, or host networking.
+
 Canvas layout is declarative when coordinates are provided. Do not treat visual
 placement as authoritative runtime-only state.
 

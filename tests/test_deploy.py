@@ -29,7 +29,13 @@ class FakeEve:
         if path.startswith("list/templates/"):
             return {"type": "iol" if path.endswith("/iol") else "qemu", "options": {
                 "image": {"list": self.images}, "ram": {"value": 6144},
-                "cpu": {"value": 2}, "ethernet": {"value": 4}}}
+                "cpu": {"value": 2}, "ethernet": {"value": 4},
+                "sat": {"value": "-1", "list": {"-1": "any", "0": "master", "1": "eve-sat01"}}}}
+        if path == "cluster":
+            return {"1": {"id": 0, "name": "master", "online": 1, "cpu": 16, "live_ram": 131072,
+                           "disk": 104857600, "disk_usage": 0},
+                    "2": {"id": 1, "name": "eve-sat01", "online": 1, "cpu": 16, "live_ram": 131072,
+                           "disk": 104857600, "disk_usage": 0}}
         if path == "list/networks":
             return {"pnet1": "Cloud1", "bridge": "bridge"}
         if path == "folders/":
@@ -134,6 +140,39 @@ class DeploymentTests(unittest.TestCase):
         apply(self.client, self.topology)
         self.assertEqual(self.client.nodes["1"]["cpulimit"], 1)
         self.assertFalse(self.client.writes)
+
+    def test_satellite_placement_preflight_and_persistence(self):
+        topology = copy.deepcopy(self.topology)
+        topology['nodes'][0].update(satellite=1, required_storage_gib=50, required_image_disks=2)
+        inspected = []
+        def image_inspector(root, server_name, satellite, image, disks, satellite_key=None):
+            inspected.append((root, server_name, satellite, image, disks, satellite_key))
+            return {'status': 'READY', 'reason': 'stable'}
+        result = apply(self.client, topology, root=Path('.'), image_inspector=image_inspector)
+        self.assertEqual(self.client.nodes['1']['sat'], 1)
+        self.assertEqual(result['placement']['R1']['satellite'], 'eve-sat01')
+        self.assertEqual(result['placement']['R1']['image_readiness']['status'], 'READY')
+        self.assertEqual(inspected[0][2:], ('eve-sat01', 'c8000v-17.15.06', 2, None))
+        self.client.nodes['1']['status'] = 0
+        apply(self.client, topology, root=Path('.'), image_inspector=image_inspector)
+        self.assertEqual(self.client.nodes['1']['sat'], 1)
+
+    def test_satellite_image_not_ready_prevents_writes(self):
+        topology = copy.deepcopy(self.topology)
+        topology['nodes'][0].update(satellite=1, required_storage_gib=50)
+        with self.assertRaisesRegex(RuntimeError, 'COPYING/UNSTABLE'):
+            apply(self.client, topology, root=Path('.'),
+                  image_inspector=lambda *args, **kwargs: {'status': 'COPYING/UNSTABLE', 'reason': 'metadata changed'})
+        self.assertEqual(self.client.writes, [])
+
+    def test_satellite_placement_rejects_offline_or_insufficient_hosts(self):
+        topology = copy.deepcopy(self.topology)
+        topology['nodes'][0].update(satellite=1, required_storage_gib=101)
+        with self.assertRaisesRegex(RuntimeError, 'lacks 101 GiB'):
+            apply(self.client, topology)
+        topology['nodes'][0]['satellite'] = 2
+        with self.assertRaisesRegex(RuntimeError, 'not present'):
+            apply(self.client, topology)
 
     def test_topology_accepts_native_iol_nodes(self):
         topology = copy.deepcopy(self.topology)

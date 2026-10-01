@@ -76,7 +76,8 @@ def validate(topology: dict):
     topology, _ = expand_links(topology)
     validate_folder(topology.get("remote_folder", "/"))
     allowed = {
-        "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top", "icon"},
+        "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top", "icon",
+                  "satellite", "required_storage_gib", "required_image_disks"},
         "networks": {"name", "type", "left", "top"},
         "links": {"node", "interface", "network"},
     }
@@ -107,6 +108,14 @@ def validate(topology: dict):
         for field in ("cpu", "ram", "ethernet"):
             if field in node and (type(node[field]) is not int or node[field] < 1):
                 raise ValueError(f"{node['name']}: {field} must be a positive integer")
+        if "satellite" in node and (type(node["satellite"]) is not int or node["satellite"] < 1):
+            raise ValueError(f"{node['name']}: satellite must be a positive EVE satellite ID; manager placement is not allowed")
+        if "required_storage_gib" in node and (
+                type(node["required_storage_gib"]) is not int or node["required_storage_gib"] < 1):
+            raise ValueError(f"{node['name']}: required_storage_gib must be a positive integer")
+        if "required_image_disks" in node and (
+                type(node["required_image_disks"]) is not int or node["required_image_disks"] < 1):
+            raise ValueError(f"{node['name']}: required_image_disks must be a positive integer")
     endpoints = set()
     for link in topology["links"]:
         if any(not isinstance(link.get(field), str) or not link[field] for field in allowed["links"]):

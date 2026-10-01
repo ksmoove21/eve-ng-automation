@@ -29,3 +29,4 @@ Current platform notes:
 - [NX-OS / Nexus 9000v](nxos.md)
 
 - [IOS and IOS-XE route-based IPsec](iosxe-ipsec.md)
+- [Nexus Dashboard / Fabric Controller](nexus-dashboard.md)
