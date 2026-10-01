@@ -198,10 +198,29 @@ to a future 3.2.2m image.
 | NDFC Server Settings | Change `LAN Device Management Connectivity` from its initial Management value to `DATA`, save, and wait for mandatory service reassignment. | **DOCUMENTED / OBSERVED:** `Admin → System Settings → Server Settings → Admin` exposes the selector. The live control moved from Management to Data, Save completed, and a fresh UI read returned `Data`. The five DATA persistent IPs exceed the 3.2.x two-address base requirement; the MANAGEMENT pool remains configured for first-run capacity. |
 | NDFC API ready | After Service Setup and DATA reassignment settle, use the authenticated documented fabrics GET. An empty list is valid; no fabric is created. | **OBSERVED:** the previously 404 documented fabrics GET now returns HTTP 200 with an empty JSON list after the UI lifecycle completed and DATA persisted. Earlier 404 was `not-yet-available`, not a platform fault or a reason to use an internal endpoint. |
 
-**Current next action:** use the reusable lifecycle-aware implementation for
-idempotence and two clean build/bootstrap/validation cycles. Do not create a
-fabric, onboard a device, restart, or clean-wipe the preserved appliance except
-as part of an authorized clean acceptance cycle.
+### Clean cycle 1 convergence failure
+
+**OBSERVED / PARTIAL SUCCESS:** The first authorized clean acceptance cycle recreated
+only the disposable lab, passed selected-satellite image preflight, started ND-01
+on `eve-sat03`, and completed the fresh serial bootstrap plus documented browser
+Cluster Bringup Summary submission. The EVE node remains `running`. Read-only QMP
+then reported `running` and `io-status: ok` for both QCOW2 devices, with the
+expected 16-vCPU/64-GiB process and both TAP-backed NICs. This rules out an
+image-readiness, disk-layout, or pre-QEMU launch failure for this cycle.
+
+**OBSERVED / FAILED CONVERGENCE:** After the documented service window had
+been exceeded, four final five-minute-spaced bounded checks failed: the first
+reached TCP/443 but timed out in the TLS handshake; the remaining three timed
+out before a usable HTTPS connection. The serial device exposed no login, error,
+panic, or fatal output. This is a guest-service-convergence failure, not an
+EVE-host, image-readiness, disk-layout, or pre-QEMU launch diagnosis. Clean
+cycle 1 is therefore not a PASS. Preserve the running appliance; do not restart,
+repair, or recreate it solely to clear evidence, and do not begin clean cycle 2
+without a new, evidence-backed recovery hypothesis.
+**Current next action:** preserve the failed clean-cycle-1 appliance and obtain
+a new, evidence-backed guest-service recovery or supported diagnostic path before
+retrying. Do not create a fabric, onboard a device, restart, repair, or clean-wipe
+the preserved appliance merely to repeat the cycle.
 
 ## Current implementation and tests
 
