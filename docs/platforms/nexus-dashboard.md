@@ -158,10 +158,21 @@ observations are not an implementation dependency on internal UI requests.
 
 **VERSION-SPECIFIC / OBSERVED:** 3.2.1i has no editable persistent/service-IP
 control in its documented initial Summary UI, including View Advanced Settings.
-Those values must remain pending a supported post-cluster API discovery; no
-undocumented GUI request may be used to configure them.
+The documented post-cluster external-IP API was used instead: the initially
+empty collection accepted one DATA-targeted resource containing the five derived
+private service addresses, and read-back returned HTTP 200 with one resource.
+No undocumented GUI request was used.
 
-**Current next action:** use the documented platform and Fabric Controller APIs to establish Fabric Controller readiness,
+**OBSERVED / BLOCKING:** After the Service Installation banner cleared, the
+documented Fabric Controller fabrics GET
+`/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics` still returns
+HTTP 404 across bounded rechecks. The Dashboard platform and node APIs remain
+`Active`; this is specifically Fabric Controller service-gateway absence, not
+Cluster Bringup, DNS/NTP, management/data addressing, or external-IP failure.
+Do not create a fabric, onboard a device, or use an undocumented app endpoint
+as a workaround.
+
+**Current next action:** determine, from the documented Service Status/application lifecycle surface or owner-approved service repair, why the selected Fabric Controller service has not registered its documented gateway;
 then discover the running `/apidocs/`, use only documented cluster/node/external
 IP and Fabric Controller APIs, configure the pending intent, implement
 read-only validation, and run two complete clean build/bootstrap/validation
