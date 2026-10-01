@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import re
 import unittest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import ANY, MagicMock, patch, call
 
 import yaml
 
@@ -10,7 +10,9 @@ from eve_lab.initialize import initialize
 from eve_lab.initialize_nexus_dashboard import (
     NexusDashboardConsole, load_bootstrap, normalize_intent,
 )
-from eve_lab.nexus_dashboard_browser import _state
+from eve_lab.nexus_dashboard_browser import (
+    _ensure_external_ips, _external_ips_payloads, _state,
+)
 
 
 INTENT = {
@@ -67,6 +69,43 @@ class NexusDashboardInitTests(unittest.TestCase):
             "data")
         self.assertTrue(intent["cluster_leader"])
 
+    def test_schema_v2_derives_independent_management_and_data_service_pools(self):
+        intent = normalize_intent({
+            **{key: value for key, value in INTENT.items()
+               if key != "persistent_service_ip_count"},
+            "schema_version": 2,
+            "service_ip_pools": {"management": 5, "data": 5},
+        })
+        self.assertEqual(intent["service_ip_pools"]["Management"], [
+            "192.0.2.10", "192.0.2.11", "192.0.2.12", "192.0.2.13", "192.0.2.14"])
+        self.assertEqual(intent["service_ip_pools"]["Data"], [
+            "198.51.100.11", "198.51.100.12", "198.51.100.13", "198.51.100.14", "198.51.100.15"])
+        self.assertEqual([item["spec"]["targetNetwork"]
+                          for item in _external_ips_payloads(intent)],
+                         ["Management", "Data"])
+
+    def test_schema_v2_rejects_invalid_management_pool_size(self):
+        value = {key: item for key, item in INTENT.items()
+                 if key != "persistent_service_ip_count"}
+        value.update({"schema_version": 2,
+                      "service_ip_pools": {"management": 0, "data": 5}})
+        with self.assertRaisesRegex(ValueError, "management service-IP count"):
+            normalize_intent(value)
+
+    @patch("eve_lab.nexus_dashboard_browser._external_ip_response")
+    def test_service_ip_reconciler_rejects_live_resource_collision(self, response):
+        intent = normalize_intent({
+            **{key: item for key, item in INTENT.items()
+               if key != "persistent_service_ip_count"},
+            "schema_version": 2,
+            "service_ip_pools": {"management": 5, "data": 5},
+        })
+        response.return_value = (200, {"items": [{"spec": {
+            "name": "other", "targetNetwork": "Data",
+            "ip": ["198.51.100.11"]}}]})
+        with self.assertRaisesRegex(RuntimeError, "conflicts"):
+            _ensure_external_ips(MagicMock(), intent)
+        response.assert_called_once_with(ANY, "GET")
     def test_intent_rejects_overlap_bad_connectivity_and_derived_gateway(self):
         cases = [
             {**INTENT, "data": {

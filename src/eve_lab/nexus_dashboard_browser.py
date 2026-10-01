@@ -257,13 +257,17 @@ def _summary(page, intent):
     page.wait_for_timeout(30000)
 
 _EXTERNAL_IPS_ENDPOINT = "/nexus/infra/api/platform/v1/externalips"
-_EXTERNAL_IPS_NAME = "data-external-services"
+_EXTERNAL_IP_RESOURCES = (
+    ("management-external-services", "Management"),
+    ("data-external-services", "Data"),
+)
 
 
-def _external_ips_payload(intent):
-    """Build the documented DATA external-IP resource from validated intent."""
-    return {"spec": {"name": _EXTERNAL_IPS_NAME, "targetNetwork": "Data",
-                     "ip": intent["persistent_service_ips"]}}
+def _external_ips_payloads(intent):
+    """Build documented, separately targeted external-service IP resources."""
+    pools = intent["service_ip_pools"]
+    return [{"spec": {"name": name, "targetNetwork": target, "ip": pools[target]}}
+            for name, target in _EXTERNAL_IP_RESOURCES if pools[target]]
 
 
 def _external_ip_response(page, method, payload=None):
@@ -285,38 +289,70 @@ def _external_ip_response(page, method, payload=None):
     return result.get("status"), body
 
 
-def _ensure_external_ips(page, intent):
-    """Create or strictly verify the declarative DATA service-IP resource."""
-    desired = _external_ips_payload(intent)["spec"]
-    status, current = _external_ip_response(page, "GET")
-    if status != 200 or not isinstance(current, dict) or not isinstance(current.get("items"), list):
+def _external_ip_specs(current):
+    if not isinstance(current, dict) or not isinstance(current.get("items"), list):
         raise NexusDashboardBrowserError("Nexus Dashboard external-IP collection is unavailable")
-    matching = [item.get("spec") for item in current["items"]
-                if isinstance(item, dict) and isinstance(item.get("spec"), dict)
-                and item["spec"].get("name") == _EXTERNAL_IPS_NAME]
-    if len(matching) > 1:
-        raise NexusDashboardBrowserError("Nexus Dashboard has duplicate DATA service-IP resources")
-    if matching:
-        actual = matching[0]
-        if (actual.get("targetNetwork") != "Data"
-                or sorted(actual.get("ip", [])) != sorted(desired["ip"])):
-            raise NexusDashboardBrowserError("Nexus Dashboard DATA service-IP resource conflicts with intent")
-        return {"status": "already-configured", "resource": _EXTERNAL_IPS_NAME}
-    status, _ = _external_ip_response(page, "POST", {"spec": desired})
-    if status not in (200, 201):
-        raise NexusDashboardBrowserError("Nexus Dashboard rejected the documented DATA service-IP resource")
-    status, verified = _external_ip_response(page, "GET")
-    if status != 200 or not isinstance(verified, dict):
-        raise NexusDashboardBrowserError("Nexus Dashboard did not return the DATA service-IP resource")
-    resources = [item.get("spec") for item in verified.get("items", [])
-                 if isinstance(item, dict) and isinstance(item.get("spec"), dict)]
-    if desired not in resources:
-        raise NexusDashboardBrowserError("Nexus Dashboard did not retain the DATA service-IP resource")
-    return {"status": "configured", "resource": _EXTERNAL_IPS_NAME}
+    specs = []
+    for item in current["items"]:
+        spec = item.get("spec") if isinstance(item, dict) else None
+        if isinstance(spec, dict):
+            specs.append(spec)
+    return specs
 
+
+def _ensure_external_ips(page, intent):
+    """Reconcile all declared service-IP pools without cross-resource collisions."""
+    desired = _external_ips_payloads(intent)
+    desired_ips = [address for item in desired for address in item["spec"]["ip"]]
+    if len(desired_ips) != len(set(desired_ips)):
+        raise NexusDashboardBrowserError("Nexus Dashboard desired service-IP pools overlap")
+    status, current = _external_ip_response(page, "GET")
+    if status != 200:
+        raise NexusDashboardBrowserError("Nexus Dashboard external-IP collection is unavailable")
+    specs = _external_ip_specs(current)
+    matches = {}
+    for item in desired:
+        wanted = item["spec"]
+        matching = [spec for spec in specs if spec.get("name") == wanted["name"]]
+        if len(matching) > 1:
+            raise NexusDashboardBrowserError(
+                "Nexus Dashboard has duplicate service-IP resource " + wanted["name"])
+        for actual in specs:
+            if actual.get("name") != wanted["name"] and set(actual.get("ip", [])) & set(wanted["ip"]):
+                raise NexusDashboardBrowserError(
+                    "Nexus Dashboard service-IP resource conflicts with " + wanted["name"])
+        matches[wanted["name"]] = matching
+    outcomes = {}
+    for item in desired:
+        wanted = item["spec"]
+        matching = matches[wanted["name"]]
+        if matching:
+            actual = matching[0]
+            if (actual.get("targetNetwork") != wanted["targetNetwork"]
+                    or sorted(actual.get("ip", [])) != sorted(wanted["ip"])):
+                raise NexusDashboardBrowserError(
+                    "Nexus Dashboard service-IP resource conflicts with intent: " + wanted["name"])
+            outcomes[wanted["targetNetwork"]] = "already-configured"
+            continue
+        status, _ = _external_ip_response(page, "POST", item)
+        if status not in (200, 201):
+            raise NexusDashboardBrowserError(
+                "Nexus Dashboard rejected service-IP resource " + wanted["name"])
+        specs.append(wanted)
+        outcomes[wanted["targetNetwork"]] = "configured"
+    status, verified = _external_ip_response(page, "GET")
+    if status != 200:
+        raise NexusDashboardBrowserError("Nexus Dashboard did not return service-IP resources")
+    verified_specs = _external_ip_specs(verified)
+    for item in desired:
+        if item["spec"] not in verified_specs:
+            raise NexusDashboardBrowserError(
+                "Nexus Dashboard did not retain service-IP resource " + item["spec"]["name"])
+    return {"status": "already-configured" if all(value == "already-configured"
+            for value in outcomes.values()) else "configured", "resources": outcomes}
 
 def configure_external_ips(intent, username, password, timeout=600):
-    """Reconcile documented DATA external IPs only after initial bringup is ready."""
+    """Reconcile all declared documented external service-IP pools after bringup."""
     address = str(IPv4Interface(intent["management"]["address"]).ip)
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -337,7 +373,7 @@ def configure_external_ips(intent, username, password, timeout=600):
             finally:
                 browser.close()
     except PlaywrightTimeoutError as error:
-        raise NexusDashboardBrowserError("Timed out reconciling documented Nexus Dashboard DATA service IPs") from error
+        raise NexusDashboardBrowserError("Timed out reconciling documented Nexus Dashboard service IPs") from error
 
 def bringup(intent, username, password, timeout=600):
     """Run or classify the documented initial Cluster Bringup wizard.

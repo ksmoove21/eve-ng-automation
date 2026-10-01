@@ -75,16 +75,43 @@ def _ntp_list(values):
     return normalized
 
 
+def _derived_service_ips(interface, gateway, count, label):
+    """Derive a bounded, usable service-IP pool after one node interface."""
+    if type(count) is not int or not 1 <= count <= 32:
+        raise ValueError(label + " service-IP count must be an integer from 1 to 32")
+    addresses = []
+    for offset in range(1, count + 1):
+        try:
+            candidate = interface.ip + offset
+        except AddressValueError:
+            raise ValueError(label + " service addresses exceed the declared subnet") from None
+        if (candidate not in interface.network
+                or candidate in (interface.network.network_address,
+                                 interface.network.broadcast_address)
+                or candidate == gateway):
+            raise ValueError(label + " derived service addresses must be usable and not the gateway")
+        addresses.append(str(candidate))
+    return addresses
+
+
 def normalize_intent(data):
     """Validate declarative first-boot and supported post-bootstrap intent."""
-    fields = (
-        "schema_version", "cluster_name", "management", "data",
-        "dns_servers", "search_domains", "ntp_servers",
-        "persistent_service_ip_count", "fabric_controller",
-    )
+    version = data.get("schema_version") if isinstance(data, dict) else None
+    if version == 1:
+        fields = (
+            "schema_version", "cluster_name", "management", "data",
+            "dns_servers", "search_domains", "ntp_servers",
+            "persistent_service_ip_count", "fabric_controller",
+        )
+    elif version == 2:
+        fields = (
+            "schema_version", "cluster_name", "management", "data",
+            "dns_servers", "search_domains", "ntp_servers",
+            "service_ip_pools", "fabric_controller",
+        )
+    else:
+        raise ValueError("Nexus Dashboard bootstrap schema_version must be 1 or 2")
     _exact(data, fields, "Nexus Dashboard bootstrap")
-    if data["schema_version"] != 1:
-        raise ValueError("Nexus Dashboard bootstrap schema_version must be 1")
     cluster_name = data["cluster_name"]
     if not isinstance(cluster_name, str) or not _CLUSTER_NAME.fullmatch(cluster_name):
         raise ValueError("cluster_name must be an RFC 1123 lowercase hostname label")
@@ -110,21 +137,19 @@ def normalize_intent(data):
                    for value in search_domains)):
         raise ValueError("search_domains must be a nonempty unique list of DNS domains")
 
-    count = data["persistent_service_ip_count"]
-    if type(count) is not int or not 1 <= count <= 32:
-        raise ValueError("persistent_service_ip_count must be an integer from 1 to 32")
-    persistent = []
-    for offset in range(1, count + 1):
-        try:
-            candidate = data_network.ip + offset
-        except AddressValueError:
-            raise ValueError("persistent service addresses exceed the data subnet") from None
-        if (candidate not in data_network.network
-                or candidate in (data_network.network.network_address,
-                                 data_network.network.broadcast_address)
-                or candidate == IPv4Address(networks["data"]["gateway"])):
-            raise ValueError("derived persistent service addresses must be usable and not the data gateway")
-        persistent.append(str(candidate))
+    if version == 1:
+        pool_counts = {"management": 0, "data": data["persistent_service_ip_count"]}
+    else:
+        pool_counts = data["service_ip_pools"]
+        _exact(pool_counts, ("management", "data"), "service_ip_pools")
+    management_service_ips = ([] if version == 1 else _derived_service_ips(
+        management, IPv4Address(networks["management"]["gateway"]),
+        pool_counts["management"], "management"))
+    data_service_ips = _derived_service_ips(
+        data_network, IPv4Address(networks["data"]["gateway"]),
+        pool_counts["data"], "data")
+    if set(management_service_ips) & set(data_service_ips):
+        raise ValueError("management and data service-IP pools must not overlap")
 
     fabric = data["fabric_controller"]
     _exact(fabric, ("enabled", "device_management_connectivity"),
@@ -136,14 +161,16 @@ def normalize_intent(data):
         raise ValueError("device_management_connectivity must be data or management")
 
     return {
-        "schema_version": 1,
+        "schema_version": version,
         "cluster_name": cluster_name,
         "management": networks["management"],
         "data": networks["data"],
         "dns_servers": _address_list(data["dns_servers"], "dns_servers"),
         "search_domains": list(search_domains),
         "ntp_servers": _ntp_list(data["ntp_servers"]),
-        "persistent_service_ips": persistent,
+        "service_ip_pools": {"Management": management_service_ips, "Data": data_service_ips},
+        # Backward-compatible alias for data-plane callers.
+        "persistent_service_ips": data_service_ips,
         "fabric_controller": {
             "enabled": fabric["enabled"],
             "device_management_connectivity": connectivity,

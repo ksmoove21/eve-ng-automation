@@ -101,10 +101,22 @@ and DATA device-management connectivity. These values are schema-validated and
 remain private; no environment address or hostname is encoded in reusable code.
 
 The owner superseded the earlier DNS and IP-address NTP sources. The current
-intent uses two DNS providers and an FQDN NTP target. Persistent/service-IP
-configuration has completed. Fabric Controller readiness and DATA
-device-management selection remain separate post-cluster lifecycle
-gates.
+intent uses two DNS providers and an FQDN NTP target. Schema v2 declares
+independent MANAGEMENT and DATA service-IP pool counts. The engine derives each
+pool after its corresponding node interface, rejects unusable/gateway/overlap
+candidates, preflights against live external-IP resources, and read-verifies
+only its separately named documented resources. Existing schema-v1 intent
+remains DATA-only compatible.
+
+**OBSERVED:** the live disposable appliance has five available MANAGEMENT and
+five available DATA service IPs. Bounded ICMP and neighbor-cache checks from
+the appliance found no response or neighbor entry for any newly derived
+MANAGEMENT candidate before allocation. The documented API accepted the
+MANAGEMENT resource and a normal `eve init` read-verified both pools as
+`already-configured` on repeat. No address is hardcoded in reusable code.
+
+Nexus Dashboard browser operations require the declared optional dependency:
+`pip install -e .[nexus-dashboard]`.
 
 ## Supported API boundary
 
@@ -182,16 +194,17 @@ to a future 3.2.2m image.
 | --- | --- | --- |
 | ND Active | Start Fabric Controller and choose its feature set. Before a feature set is chosen, NDFC permits only Backup and Restore. | **DOCUMENTED:** the 12.2.2 LAN initial-setup guide calls this Feature Management and specifies Fabric Discovery, Fabric Controller, or SAN Controller personas. |
 | NDFC profile selection | Select the Fabric Controller persona; select only required optional features, then apply and refresh. | **DOCUMENTED:** the same guide lists optional Endpoint Locator, IPAM, visualizers, Performance Monitoring, IPFM, PTP Monitoring, and Fabric Builder. The owner’s VXLAN EVPN, Classic LAN, and Enhanced Classic LAN targets are base Fabric Controller LAN templates; none requires IPFM, Endpoint Locator, or another listed optional capability. **FIELD-TEST REQUIRED:** the 3.2.1i UI labels this choice `Fabric Management Basic/Advanced`, but Cisco's 12.2.2 documentation does not map those exact labels to the feature table. Therefore the reusable implementation must choose the minimum `Basic` path only when it is visibly available and must never select `Advanced` by default. |
-| NDFC service setup | For LAN, default device-management connectivity is Management. A DATA external-service pool requires selecting `Data` under Server Settings before its mandatory pods can consume the pool. | **DOCUMENTED:** 3.2.x prerequisites require two DATA persistent IPs for SNMP/Syslog and SCP when LAN Device Management Connectivity is Data; EPL needs one additional DATA IP per fabric. The declared five DATA IPs satisfy the base two-IP requirement and reserve capacity for later optional EPL use. No MANAGEMENT IPs are created to bypass this gate. |
-| NDFC enabled / service setup incomplete | Apply the DATA selection, then wait for the mandatory persistent-IP services and gateway to reconcile. | **OBSERVED:** the exact `cisco-ndfc` service package progressed through `ProfileSelection` and `Processing` to `Installed`, `Enabled`, and `Healthy` at version 12.2.2.241. The Dashboard Service Status view independently reports Fabric Controller Enabled and Healthy. The Dashboard External Service Pools view reports five DATA addresses and zero MANAGEMENT addresses, but all five DATA addresses are currently `Not In Use`. |
-| NDFC API ready | With authenticated NDFC access, the documented fabrics GET returns its normal response class (an empty list is valid before any fabric exists). | **OBSERVED:** the authenticated documented fabrics GET still returns 404 after the package became Healthy and Enabled. This is not treated as a cluster, DNS/NTP, or general authentication failure. **INFERRED:** the missing gateway route and unassigned DATA service IPs mean the controller's DATA first-run assignment/service exposure has not been demonstrated complete. Do not create a fabric, onboard a device, or use an undocumented application endpoint as a workaround. |
+| NDFC service setup | For LAN, default device-management connectivity is Management. A DATA external-service pool requires selecting `Data` under Server Settings before its mandatory pods can consume the pool. | **DOCUMENTED:** 3.2.x prerequisites require two DATA persistent IPs for SNMP/Syslog and SCP when LAN Device Management Connectivity is Data; EPL needs one additional DATA IP per fabric. The declared five DATA IPs satisfy the base two-IP requirement and reserve capacity for later optional EPL use. The declared MANAGEMENT pool may satisfy first-run capacity, but the final device-management plane remains DATA. |
+| NDFC enabled / service setup incomplete | Apply the DATA selection, then wait for the mandatory persistent-IP services and gateway to reconcile. | **OBSERVED:** the exact `cisco-ndfc` service package progressed through `ProfileSelection` and `Processing` to `Installed`, `Enabled`, and `Healthy` at version 12.2.2.241. The Dashboard Service Status view independently reports Fabric Controller Enabled and Healthy. Both the MANAGEMENT and DATA pools now have five available addresses, but every address remains `Not In Use`. |
+| NDFC API ready | With authenticated NDFC access, the documented fabrics GET returns its normal response class (an empty list is valid before any fabric exists). | **OBSERVED:** the authenticated documented fabrics GET still returns 404 after the package became Healthy and Enabled and after a bounded post-MANAGEMENT-pool recheck. This is not treated as a cluster, DNS/NTP, general authentication, or persistent-IP-capacity failure. **INFERRED:** the missing gateway route means the controller's service exposure has not been demonstrated complete. Do not create a fabric, onboard a device, restart, clean-wipe, or use an undocumented application endpoint as a workaround. |
 
-**Current next action:** use the documented NDFC first-run/Server Settings UI to
-select DATA device-management connectivity, confirm two DATA persistent IPs are
-assigned, then repeat the documented read-only fabrics GET. If that UI is not
-available despite the `Enabled`/`Healthy` service state, capture that exact
-state as a supported-product inconsistency before considering a repair path.
-The preserved appliance must not be deleted merely for observation.
+**Current next action:** both documented service pools are now present, so use
+the documented NDFC first-run/Server Settings UI to select DATA device-management
+connectivity, then repeat the documented read-only fabrics GET. If that UI and
+gateway remain unavailable despite the `Enabled`/`Healthy` service state and
+available pools, this is a supported-product inconsistency; do not restart or
+clean-wipe until a separate owner authorization covers a Cisco-supported repair
+path. The preserved appliance must not be deleted merely for observation.
 ## Current implementation and tests
 
 The worktree currently contains:
