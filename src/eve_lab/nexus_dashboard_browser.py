@@ -441,6 +441,14 @@ def _set_fabric_controller_data(page, deadline):
     admin = page.get_by_role("link", name="Admin", exact=True)
     _wait_for(page, lambda: admin.count() == 1 and admin.is_visible(), deadline,
               "Fabric Controller Admin UI")
+    body = page.locator("body").inner_text()
+    cancel = page.get_by_role("button", name="Cancel")
+    if "Set credentials" in body and cancel.count() == 1 and cancel.is_visible():
+        # This optional prompt is for device onboarding, which is outside the
+        # platform baseline and must not create or store device credentials.
+        cancel.click()
+        _wait_for(page, lambda: not cancel.is_visible(), deadline,
+                  "optional device-credentials prompt dismissal")
     admin.click()
     system = page.get_by_role("link", name="System Settings", exact=True)
     _wait_for(page, lambda: system.count() == 1 and system.is_visible(), deadline,
