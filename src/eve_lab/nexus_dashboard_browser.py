@@ -7,6 +7,7 @@ therefore automates that documented UI only. It never calls private XHR APIs.
 
 import base64
 import hashlib
+import json
 import socket
 import ssl
 import time
@@ -254,6 +255,89 @@ def _summary(page, intent):
     confirm.click()
     # Keep the documented UI session alive until its save request has time to leave the wizard.
     page.wait_for_timeout(30000)
+
+_EXTERNAL_IPS_ENDPOINT = "/nexus/infra/api/platform/v1/externalips"
+_EXTERNAL_IPS_NAME = "data-external-services"
+
+
+def _external_ips_payload(intent):
+    """Build the documented DATA external-IP resource from validated intent."""
+    return {"spec": {"name": _EXTERNAL_IPS_NAME, "targetNetwork": "Data",
+                     "ip": intent["persistent_service_ips"]}}
+
+
+def _external_ip_response(page, method, payload=None):
+    """Use only the documented platform external-IP API in the authenticated UI session."""
+    result = page.evaluate("""async ({method, endpoint, payload}) => {
+        const options = {method};
+        if (payload) {
+            options.headers = {'Content-Type': 'application/json; charset=utf-8'};
+            options.body = JSON.stringify(payload);
+        }
+        const response = await fetch(endpoint, options);
+        return {status: response.status, body: await response.text()};
+    }""", {"method": method, "endpoint": _EXTERNAL_IPS_ENDPOINT,
+             "payload": payload})
+    try:
+        body = json.loads(result["body"])
+    except (KeyError, TypeError, json.JSONDecodeError):
+        body = None
+    return result.get("status"), body
+
+
+def _ensure_external_ips(page, intent):
+    """Create or strictly verify the declarative DATA service-IP resource."""
+    desired = _external_ips_payload(intent)["spec"]
+    status, current = _external_ip_response(page, "GET")
+    if status != 200 or not isinstance(current, dict) or not isinstance(current.get("items"), list):
+        raise NexusDashboardBrowserError("Nexus Dashboard external-IP collection is unavailable")
+    matching = [item.get("spec") for item in current["items"]
+                if isinstance(item, dict) and isinstance(item.get("spec"), dict)
+                and item["spec"].get("name") == _EXTERNAL_IPS_NAME]
+    if len(matching) > 1:
+        raise NexusDashboardBrowserError("Nexus Dashboard has duplicate DATA service-IP resources")
+    if matching:
+        actual = matching[0]
+        if (actual.get("targetNetwork") != "Data"
+                or sorted(actual.get("ip", [])) != sorted(desired["ip"])):
+            raise NexusDashboardBrowserError("Nexus Dashboard DATA service-IP resource conflicts with intent")
+        return {"status": "already-configured", "resource": _EXTERNAL_IPS_NAME}
+    status, _ = _external_ip_response(page, "POST", {"spec": desired})
+    if status not in (200, 201):
+        raise NexusDashboardBrowserError("Nexus Dashboard rejected the documented DATA service-IP resource")
+    status, verified = _external_ip_response(page, "GET")
+    if status != 200 or not isinstance(verified, dict):
+        raise NexusDashboardBrowserError("Nexus Dashboard did not return the DATA service-IP resource")
+    resources = [item.get("spec") for item in verified.get("items", [])
+                 if isinstance(item, dict) and isinstance(item.get("spec"), dict)]
+    if desired not in resources:
+        raise NexusDashboardBrowserError("Nexus Dashboard did not retain the DATA service-IP resource")
+    return {"status": "configured", "resource": _EXTERNAL_IPS_NAME}
+
+
+def configure_external_ips(intent, username, password, timeout=600):
+    """Reconcile documented DATA external IPs only after initial bringup is ready."""
+    address = str(IPv4Interface(intent["management"]["address"]).ip)
+    try:
+        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+    except ImportError as error:
+        raise NexusDashboardBrowserError("Nexus Dashboard external-IP reconciliation requires Playwright") from error
+    pin = _spki_pin(address)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, args=["--ignore-certificate-errors-spki-list=" + pin])
+            try:
+                page = browser.new_page()
+                page.goto("https://" + address + "/", wait_until="domcontentloaded", timeout=min(30000, timeout * 1000))
+                _login(page, username, password, timeout)
+                state = _state(page)
+                if state != "ready-or-post-bringup":
+                    return {"status": state, "resource": None}
+                return _ensure_external_ips(page, intent)
+            finally:
+                browser.close()
+    except PlaywrightTimeoutError as error:
+        raise NexusDashboardBrowserError("Timed out reconciling documented Nexus Dashboard DATA service IPs") from error
 
 def bringup(intent, username, password, timeout=600):
     """Run or classify the documented initial Cluster Bringup wizard.

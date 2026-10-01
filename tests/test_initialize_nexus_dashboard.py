@@ -145,6 +145,8 @@ class NexusDashboardInitTests(unittest.TestCase):
             console.initialize(normalize_intent(INTENT), password="secret-value")
         self.assertNotIn("secret-value", str(caught.exception))
 
+    @patch("eve_lab.initialize.nexus_dashboard_external_ips", return_value={
+        "status": "already-configured", "resource": "data-external-services"})
     @patch("eve_lab.initialize.nexus_dashboard_https_ready", return_value=True)
     @patch("eve_lab.initialize.nexus_dashboard_bringup", return_value={
         "status": "ready-or-post-bringup", "login": True, "stage": "classified"})
@@ -153,7 +155,7 @@ class NexusDashboardInitTests(unittest.TestCase):
         "url": "https://eve.test", "ssh_username": "root", "ssh_password": "secret"})
     @patch("eve_lab.initialize.paramiko.SSHClient")
     def test_initializer_uses_documented_browser_workflow_after_serial_bootstrap(
-            self, ssh, server, credentials, browser, https_ready):
+            self, ssh, server, credentials, browser, https_ready, external_ips):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             base = root / "labs/test/configs"
@@ -174,6 +176,8 @@ class NexusDashboardInitTests(unittest.TestCase):
         browser.assert_called_once_with(
             normalize_intent(INTENT), "admin", "secret-value", timeout=600)
         https_ready.assert_called_once_with(normalize_intent(INTENT))
+        external_ips.assert_called_once_with(
+            normalize_intent(INTENT), "admin", "secret-value", timeout=600)
         ssh.return_value.close.assert_called_once()
 
     @patch("eve_lab.initialize.paramiko.SSHClient")
