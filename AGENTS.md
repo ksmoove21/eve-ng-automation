@@ -25,6 +25,7 @@ Before modifying the repository:
 - inspect the current branch, working-tree status, and latest commit;
 - read this file;
 - read only the scoped document needed for the task;
+- when editing under `src/eve_lab/`, `tests/`, or `docs/`, read the closest nested `AGENTS.md` for path-specific rules;
 - if a matching plan exists under `docs/exec-plans/active/`, resume from it instead of reconstructing state from chat;
 - preserve unrelated user work.
 
@@ -70,7 +71,7 @@ Parent or persistent infrastructure requires explicit task authorization. This i
 Use the cheapest evidence that can answer the current question, then escalate only when needed.
 
 - Search before loading large files when the location is unknown.
-- Bound commands with potentially large output.
+- Bound commands with potentially large output. For unknown diagnostic output, target roughly 8 KiB or less unless the complete output is materially required.
 - Prefer targeted logs and show commands over full dumps.
 - Do not repeatedly reopen unchanged files.
 - Do not repeat the same failed operation without new evidence or a changed hypothesis.
@@ -101,7 +102,9 @@ Preserve unrelated edits and staged work. Do not reset, clean, or overwrite user
 
 Git is the durable record of implementation and sprint state. A coding-agent conversation is disposable after its state is recorded.
 
-The owner retains approval for merges and for actions outside the authorized live-test boundary.
+Within an authorized implementation task, the agent may create/use a focused feature branch and commit and push cohesive scoped work after the applicable acceptance gate without asking for an intermediate approval. Never include unrelated user changes in that commit.
+
+The owner retains approval for merges to `main` and for actions outside the authorized live-test boundary.
 
 ## Documentation routing
 

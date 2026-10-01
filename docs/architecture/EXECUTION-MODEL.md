@@ -22,6 +22,19 @@ Use an ExecPlan when work:
 
 ExecPlan format is defined in [`.codex/PLANS.md`](../../.codex/PLANS.md). Active plans live under [`docs/exec-plans/active/`](../exec-plans/active/README.md).
 
+## Sprint status language
+
+Use these states consistently in ExecPlans and completion reports:
+
+- **ACTIVE**: the next implementation or validation action is known and authorized.
+- **WAITING**: an external process is legitimately in progress; avoid active polling unless a status check is due.
+- **DIAGNOSIS**: expected progress failed and the work is now gathering evidence or testing a new hypothesis rather than continuing the same implementation loop.
+- **BLOCKED**: a specific unavailable dependency, credential, resource, authorization, or external failure prevents the next useful action.
+- **STALLED**: no evidence-backed next action remains, or repeated attempts are no longer producing new information. Do not keep retrying. Change the hypothesis, obtain new evidence, or stop.
+- **COMPLETE**: the sprint acceptance criteria are satisfied and required evidence is recorded.
+
+`STALLED` is not a synonym for slow. A long-running task with a valid next action is still ACTIVE or WAITING.
+
 ## Start with what is already known
 
 Before broad discovery, determine whether the owner already has a working manual procedure.

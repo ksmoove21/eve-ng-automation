@@ -45,6 +45,7 @@ Use observable criteria. Separate offline success from live proof.
 
 Keep this section terse and current. Include:
 
+- sprint status: ACTIVE, WAITING, DIAGNOSIS, BLOCKED, STALLED, or COMPLETE;
 - current branch/commit;
 - current live lifecycle state;
 - last successful milestone;
