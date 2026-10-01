@@ -102,9 +102,16 @@ def _state(page):
 
 
 def _login(page, username, password, timeout):
+    """Wait for either the login form or an already-authenticated Dashboard."""
     password_field = page.locator("input[type=password]")
+    deadline = time.monotonic() + min(30, max(1, timeout))
+    while password_field.count() == 0 and time.monotonic() < deadline:
+        body = page.locator("body").inner_text()
+        if "Nexus Dashboard" in body or page.locator("nd-launcher").count():
+            return False
+        page.wait_for_timeout(250)
     if password_field.count() == 0:
-        return False
+        raise NexusDashboardBrowserError("Nexus Dashboard did not render login or Dashboard UI")
     username_field = page.locator("#username")
     if username_field.count() > 1:
         raise NexusDashboardBrowserError("Nexus Dashboard exposed ambiguous username controls")
