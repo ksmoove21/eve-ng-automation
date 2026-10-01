@@ -102,8 +102,9 @@ remain private; no environment address or hostname is encoded in reusable code.
 
 The owner superseded the earlier DNS and IP-address NTP sources. The current
 intent uses two DNS providers and an FQDN NTP target. Persistent/service-IP
-configuration, Fabric Controller readiness, and DATA selection remain pending
-post-cluster validation.
+configuration has completed. Fabric Controller readiness and DATA
+device-management selection remain separate post-cluster lifecycle
+gates.
 
 ## Supported API boundary
 
@@ -170,21 +171,27 @@ the expected Controller deployment mode and healthy platform components. Cisco
 release notes identify Fabric Controller **12.2.2.241** as the service bundled
 with Nexus Dashboard 3.2.1i; 12.2.3 is not the live target.
 
-**OBSERVED / CONVERGENCE:** The documented Fabric Controller fabrics GET
-`/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics` remains HTTP 404
-across bounded rechecks with both documented login-token variants after the documented 30-minute
-startup window. The Dashboard platform and node APIs remain `Active`; this is
-specifically Fabric Controller service-gateway registration absence, not Cluster
-Bringup, DNS/NTP, management/data addressing, external-IP, or API-login failure.
-Do not create a fabric, onboard a device, or use an undocumented app endpoint
-as a workaround.
+## Fabric Controller lifecycle: 12.2.2.241
 
-**Current next action:** continue bounded readiness polling; if the authenticated gateway remains absent despite the healthy `ndfc` deployment, obtain Cisco-supported service-lifecycle evidence or owner authorization for a demonstrated Fabric Controller repair path;
-then discover the running `/apidocs/`, use only documented cluster/node/external
-IP and Fabric Controller APIs, configure the pending intent, implement
-read-only validation, and run two complete clean build/bootstrap/validation
-cycles. The preserved running appliance must not be deleted merely for
-observation.
+The following lifecycle model is intentionally explicit: an HTTP response or
+GUI label is evaluated only with its documented state, transition, and
+prerequisites. It applies to the installed 3.2.1i/12.2.2.241 combination, not
+to a future 3.2.2m image.
+
+| State | Next transition and prerequisite | Evidence / classification |
+| --- | --- | --- |
+| ND Active | Start Fabric Controller and choose its feature set. Before a feature set is chosen, NDFC permits only Backup and Restore. | **DOCUMENTED:** the 12.2.2 LAN initial-setup guide calls this Feature Management and specifies Fabric Discovery, Fabric Controller, or SAN Controller personas. |
+| NDFC profile selection | Select the Fabric Controller persona; select only required optional features, then apply and refresh. | **DOCUMENTED:** the same guide lists optional Endpoint Locator, IPAM, visualizers, Performance Monitoring, IPFM, PTP Monitoring, and Fabric Builder. The owner’s VXLAN EVPN, Classic LAN, and Enhanced Classic LAN targets are base Fabric Controller LAN templates; none requires IPFM, Endpoint Locator, or another listed optional capability. **FIELD-TEST REQUIRED:** the 3.2.1i UI labels this choice `Fabric Management Basic/Advanced`, but Cisco's 12.2.2 documentation does not map those exact labels to the feature table. Therefore the reusable implementation must choose the minimum `Basic` path only when it is visibly available and must never select `Advanced` by default. |
+| NDFC service setup | For LAN, default device-management connectivity is Management. A DATA external-service pool requires selecting `Data` under Server Settings before its mandatory pods can consume the pool. | **DOCUMENTED:** 3.2.x prerequisites require two DATA persistent IPs for SNMP/Syslog and SCP when LAN Device Management Connectivity is Data; EPL needs one additional DATA IP per fabric. The declared five DATA IPs satisfy the base two-IP requirement and reserve capacity for later optional EPL use. No MANAGEMENT IPs are created to bypass this gate. |
+| NDFC enabled / service setup incomplete | Apply the DATA selection, then wait for the mandatory persistent-IP services and gateway to reconcile. | **OBSERVED:** the exact `cisco-ndfc` service package progressed through `ProfileSelection` and `Processing` to `Installed`, `Enabled`, and `Healthy` at version 12.2.2.241. The Dashboard Service Status view independently reports Fabric Controller Enabled and Healthy. The Dashboard External Service Pools view reports five DATA addresses and zero MANAGEMENT addresses, but all five DATA addresses are currently `Not In Use`. |
+| NDFC API ready | With authenticated NDFC access, the documented fabrics GET returns its normal response class (an empty list is valid before any fabric exists). | **OBSERVED:** the authenticated documented fabrics GET still returns 404 after the package became Healthy and Enabled. This is not treated as a cluster, DNS/NTP, or general authentication failure. **INFERRED:** the missing gateway route and unassigned DATA service IPs mean the controller's DATA first-run assignment/service exposure has not been demonstrated complete. Do not create a fabric, onboard a device, or use an undocumented application endpoint as a workaround. |
+
+**Current next action:** use the documented NDFC first-run/Server Settings UI to
+select DATA device-management connectivity, confirm two DATA persistent IPs are
+assigned, then repeat the documented read-only fabrics GET. If that UI is not
+available despite the `Enabled`/`Healthy` service state, capture that exact
+state as a supported-product inconsistency before considering a repair path.
+The preserved appliance must not be deleted merely for observation.
 ## Current implementation and tests
 
 The worktree currently contains:
@@ -209,8 +216,9 @@ the sprint paths. Final acceptance review remains pending.
 - [Nexus Dashboard 3.2.1 OpenAPI](https://pubhub.devnetcloud.com/media/nexus-dashboard-api-321/docs/api/nexus-dashboard-321.json)
 - [Nexus Dashboard API 3.2.x changelog](https://developer.cisco.com/docs/nexus-dashboard/3-2-1/api-changelog/)
 - [Linux KVM deployment before 3.2.2](https://www.cisco.com/c/en/us/td/docs/dcn/nd/3x/deployment/cisco-nexus-dashboard-and-services-deployment-guide-321/nd-deploy-kvm.pdf)
-- [Fabric Controller prerequisites, 3.2.x](https://www.cisco.com/c/en/us/td/docs/dcn/nd/3x/deployment/cisco-nexus-dashboard-and-services-deployment-guide-321/nd-prereq-ndfc.html)
-- [Nexus Dashboard Fabric Controller API 12.2.3](https://developer.cisco.com/docs/nexus-dashboard-fabric-controller/12-2-3/)
+- [Fabric Controller prerequisites, 3.2.1](https://www.cisco.com/c/en/us/td/docs/dcn/nd/3x/deployment/cisco-nexus-dashboard-and-services-deployment-guide-321/nd-prerequisites-ndfc-32x.pdf)
+- [Fabric Controller 12.2.2/12.2.3 LAN initial setup](https://www.cisco.com/c/en/us/td/docs/dcn/ndfc/1222/articles/ndfc-overview-initial-setup-lan/overview-and-initial-setup-of-ndfc-lan.html)
+- [Fabric Controller 12.2.1 API getting started (VERSION-GATED API reference)](https://developer.cisco.com/docs/nexus-dashboard-fabric-controller/12-2-1/getting-started/)
 - [EVE Professional release notes](https://www.eve-ng.net/index.php/documentation/release-notes/)
 - [EVE Pro cluster upgrade guidance](https://www.eve-ng.net/index.php/1845-2/eve-pro-upgrade-from-v6-x-to-v7-x/)
 - [EVE API single-location rule](https://www.eve-ng.net/index.php/how-to-eve-ng-api/)
