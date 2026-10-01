@@ -1,576 +1,232 @@
 # Repository structure and engineering conventions
 
-This repository extends the upstream `wcmder/eve-ng` project into a reusable,
-Git-driven EVE-NG lab automation platform.
+This document owns durable technical conventions for the reusable engine. It intentionally does not own agent workflow, sprint autonomy, research policy, or execution-plan behavior. Those live in `AGENTS.md` and [EXECUTION-MODEL.md](EXECUTION-MODEL.md).
 
-It is not a definition of one lab. The engine must remain reusable across labs,
-vendors, and topologies. Concrete lab intent belongs under `labs/`; reusable
-automation belongs under `src/eve_lab/`.
+See [../../ARCHITECTURE.md](../../ARCHITECTURE.md) for the top-level component map.
 
-Read this file before changing the repository. Preserve unrelated user edits.
-
-## Documentation audiences
-
-Keep public-facing documentation focused on the product: supported capabilities, observable behavior, requirements, setup, commands, examples, limitations, and operator safety.
-
-Do not put internal design discussions, agent handoff flows, prompt strategy, implementation sequencing, branch choreography, or decision-history narration in the root README or user-facing docs. Those belong in contributor/internal material such as this file, `AGENTS.md`, or `docs/lessons/`.
-
-A roadmap may describe future capabilities and user-visible direction, but not the private process used to shape or implement them.
-
-## Project intent and execution model
-
-The project purpose and human/agent division of responsibility live in
-[PROJECT-INTENT.md](PROJECT-INTENT.md).
-
-The sprint lifecycle, sandbox authority, and stop conditions live in
-[EXECUTION-MODEL.md](EXECUTION-MODEL.md).
-
-This file owns repository structure and engineering conventions.
-
-## Core invariants
-
-- Do not silently change human intent to make deployment or validation pass.
-- Validation is observational. It must not repair, configure, restart, or mutate
-  the network under test.
-- Re-running an operation should be idempotent where practical.
-- Prefer safe reconciliation over blind recreation.
-- Preserve running nodes unless a requested change cannot safely occur live.
-- Distinguish desired state from observed runtime state.
-- Destructive operations must be explicit and narrowly scoped.
-- Keep credentials and secrets out of Git.
-- Treat designated disposable EVE development/test labs as part of the test
-  harness. When the sprint requires live proof, use them without an extra
-  permission checkpoint.
-- Do not extend that authority to parent or persistent infrastructure unless
-  the task explicitly authorizes it.
-- Preserve upstream behavior unless a change is intentional, understood, and
-  tested.
-- Prefer reusable capabilities over one-off lab-specific code.
-
-## Development sandbox and autonomy
-
-See [EXECUTION-MODEL.md](EXECUTION-MODEL.md). The designated disposable EVE
-development lab is part of the integration-test harness; parent and persistent
-infrastructure remain outside that standing authority.
-
-## Repository layers
+## Repository boundaries
 
 | Path | Responsibility |
 | --- | --- |
-| `src/eve_lab/` | Reusable engine, API client, lifecycle, console, validation |
-| `labs/` | Concrete topology, init configuration, acceptance intent |
+| `src/eve_lab/` | Reusable engine, API client, lifecycle, initialization, services, validation |
+| `labs/` | Public generic topology fixtures, init configuration, acceptance intent |
 | `tests/` | Offline behavior and regression tests |
 | `config/` | EVE server definitions and non-secret runtime configuration |
-| `docs/` | Environment notes, roadmap, operational procedures |
-| `.state/` | Generated local runtime artifacts; never source of truth |
+| `docs/` | Durable scoped knowledge |
+| `.state/` | Generated local runtime artifacts; never design source of truth |
 
-Keep these boundaries explicit.
-
-Lab-specific addressing, names, routing design, and acceptance criteria belong
-under `labs/<lab>/`. Do not hardcode them into generic Python modules.
+Lab-specific addressing, names, routing design, and acceptance criteria belong in lab/workspace data, not generic Python modules.
 
 ## External/private workspaces
 
-The installed engine and the active lab workspace may be different directories
-or different Git repositories.
+The installed engine and active lab workspace may be different directories or repositories.
 
-The global `--root` option identifies the workspace root containing runtime
-inputs such as `labs/`, `config/`, `.env`, and generated `.state/` data.
-Do not assume `--root` is the engine source checkout.
+The global `--root` option identifies the workspace containing inputs such as `labs/`, `config/`, `.env`, and generated `.state/` data. Do not assume `--root` is the engine source checkout.
 
-This separation is intentional: reusable engine code and generic regression
-fixtures may remain public while environment-specific or sensitive labs live in
-a private repository. Generic Python modules must not depend on a particular
-workspace name, hostname, private domain, PKI name, or lab naming convention.
+Generic modules must not depend on a private workspace name, hostname, domain, PKI name, or naming convention.
 
-## Control-platform support
+## Control-platform portability
 
-The project is operated from Windows PowerShell and may also be used from
-macOS and Linux.
+Windows PowerShell is a first-class controller environment. macOS and Linux are also supported.
 
-New code and tests must not accidentally assume a POSIX-only control host.
+New code and tests must account for platform-sensitive behavior such as:
 
-Examples of platform-sensitive behavior include:
+- `os.geteuid()` and POSIX permission semantics;
+- path separators, mapped drives, and UNC paths;
+- symlink behavior;
+- shell quoting;
+- executable lookup and virtual-environment activation.
 
-- `os.geteuid()`
-- Unix permission-bit assertions
-- symlink behavior
-- path separators
-- mapped drives and UNC paths
-- shell-specific quoting
-- executable lookup and virtual-environment activation
+Linux-only behavior required on the remote EVE host must remain isolated to the remote operation.
 
-When functionality is inherently Linux-only because it operates on the EVE host
-itself, isolate that assumption to the remote operation rather than requiring the
-local controller to be Linux or macOS.
+## Topology contract
 
-Windows PowerShell is a first-class supported control environment.
+The explicit topology model is the canonical low-level desired-state contract.
 
-## Topology and lab definitions
+A future semantic layer may generate explicit topology, configuration, and validation artifacts, but it must not make runtime behavior dependent on hidden AI inference.
 
-The explicit topology model remains the canonical low-level deployment model.
+Topology definitions may declare:
 
-A lab may later be generated from a higher-level semantic specification, but
-that semantic layer should compile into the explicit topology rather than
-replace it.
+- lab identity and remote folder;
+- exact node/image selections;
+- networks and links;
+- layout coordinates;
+- scenarios;
+- initialization intent;
+- validation intent.
 
-Topology definitions should describe:
+Exact image names are deployment inputs. Preflight should fail clearly when a requested image is unavailable instead of silently selecting another image.
 
-- lab identity and remote folder
-- nodes and exact image selections
-- networks
-- links
-- layout coordinates when useful
-- validation intent
+Do not derive design intent merely because a device can support it.
 
-A reusable disposable lab may keep alternate desired states under
-`labs/<lab>/scenarios/<name>.yaml`. `eve apply <lab> --scenario <name>` feeds
-the selected state through the same reconciler and retains the topology `name`,
-so scenarios do not create separate permanent EVE labs.
-
-Do not derive or invent design intent merely because a device can support it.
-
-Exact image names are deployment inputs. Preflight must fail clearly when a
-requested image is unavailable rather than silently selecting a different image.
-
-Canvas layout is declarative when coordinates are provided. Do not treat visual
-placement as authoritative runtime-only state.
-
-## Reconciliation behavior
+## Reconciliation
 
 `eve apply` is a reconciler, not a one-shot creation script.
 
-### EVE CPU Limit policy
-
-EVE-NG CPU Limit is disabled by default for automation-managed QEMU nodes
-(`cpulimit=0`). The limiter may suspend QEMU execution and interfere with
-deterministic boot and readiness behavior. This is a repository-wide runtime
-rule and must not be implemented as platform-specific adapter logic.
-
-The reconciler enforces `cpulimit=0` for newly created and stopped managed QEMU
-nodes, independent of EVE template defaults. Native IOL node records do not
-persist this QEMU setting and are left without it. Running nodes remain unchanged
-under the existing deferral/race protection policy. There is no opt-in to CPU
-limiting in the topology schema. Optional `icon` values are checked against the
-live template inventory before writes.
-
 Expected behavior:
 
-- create missing declared objects
-- verify existing objects
-- make safe supported updates
-- preserve running objects when mutation would be unsafe
-- defer unsafe work with structured reasons
-- prune undeclared stopped objects when pruning is enabled
-- avoid duplicate nodes, links, or networks
-- detect conflicting remote state instead of silently overwriting it
-- re-check state before writes when concurrency could make a prior decision
-  unsafe
+- create missing declared objects;
+- verify existing objects;
+- make safe supported updates;
+- preserve running objects when mutation would be unsafe;
+- defer unsafe work with structured reasons;
+- prune undeclared stopped objects when pruning is enabled;
+- avoid duplicate nodes, links, or networks;
+- detect conflicting remote state instead of silently overwriting it;
+- re-check state before writes when concurrency may invalidate an earlier decision.
 
-Do not weaken existing race protections merely to make an apply succeed.
+Do not weaken race protections merely to make an apply succeed.
 
-Running-state protection is an engine safety policy, not an assumption about
-EVE-NG Community Edition. EVE-NG Pro capabilities may later permit additional
-safe live operations, but those should be implemented explicitly and tested.
+### EVE CPU Limit
 
-## Lifecycle behavior
+Automation-managed QEMU nodes use `cpulimit=0` by default. EVE CPU limiting may suspend the complete QEMU process and interfere with deterministic boot/readiness behavior.
 
-Lifecycle commands should distinguish:
+The reconciler enforces `cpulimit=0` on creation and safe stopped-node reconciliation. Native IOL records do not persist this QEMU setting.
 
-- API request accepted
-- VM/process actually running or stopped
-- guest/device actually ready
+Running-node protections remain in effect. The topology schema does not currently expose an opt-in to CPU limiting.
 
-A successful EVE start request is not equivalent to a ready network device.
+This is a generic EVE runtime policy, not a platform-adapter behavior.
 
-Lifecycle code should use bounded polling, explicit timeouts, and useful failure
-messages. Avoid unbounded retries.
+## Lifecycle semantics
+
+Lifecycle code must distinguish:
+
+1. API request accepted;
+2. VM/process reached the intended runtime state;
+3. guest/controller became ready.
+
+Use bounded polling, explicit timeouts, and actionable failure messages. Avoid unbounded retries.
 
 ## Device initialization
 
-Initialization is a configuration operation and may mutate guests.
+Initialization may mutate guests and therefore belongs outside validation.
 
-For Cisco IOS XE:
+For IOS XE init files:
 
-- init files contain configuration-mode commands only
-- the engine owns entering/exiting configuration mode
-- the engine owns credential/VTY bootstrap where currently implemented
-- the engine owns configuration save verification
-- do not require init files to contain interactive commands such as
-  `configure terminal`, `write memory`, or `copy run start`
+- files contain configuration-mode commands;
+- the engine owns entering/exiting configuration mode;
+- the engine owns implemented credential/VTY bootstrap;
+- the engine owns save verification;
+- init files should not require interactive wrapper commands such as `configure terminal` or `write memory`.
 
-Device-specific logic should remain isolated from generic topology logic.
+Device-specific login, boot-dialog, save/commit, and parser behavior must remain isolated from generic topology logic.
 
-Do not log secrets or full device configurations in errors.
+Do not expose secrets or full sensitive configurations in errors.
+
+## Platform service configuration
+
+Optional `configs/NODE-services.cfg` files extend an existing initializer with configuration-mode commands before save/commit.
+
+They use the same command restrictions and secret handling as init configuration.
+
+Structured management/bootstrap intent remains authoritative for platforms that provide it. Lab-specific VLAN, vPC, security, routing, and service intent stays in the lab/workspace.
+
+The reusable IOS/IOS-XE route-based IPsec profile is documented in [../platforms/iosxe-ipsec.md](../platforms/iosxe-ipsec.md). It is a capability profile, not a generic role framework.
 
 ## Validation architecture
 
-Validation answers one question:
+Validation answers:
 
-> Does the deployed lab currently satisfy the acceptance criteria declared by
-> the human?
+> Does the deployed lab currently satisfy the acceptance criteria declared by the human?
 
-Validation must be read-only.
+Validation is observational.
 
-The lab definition owns the expected behavior. Generic Python code owns how
-those expectations are measured.
+The lab definition owns expected behavior. Generic code owns orchestration and measurement. Platform adapters own fixed read-only commands and structured parsers.
 
-Implemented primitives include:
+`validation.py` owns schema dispatch, node grouping, transport orchestration, and report assembly.
 
-- interface state and address
-- ping reachability
-- route presence or absence (IPv4, optional VRF and next hop)
-- default route (IPv4, optional VRF)
-- BGP neighbor state (IPv4/IPv6 unicast, optional VRF)
-- OSPF neighbor state (global IPv4)
-- IS-IS adjacency (neighbor name or system ID)
-- VRF reachability (IPv4)
-- MTU/DF reachability (IPv4)
+Registered validation paths include IOS XE, Catalyst 9000v UADP, supported Nexus 9000v templates, and PAN-OS. Exact fields and limitations are documented in [../operations/validation.md](../operations/validation.md).
 
-`validation.py` owns schema dispatch, node grouping, transport orchestration
-and reports. Platform adapters own their schemas, fixed read-only commands and
-structured parsers. Registered adapters include IOS XE `c8000v`, Catalyst
-9000v UADP `cat9kvuadp`, supported Nexus 9000v templates, and PAN-OS firewall
-validation; future platform adapters must explicitly define and test their
-capabilities.
-See [../operations/validation.md](../operations/validation.md) for exact fields and limitations.
+Checks are required by default. Only explicit human-authored `required: false` makes a failed check advisory. Its failure must remain visible.
 
-Checks are required by default. Only an explicit human-authored
-`required: false` makes a failed check advisory; its failure remains visible.
-Never infer optionality or relax thresholds from observed output.
+Never infer optionality or relax a threshold from observed output.
 
-Validation uses guarded console authentication: refuse setup/configuration
-prompts and request prompt redisplay without submitting pending input. Device
-initialization retains its existing login behavior. Terminal pagination is a
-session setting; probes and show commands do not change configuration.
+Validation may use safe session operations such as prompt redisplay or terminal pagination control, but it must not alter persistent device configuration.
 
-Expected future primitives include:
+### Validation must never
 
-- MPLS/LDP state
-- MP-BGP VPNv4/VPNv6 state
-- GRE/tunnel state
-- bounded generic command assertions where a dedicated primitive is not yet
-  available
+- configure the device;
+- clear protocol state;
+- bounce interfaces;
+- restart nodes;
+- modify topology;
+- rewrite expected criteria to match observed state.
+
+### Evidence
+
+Checks should return structured evidence sufficient to explain pass/fail without exposing sensitive data.
+
+A failed required check must produce a nonzero validation result.
 
 Prefer structured parsers over brittle substring checks.
 
-Each validation check should return structured evidence, not merely true/false.
-Reachability checks share a bounded three-attempt policy with 10 seconds between
-failed attempts; that timing never lowers a human-authored pass threshold.
-
-A failed acceptance check should cause `eve validate` to return a nonzero exit
-status.
-
-Validation must never:
-
-- alter device configuration
-- clear protocol state
-- bounce interfaces
-- restart nodes
-- modify topology
-- change expected criteria to match observed state
-
-If a test fails, report the failure.
-
-## Acceptance evidence
-
-Where practical, return evidence that explains why a check passed or failed.
-
-Examples:
-
-```json
-{
-  "name": "r1-gi1",
-  "type": "interface",
-  "result": "pass",
-  "evidence": {
-    "interface": "GigabitEthernet1",
-    "ip_address": "10.255.0.1",
-    "status": "up",
-    "protocol": "up"
-  }
-}
-```
-
-and:
-
-```json
-{
-  "name": "r1-to-r2",
-  "type": "ping",
-  "result": "pass",
-  "evidence": {
-    "destination": "10.255.0.2",
-    "success_rate": 100
-  }
-}
-```
-
-Do not expose credentials, enable secrets, or sensitive configuration in
-validation evidence.
-
 ## Testing
-
-Update tests with engine changes.
 
 Separate:
 
-1. offline/unit behavior
-2. live EVE integration validation
+1. offline/unit behavior;
+2. live EVE/NOS integration.
 
-Offline tests are the first validation layer, not the completion condition for
-runtime features. If a capability is intended to deploy, initialize, operate,
-or validate an EVE guest and an appropriate image exists in the authorized
-development sandbox, successful live integration is required before that
-capability is considered proven.
+A unit test must not require a live EVE server unless explicitly marked as integration behavior.
 
-A unit test must not require a live EVE server unless explicitly identified as
-an integration test.
+Add focused tests for new behavior before broad regression testing.
 
-New tests should run on Windows when the tested feature is intended to be
-controller-platform independent.
+Runtime capabilities require successful live integration when an appropriate authorized image/environment exists.
 
-Do not mark the repository healthy merely because one platform-specific test
-suite is green. Conversely, do not treat known POSIX-only inherited tests as a
-runtime EVE failure.
+Do not declare the repository unhealthy solely because of a known unrelated portability limitation, and do not declare it healthy because one platform-specific suite is green.
 
-Known inherited portability debt includes POSIX assumptions around
-`os.geteuid()` and Unix chmod semantics. Fix this deliberately rather than
-papering over failures.
-
-For new capabilities, add focused tests before broad integration testing.
+Known inherited portability debt such as POSIX-only permission assumptions should be fixed deliberately rather than hidden.
 
 ## Error handling
 
-Prefer specific, actionable failures.
+Prefer failures that identify:
 
-Good errors identify:
+- the affected object/node;
+- expected condition;
+- safe observed condition;
+- whether partial change may remain;
+- whether retry is appropriate.
 
-- object or node
-- expected condition
-- observed condition where safe
-- whether partial changes may remain
-- whether retry is appropriate
+Do not collapse distinguishable failures into a single generic message when the distinction is useful for recovery.
 
-Do not include passwords, secrets, or full sensitive command output.
-
-Avoid catch-all behavior that converts every failure into the same generic
-message when the code can safely distinguish causes.
-
-## Secrets and authentication
+## Secrets and trust
 
 Secrets belong in the local environment and existing `.env` pattern.
 
 Never commit:
 
-- EVE passwords
-- device passwords
-- enable secrets
-- SSH private keys
-- API tokens
+- EVE or device passwords;
+- enable secrets;
+- API tokens;
+- private keys;
+- environment-specific credentials.
 
-Repository examples may include variable names but not real secret values.
+SSH host-key verification and TLS validation should remain enabled.
 
-System SSH host-key verification should remain enabled. Do not add insecure
-fallbacks merely to bypass trust errors. A previously unseen lab-device key may
-be enrolled only with explicit owner authorization, scoped to the exact device
-address through an already verified EVE connection. Report its fingerprint and
-never replace a saved key automatically; a changed key remains a hard failure.
+A previously unseen disposable-lab device key may be enrolled only through the explicitly authorized trust workflow. A changed saved key remains a hard failure unless the owner authorizes replacement after verification.
 
-TLS validation should remain enabled. Private/internal deployments may use a
-private CA, but the control workstation should trust that CA rather than disabling verification.
+Private/internal PKI should be trusted by the controller rather than bypassed.
 
 ## EVE server assumptions
 
-The engine targets an already-existing EVE-NG server.
+The reusable engine targets an already-existing reachable EVE-NG server.
 
-It does not provision:
+The engine does not provision:
 
-- EVE-NG itself
-- DNS
-- routing
-- VPN/WireGuard
-- cloud infrastructure
-- firewall paths
+- EVE-NG itself;
+- the hypervisor;
+- DNS;
+- routing;
+- VPN/WireGuard;
+- cloud infrastructure;
+- external firewall paths.
 
-Those are prerequisites outside the engine boundary.
+Keep provider-specific infrastructure automation outside the reusable engine unless a future optional integration explicitly requires it.
 
-Keep the automation hosting-platform agnostic. Do not introduce Azure, AWS, or
-other provider-specific assumptions into the reusable engine unless a future
-feature explicitly requires an optional provider integration.
+## Architectural change standard
 
-## Branch and Git workflow
+Change the narrowest layer that owns the behavior.
 
-Do not develop substantial features directly on `main`.
+Avoid unrelated refactors during feature work. Refactor when concrete evidence shows coupling, duplicated responsibility, unclear ownership, or testability problems.
 
-Use focused feature branches.
-
-Recommended flow:
-
-```text
-main
-  -> feature branch
-  -> implementation
-  -> focused offline tests
-  -> designated-sandbox live integration
-  -> diagnose / repair / retest until acceptance passes
-  -> final regression tests
-  -> review diff and evidence
-  -> merge
-```
-
-Live testing in a designated disposable EVE development lab is part of the
-normal sprint and does not require a second approval checkpoint. The owner
-retains approval for merges and for operations outside the sandbox boundary.
-
-Codex or another coding agent may implement changes, but Git remains the durable
-record of both intent and implementation.
-
-Preserve unrelated edits and existing staged work.
-
-## Agent initiative and authorization boundaries
-
-Agents should resolve repository-visible prerequisites before asking the owner
-and should continue reversible, low-risk work that is already within the active
-task's scope.
-
-Repository-local authorization persists for the active task. This includes
-implementation, tests, documentation, diff review, branch preparation, and
-other reversible work needed to complete the requested deliverable. Agents
-should not stop at avoidable permission checkpoints or hand routine
-implementation back to the owner when the work is already authorized.
-
-Live infrastructure authorization is narrower and does not silently broaden
-across turns. Starting, stopping, configuring, deleting, resetting, or otherwise
-changing EVE-NG nodes or network devices requires authorization applicable to
-that specific live action and scope.
-
-When live authorization is absent, continue useful offline preparation and mark
-the live step as the exact remaining dependency. Optional assertions, test
-failures, or implementation friction must not be worked around by changing
-human intent, weakening validation, or broadening permissions.
-
-Corrections and follow-up messages steer the active task unless the owner
-cancels it or provides an incompatible objective. Preserve accepted decisions,
-completed work, evidence, and outstanding steps across turns and context
-compaction.
-
-## Agent responsibilities
-
-Before coding:
-
-1. read this file
-2. inspect the existing implementation
-3. identify the owning architectural layer
-4. state or infer the acceptance criteria from repository intent
-5. avoid unrelated refactors
-
-While coding:
-
-- make the smallest coherent change that satisfies the requirement
-- preserve existing public CLI behavior unless intentionally changing it
-- add tests for new behavior
-- keep user-specific values in lab definitions, not generic engine code
-- keep validation read-only
-- preserve safety checks
-
-After coding:
-
-1. run relevant focused offline tests;
-2. when applicable, execute the feature against the designated EVE test lab;
-3. diagnose and repair failures that remain within the agreed intent;
-4. repeat testing until the defined acceptance criteria pass or a true stop
-   condition is reached;
-5. run final regression tests and review the diff;
-6. report what changed, what was tested, and the live evidence;
-7. identify only genuine unresolved blockers or verification that could not be
-   performed;
-8. do not claim live success without live evidence.
-
-Do not return control merely to announce that an intermediate phase completed.
-The unit of work is the sprint and its acceptance criteria, not an individual
-prompt or command.
-
-## Current proven baseline
-
-The `iosxe-baseline` lab is the first known-good operational reference.
-
-It has demonstrated:
-
-- Windows PowerShell control
-- HTTPS EVE API access
-- EVE-NG Pro 7.2.0-4
-- C8000V image discovery
-- declarative lab creation
-- direct-link bridge synthesis
-- explicit node layout
-- start/stop lifecycle
-- safe repeated apply
-- running-node preservation
-- stopped-node reconciliation
-- Git-backed IOS XE init files
-- SSH to the EVE host
-- Telnet console automation
-- configuration save
-- interface-state parsing
-- declarative interface acceptance checks
-- declarative bidirectional ping acceptance checks
-- machine-readable PASS/FAIL validation
-
-Treat this lab as a regression fixture for future engine changes.
-
-Do not casually expand it into a large feature lab. Prefer additional focused
-labs when new behaviors need isolated proof.
-
-## Long-term direction
-
-The engine should evolve toward four clear layers:
-
-1. intent
-2. compilation/generation
-3. runtime/reconciliation
-4. validation/evidence
-
-A future higher-level lab specification may express semantic networking intent
-such as routing domains, BGP relationships, VRFs, or transport roles. That layer
-should compile deterministically into explicit topology, configuration, and
-acceptance criteria.
-
-AI may assist with design and implementation, but the repository must remain
-understandable and operable without AI.
-
-## Lessons learned changelog
-
-Record reusable implementation, test, and live-operation lessons in
-[`../lessons/README.md`](../lessons/README.md) at meaningful sprint
-boundaries or when live testing reveals a reusable platform/environment
-behavior. Do not append an entry merely because an intermediate prompt or
-implementation step completed.
-
-Failures encountered during a sprint should be captured as engineering evidence
-and folded into the final lesson when they reveal something reusable. Continue
-remediation without returning control solely to document the failure.
-
-A completed entry should closely mirror the sprint completion report: outcome
-and root cause, summarized code and file changes, exact test results,
-offline-versus-live evidence, remaining limitations or verification, and
-commit/push/merge status. Code diffs may be summarized; do not omit the other
-review evidence.
-
-This changelog is the only repository file an agent may automatically commit and
-push. Such commits must stage only `docs/lessons/README.md`; all engine, lab,
-test, documentation, and unrelated working-tree changes remain outside that
-commit. A task-specific instruction not to merge still applies to the working
-branch.
-
-## Platform service configuration
-
-Optional `configs/NODE-services.cfg` files extend an existing initializer with
-configuration-mode commands before its save/commit. They use the same command
-restrictions and secret handling as init CFG files. Structured Nexus and Catalyst
-bootstrap intent remains authoritative for management/bootstrap; lab-specific
-VLANs, vPC, and security intent stay in the active workspace.
-
-The generic IOS-XE `iosxe-ipsec` init profile is documented in
-[IOS and IOS-XE route-based IPsec](../platforms/iosxe-ipsec.md). It is a reusable configuration profile,
-not a separate platform adapter or a generic role framework.
+When a durable technical convention changes, update this document or the narrower platform/operations document that owns it.

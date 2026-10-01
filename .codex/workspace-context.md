@@ -1,6 +1,6 @@
 # Codex workspace context
 
-Use this file to re-establish repository context at the start of every new Codex chat or sprint.
+Use this file to re-establish the authoritative workspace. It is not a sprint diary.
 
 ## Authoritative local roots
 
@@ -8,40 +8,36 @@ Use this file to re-establish repository context at the start of every new Codex
 - Private environment repository: `H:\Github\unsc-homelab`
 - Private EVE workspace: `H:\Github\unsc-homelab\VSCode Labs\EVE-Workspace`
 
-The public repository contains reusable automation framework code.
+The public repository contains the reusable automation framework.
 
 The private repository contains UNSC-specific environment context, lab definitions, topology, addressing, credentials references, and other environment-specific implementation data.
 
-## New-chat bootstrap contract
+## New-chat bootstrap
 
-Before implementation work:
+Before implementation:
 
-1. Verify that `H:\Github\eve-ng-automation` exists.
-2. Verify that `H:\Github\unsc-homelab` exists.
-3. Treat the public repository as the primary working root unless the sprint explicitly requires private-repository changes.
-4. Read the public root `AGENTS.md`.
-5. Read only the architecture documents that `AGENTS.md` identifies as relevant to the current task. Do not mechanically load the entire architecture set.
-6. When private lab or environment context is required, read only the applicable guidance under the private EVE workspace.
-7. Use absolute paths when crossing between the public and private repositories.
-8. Do not clone duplicate repositories or silently substitute another drive/path because a new chat starts without the prior shell context.
-9. If `H:` is unavailable, report that as the blocker rather than inventing an alternate workspace.
-10. Verify the current Git branch and working-tree status before modifying either repository.
+1. Verify that the required authoritative root exists.
+2. Do not clone a duplicate checkout or silently substitute another drive/path because shell context was lost.
+3. Treat the public repository as the primary engine working root unless the sprint explicitly requires private-repository changes.
+4. Inspect the current Git branch, working-tree status, and latest commit before modification.
+5. Read the public root `AGENTS.md`.
+6. If a matching file exists under `docs/exec-plans/active/`, read it and resume from its current state.
+7. Read only the architecture, platform, workflow, or operations documents routed by `AGENTS.md` for the current task.
+8. When private lab context is required, read only the applicable guidance in the private EVE workspace.
+9. Use absolute paths when crossing repositories.
+10. If an authoritative drive or repository is unavailable, report that exact blocker rather than inventing an alternate workspace.
 
-Git and repository guidance are the durable source of project context. Prior chat memory is supplemental and must not override checked-in project guidance or current repository state.
+Current Git, the active ExecPlan, and live evidence outrank prior chat summaries. Chat history is supplemental.
 
-## Operator model policy
+## Operator model
 
-The normal Codex operating profile for this project is:
+Normal profile:
 
 - Model: GPT-6 Sol
 - Reasoning: Medium
 - Speed: Standard
 
-Escalate to Sol High for difficult root-cause analysis, version-specific platform behavior, or complex integration failures that need materially more reasoning.
-
-Use Astra High only as an escalation for genuinely difficult architectural ambiguity or troubleshooting that Sol cannot resolve with gathered evidence.
-
-Do not stop an otherwise healthy active sprint merely to request a stronger or weaker model. Model changes happen at a response or sprint boundary.
+Escalate reasoning only when the evidence warrants it, such as difficult root-cause analysis, version-specific controller behavior, or architectural ambiguity. Do not interrupt an otherwise healthy sprint merely to change models.
 
 ## Repository boundary
 
@@ -49,10 +45,10 @@ Keep reusable code, validators, schemas, tests, and generic documentation in the
 
 Keep UNSC-specific addressing, hostnames, topology, private lab definitions, secrets references, and environment-specific overrides in the private repository.
 
-Do not leak private values into public fixtures, examples, tests, or documentation.
+Do not leak private values into public examples, tests, fixtures, or documentation.
 
-## Sprint behavior
+## Sprint continuity
 
-Once the sprint objective and acceptance criteria are established, continue through inspection, implementation, testing, applicable live validation, remediation, documentation, and scoped commits without returning control at ordinary intermediate steps.
+Long-running work must not depend on chat continuity. When an ExecPlan is required, keep the plan's current state, evidence, decisions, and next action updated so a new session can resume without replaying the conversation.
 
-Stop only at a true risk or authorization boundary as defined by `AGENTS.md` and `docs/architecture/EXECUTION-MODEL.md`.
+Stop and authorization behavior is defined by `AGENTS.md` and `docs/architecture/EXECUTION-MODEL.md`.

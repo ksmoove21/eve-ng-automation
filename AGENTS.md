@@ -1,157 +1,120 @@
 # Repository guidance
 
-At the start of every new Codex chat or sprint, read [`.codex/workspace-context.md`](.codex/workspace-context.md) and this file to re-establish the authoritative workspace, repository boundary, execution rules, and current operating conventions.
+This repository extends `wcmder/eve-ng` into a reusable EVE-NG lab automation engine. Keep the engine generic, keep environment-specific intent outside the engine, and optimize for repeatable evidence rather than chat continuity.
 
-The architecture documents remain authoritative, but do not read all of them mechanically at every start. Read only the document(s) relevant to the task or decision being changed:
+## Source-of-truth order
 
-- [PROJECT-INTENT.md](docs/architecture/PROJECT-INTENT.md) when the task changes project scope, architectural responsibility, portability goals, or the intended end state.
-- [STRUCTURE.md](docs/architecture/STRUCTURE.md) when the task changes repository structure, schemas, reusable engine behavior, platform-adapter boundaries, reconciliation, or durable engineering conventions.
-- [EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md) when the task changes sprint autonomy, live-lab authorization, lifecycle behavior, stop conditions, or proof requirements.
+Use this order when sources disagree:
 
-Keep the root README and user-facing docs product-focused. Do not expose internal design discussions, agent/Codex handoff flow, prompt strategy, implementation sequencing, or decision-history narration there. Keep that material in contributor/internal documentation.
+1. the current Git branch, working tree, and live observed state;
+2. the active ExecPlan for the current sprint, when one exists;
+3. [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries and component ownership;
+4. [PROJECT-INTENT.md](docs/architecture/PROJECT-INTENT.md) for project purpose;
+5. [STRUCTURE.md](docs/architecture/STRUCTURE.md) for durable engineering conventions;
+6. [EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md) for long-running work, live testing, research, retry, and stop conditions;
+7. platform, workflow, and operations documents for their scoped behavior;
+8. completed ExecPlans and lessons as historical evidence.
 
-## Initiative and follow-through
+Chat history and model memory are supplemental. They do not override current Git or live evidence.
 
-Resolve repository-visible and otherwise retrievable prerequisites before asking
-the owner. Inspect the relevant code, documentation, tests, history, and current
-branch state when they can answer the question.
+## Start or resume work
 
-Proceed autonomously with reversible, low-risk work inside the requested
-repository scope, including code changes, tests, documentation, local analysis,
-and branch preparation. Do not stop merely to ask permission for work already
-authorized by the active task.
+Before modifying the repository:
 
-Complete every requested deliverable or mark it blocked with the exact missing
-dependency. Before reporting completion, verify the implementation, tests,
-repository state, requested format, and remaining work.
+- verify the authoritative workspace paths in [`.codex/workspace-context.md`](.codex/workspace-context.md);
+- inspect the current branch, working-tree status, and latest commit;
+- read this file;
+- read only the scoped document needed for the task;
+- if a matching plan exists under `docs/exec-plans/active/`, resume from it instead of reconstructing state from chat;
+- preserve unrelated user work.
 
-Treat implementation requests such as "can you", "help me", "build this",
-"fix this", and "move forward" as authorization to carry the requested
-repository work through implementation, relevant offline verification, and
-handoff. Requests to investigate, explain, compare, or review authorize those
-activities but do not by themselves authorize unrelated implementation.
+Do not reread unchanged guidance during the same sprint unless new evidence makes it relevant.
 
-Use reasonable assumptions for routine, reversible choices. State assumptions
-that materially affect the result. Ask a focused question only when an
-unresolved choice would materially change architecture, intent, authorization,
-or the resulting implementation.
+## Planning threshold
 
-Corrections and follow-up messages steer the active task unless the owner
-cancels it or supplies an incompatible objective. Preserve accepted decisions,
-completed work, evidence, and outstanding steps across turns and context
-compaction.
+Use a lightweight task plan for small, local changes.
 
-Authorization for repository-local, reversible work persists for the active
-task. Authorization for live infrastructure actions does not silently broaden:
-starting, stopping, configuring, deleting, resetting, or otherwise changing
-EVE-NG nodes or network devices requires authorization applicable to that
-specific live action and scope.
+Create and maintain an ExecPlan, following [`.codex/PLANS.md`](.codex/PLANS.md), when work is expected to take more than about one hour, spans multiple subsystems, performs a significant refactor or migration, or automates a controller/appliance workflow with meaningful live state.
 
-When live authorization is absent, continue all useful offline preparation that
-does not itself alter the live environment, so the owner receives a concrete
-result rather than an unnecessary permission checkpoint.
+The ExecPlan is the durable sprint state. Keep its progress, current state, decisions, discoveries, evidence, and next action current at every meaningful checkpoint.
 
-Before handing off an implementation task, check whether authorized work remains
-unfinished. Complete it or identify the exact blocker. Do not hand routine
-implementation back to the owner merely because the next step requires editing
-code, writing tests, or updating documentation.
+## Known operator workflows
 
-Do not re-read unchanged guidance already established in the same active sprint unless new evidence makes it relevant.
+When the owner already knows a working manual procedure, capture it before broad discovery. Use [`docs/workflows/README.md`](docs/workflows/README.md) as the contract.
 
-This project extends the operating model of upstream `wcmder/eve-ng`; it does
-not replace it. Preserve the inherited declarative lab workflow and extend it
-with additional platform support, validation, orchestration, and reusable
-network-lab capabilities.
+Treat the known workflow as evidence to verify and automate, not as an invitation to rediscover the product from first principles. Research should fill actual gaps: version behavior, supported automation surfaces, undocumented interactions, or failures that differ from the known path.
 
-Use `PROJECT-INTENT.md` for purpose, `STRUCTURE.md` for repository and engineering conventions, and `EXECUTION-MODEL.md` for sprint autonomy and authorization boundaries.
+## Core invariants
 
-## Sprint execution contract
+- Do not silently change human-authored intent to make a deployment or test pass.
+- Validation is read-only. Remediation belongs outside validation.
+- Prefer safe reconciliation over blind recreation.
+- Preserve running objects when mutation is unsafe.
+- Distinguish requested action, observed runtime state, and guest/application readiness.
+- Destructive operations must be explicit and narrowly scoped.
+- Keep credentials, secrets, and private environment values out of the public repository.
+- Preserve upstream behavior unless a change is intentional and tested.
+- Prefer reusable capability over lab-specific engine code.
+- Do not claim live success without live evidence.
 
-Treat an agreed development task as a sprint, not a sequence of permission
-checkpoints. Once the objective and acceptance criteria are clear, continue
-through implementation, offline tests, applicable live integration tests,
-remediation, regression testing, and evidence collection without returning
-control merely because an intermediate step completed or failed.
+## Execution zones
 
-A failed test is an input to the next engineering iteration, not a handoff
-point. Diagnose it, repair the implementation when the repair is within scope,
-and rerun the relevant tests.
+Repository-local and offline work is autonomous within the active task.
 
-Do not repeatedly retry the same abstraction without gathering new evidence.
-When a high-level workflow does not explain a failure, descend deliberately
-through the diagnostic stack: command/API result, application evidence, raw
-console or transport, runtime/process observation, then narrowly scoped host
-inspection when that inspection is within the authorized boundary. Prefer
-observation before mutation.
+Designated disposable EVE development/test labs are part of the integration-test harness. Within an authorized sprint, the agent may create, start, stop, initialize, configure, validate, reset, recreate, and delete those lab objects as needed for proof.
 
-When the root cause depends on uncertain platform behavior, image requirements,
-API semantics, boot behavior, version-specific limitations, or vendor syntax,
-research authoritative sources before inventing a workaround. Prefer vendor
-documentation, upstream project source/docs, release notes or bug documentation,
-then reputable community evidence. Validate researched conclusions against the
-actual disposable lab.
+Parent or persistent infrastructure requires explicit task authorization. This includes the EVE host OS, vSphere, physical network devices, shared services, production/shared routing and firewalls, and persistent labs not designated for automation testing.
 
-Use these execution zones:
+## Investigation economics
 
-- **Repository/offline work:** autonomous.
-- **Designated disposable EVE development/test labs:** autonomous. Codex may
-  plan, apply, start, stop, initialize, configure, validate, reset, recreate,
-  and delete lab objects and guest devices when needed to prove the sprint.
-- **Parent or persistent infrastructure:** requires explicit task authorization.
-  This includes the EVE host OS, vSphere, physical network devices, production
-  firewalls/routing, shared services, and persistent labs not designated for
-  automation testing.
+Use the cheapest evidence that can answer the current question, then escalate only when needed.
 
-Do not ask for intermediate confirmation for actions already covered by the
-current sprint and execution zone. Do not emit progress-only handoffs such as
-"continuing", "currently running", or "next I will" when there is still
-authorized work to perform. Continue tool execution until acceptance criteria or
-a true stop condition is reached.
+- Search before loading large files when the location is unknown.
+- Bound commands with potentially large output.
+- Prefer targeted logs and show commands over full dumps.
+- Do not repeatedly reopen unchanged files.
+- Do not repeat the same failed operation without new evidence or a changed hypothesis.
+- Poll long-running jobs at bounded intervals and use completion signals when available.
+- Run the smallest test set that can falsify the current change during iteration.
+- Run broader regression only at meaningful acceptance gates.
+- Stop broad research when the implementation question is already answered by repository evidence or a verified operator workflow.
 
-If an unfinished sprint resumes in a later conversation turn, treat the previous
-turn's final technical state as a checkpoint, not a new planning phase.
-Immediately continue from that active state without re-planning, re-summarizing
-completed intermediate work, or asking the owner to restate already-authorized
-scope. Re-read only the guidance or evidence needed to resume safely.
+Detailed retry and stop-loss rules live in [EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md).
 
-Stop only when continuing would materially change the agreed architecture or
-intent, cross an unauthorized boundary, require unavailable
-credentials/resources, or remain technically blocked after reasonable
-remediation and evidence gathering.
+## Testing and proof
 
-Preserve unrelated user edits. Do not weaken validation or silently change
-human-authored intent to make a lab pass. Do not claim live success without
-live evidence.
+A runtime feature is not proven by unit tests alone when an appropriate authorized live sandbox is available.
 
-## Context and usage efficiency
+Use proportional validation:
 
-Spend context on evidence that changes implementation decisions.
+1. focused offline tests during iteration;
+2. applicable live integration against the real NOS/controller;
+3. final regression appropriate to the changed surface.
 
-- Search before reading whole files when the relevant location is unknown.
-- Read only the needed file ranges when practical; read a complete file when editing it or when local context is required for correctness.
-- Do not repeatedly dump complete configs, generated artifacts, large diffs, or long logs into the conversation. Capture the narrow evidence needed to diagnose the current failure.
-- Bound commands that may return large output. Prefer filters, targeted show commands, relevant log ranges, and structured summaries.
-- During implementation, run the smallest test set that can falsify the current change. Run broader regression suites at meaningful acceptance gates rather than after every edit.
-- Poll long-running boots, jobs, commits, and controllers at bounded intervals. Do not create tight polling loops that consume context without new evidence.
-- Preserve durable decisions, evidence, and sprint state in Git-backed files. Do not rely on an indefinitely growing chat as project memory.
-- At a true sprint boundary, prefer a fresh Codex thread. For an unfinished active sprint, resume from the existing checkpoint instead of rehydrating the whole project from scratch.
-- Keep sprint prompts task-specific. Standing architecture, repository, safety, and autonomy rules belong in checked-in guidance rather than being repeated verbatim in every prompt.
-- If the client supports context compaction or summarization, use it only after current state and important evidence are durable in the repository or sprint artifacts.
+Do not run broad suites after every edit. Do not weaken tests or acceptance criteria to create a green result.
 
-## EVE CPU Limit runtime policy
+## Git behavior
 
-QEMU nodes created or reconciled by this automation must have EVE-NG CPU Limit
-disabled by default (`cpulimit=0`). EVE's limiter may suspend the complete QEMU
-process and interfere with deterministic guest boot and readiness behavior.
+Do not develop substantial features directly on `main`. Use a focused branch.
 
-Treat this as a generic EVE runtime policy, not a platform-adapter behavior.
-Platform-specific code must not independently enable CPU Limit. A future
-declarative opt-in may be supported only when it is explicit in the node schema;
-absence of such an opt-in means disabled.
+Preserve unrelated edits and staged work. Do not reset, clean, or overwrite user changes for convenience.
 
-The deployment reconciler enforces `cpulimit=0` on creation and stopped-node
-reconciliation for QEMU nodes. Native IOL records do not persist this QEMU
-setting. Running-node safety and race protections remain in effect.
-The topology schema does not expose an opt-in to CPU limiting.
+Git is the durable record of implementation and sprint state. A coding-agent conversation is disposable after its state is recorded.
 
-When the owner changes a durable project convention, update the owning document under `docs/architecture/` alongside the implementation.
+The owner retains approval for merges and for actions outside the authorized live-test boundary.
+
+## Documentation routing
+
+- [ARCHITECTURE.md](ARCHITECTURE.md): component map, boundaries, and system invariants.
+- [PROJECT-INTENT.md](docs/architecture/PROJECT-INTENT.md): project purpose and human/agent responsibility.
+- [STRUCTURE.md](docs/architecture/STRUCTURE.md): topology, reconciliation, initialization, validation, portability, security, and other engineering conventions.
+- [EXECUTION-MODEL.md](docs/architecture/EXECUTION-MODEL.md): sprint lifecycle, research, evidence, retry economics, authorization, and stop conditions.
+- [`.codex/PLANS.md`](.codex/PLANS.md): ExecPlan format.
+- [`docs/exec-plans/`](docs/exec-plans/README.md): active and completed long-running plans.
+- [`docs/workflows/`](docs/workflows/README.md): known-good operator procedures that automation should reproduce.
+- [`docs/platforms/`](docs/platforms/README.md): durable platform-specific behavior.
+- [`docs/operations/`](docs/operations/): operator and validation procedures.
+- [`docs/lessons/`](docs/lessons/README.md): historical reusable evidence, not current sprint state.
+- [`docs/roadmap/`](docs/roadmap/ROADMAP.md): future product direction.
+
+Keep the root README product- and operator-focused. Do not put agent handoff history, prompt strategy, or sprint narration there.
