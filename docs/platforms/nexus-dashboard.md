@@ -165,14 +165,14 @@ No undocumented GUI request was used.
 
 **OBSERVED / CONVERGENCE:** Cisco's supported `rescue-user` commands report
 `Running deployment mode ndfc` for `acs deployment running` and `All components
-are healthy` for `acs health`, including a fresh bounded recheck. This confirms
+are healthy` for `acs health`, including a fresh bounded recheck. `acs ntp` reports a selected system peer from the declared NTP environment with a small offset. This confirms
 the expected Controller deployment mode and healthy platform components. Cisco
 release notes identify Fabric Controller **12.2.2.241** as the service bundled
 with Nexus Dashboard 3.2.1i; 12.2.3 is not the live target.
 
 **OBSERVED / CONVERGENCE:** The documented Fabric Controller fabrics GET
 `/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics` remains HTTP 404
-across bounded, token-authenticated rechecks after the documented 30-minute
+across bounded rechecks with both documented login-token variants after the documented 30-minute
 startup window. The Dashboard platform and node APIs remain `Active`; this is
 specifically Fabric Controller service-gateway registration absence, not Cluster
 Bringup, DNS/NTP, management/data addressing, external-IP, or API-login failure.
