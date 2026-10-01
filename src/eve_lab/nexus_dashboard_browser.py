@@ -375,6 +375,159 @@ def configure_external_ips(intent, username, password, timeout=600):
     except PlaywrightTimeoutError as error:
         raise NexusDashboardBrowserError("Timed out reconciling documented Nexus Dashboard service IPs") from error
 
+def _wait_for(page, predicate, deadline, description):
+    """Bound a lifecycle wait without treating a pre-state API as a fault."""
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        page.wait_for_timeout(5000)
+    raise NexusDashboardBrowserError("Timed out waiting for " + description)
+
+
+def _launch_fabric_controller(page, deadline):
+    """Follow the Dashboard's visible app launcher; never synthesize a private route."""
+    launcher = page.locator("nd-launcher")
+    _wait_for(page, lambda: launcher.count() == 1 and launcher.is_visible(), deadline,
+              "Nexus Dashboard application launcher")
+    page.keyboard.press("Escape")
+    launcher.locator(".selected-item").click()
+    item = launcher.locator(".dropdown-launcher .item").filter(has_text="Fabric Controller")
+    _wait_for(page, lambda: item.count() == 1 and item.is_visible(), deadline,
+              "Fabric Controller launcher item")
+    item.click()
+
+
+def _fabric_controller_service_setup(page, deadline):
+    """Perform the observed supported LAN/Advanced first-run UI only when present."""
+    setup = page.locator(".gradient-card", has_text="Service Setup")
+    if setup.count() == 0:
+        return False
+    setup.click()
+    go = page.get_by_text("Go", exact=True)
+    _wait_for(page, lambda: go.count() == 1 and go.is_visible(), deadline,
+              "Fabric Controller Service Setup action")
+    go.click()
+    lan = page.locator(".CardWithIcon_cardWithIconContainer__OHIF7", has_text="LAN")
+    _wait_for(page, lambda: lan.count() == 1 and lan.is_visible(), deadline,
+              "Fabric Controller LAN selector")
+    lan.click(force=True, no_wait_after=True)
+    advanced = page.locator('input[value="Use-Case-Fabric-Management-Advanced"]')
+    _wait_for(page, lambda: advanced.count() == 1 and advanced.is_visible(), deadline,
+              "Fabric Management Advanced selector")
+    if not advanced.is_checked():
+        advanced.locator("xpath=..").click()
+    if not advanced.is_checked():
+        raise NexusDashboardBrowserError("Fabric Controller did not retain Fabric Management Advanced")
+    next_button = page.get_by_role("button", name="Next")
+    if next_button.count() != 1 or next_button.is_disabled():
+        raise NexusDashboardBrowserError("Fabric Controller Feature Selection did not enable Next")
+    next_button.click()
+    _wait_for(page, lambda: page.get_by_role("button", name="Submit").count() == 1,
+              deadline, "Fabric Controller Summary")
+    summary = " ".join(page.locator("body").inner_text().split())
+    for value in ("Operational Mode LAN", "Fabric Builder", "Endpoint Locator",
+                  "Performance Monitoring"):
+        if value not in summary:
+            raise NexusDashboardBrowserError("Fabric Controller Summary omitted " + value)
+    submit = page.get_by_role("button", name="Submit")
+    submit.click(no_wait_after=True)
+    _wait_for(page, lambda: submit.is_disabled(), deadline,
+              "Fabric Controller Service Setup submission")
+    return True
+
+
+def _set_fabric_controller_data(page, deadline):
+    """Use Server Settings UI for the documented LAN DATA selection."""
+    admin = page.get_by_role("link", name="Admin", exact=True)
+    _wait_for(page, lambda: admin.count() == 1 and admin.is_visible(), deadline,
+              "Fabric Controller Admin UI")
+    admin.click()
+    system = page.get_by_role("link", name="System Settings", exact=True)
+    _wait_for(page, lambda: system.count() == 1 and system.is_visible(), deadline,
+              "Fabric Controller System Settings")
+    system.click()
+    category = page.locator("form").get_by_text("Admin", exact=True)
+    _wait_for(page, lambda: category.count() == 1 and category.is_visible(), deadline,
+              "Fabric Controller Server Settings Admin category")
+    category.click()
+    mode = page.locator('[id="serverProperties.global.oob_network_mode"]')
+    _wait_for(page, lambda: mode.count() == 1 and mode.is_visible(), deadline,
+              "LAN Device Management Connectivity")
+    if mode.input_value().lower() == "data":
+        return "already-configured"
+    if mode.input_value().lower() != "management":
+        raise NexusDashboardBrowserError("Fabric Controller exposed an unexpected device-management value")
+    mode.click()
+    data = page.get_by_text("Data", exact=True)
+    _wait_for(page, lambda: data.count() == 1 and data.is_visible(), deadline,
+              "LAN DATA device-management option")
+    data.click()
+    if mode.input_value().lower() != "data":
+        raise NexusDashboardBrowserError("Fabric Controller did not retain DATA device-management selection")
+    save = page.get_by_role("button", name="Save")
+    if save.count() != 1 or save.is_disabled():
+        raise NexusDashboardBrowserError("Fabric Controller Server Settings did not enable Save")
+    save.click(no_wait_after=True)
+    _wait_for(page, lambda: "Saving server properties is in progress" not in
+              page.locator("body").inner_text(), deadline,
+              "Fabric Controller DATA device-management save")
+    if mode.input_value().lower() != "data":
+        raise NexusDashboardBrowserError("Fabric Controller did not persist DATA device-management")
+    return "configured"
+
+
+def configure_fabric_controller(intent, username, password, timeout=1800):
+    """Run the owner-confirmed lifecycle: launcher, LAN/Advanced, then DATA.
+
+    The documented fabrics API is called only after the UI lifecycle has reached
+    Server Settings and its DATA selection has settled. No fabric is created.
+    """
+    if not intent["fabric_controller"]["enabled"]:
+        return {"status": "disabled"}
+    address = str(IPv4Interface(intent["management"]["address"]).ip)
+    deadline = time.monotonic() + timeout
+    try:
+        from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+    except ImportError as error:
+        raise NexusDashboardBrowserError("Fabric Controller setup requires Playwright") from error
+    pin = _spki_pin(address)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True,
+                args=["--ignore-certificate-errors-spki-list=" + pin])
+            try:
+                page = browser.new_page()
+                page.goto("https://" + address + "/", wait_until="domcontentloaded",
+                          timeout=min(30000, int((deadline - time.monotonic()) * 1000)))
+                _login(page, username, password, max(1, deadline - time.monotonic()))
+                page.goto("https://" + address + "/#/systemDashboard",
+                          wait_until="domcontentloaded",
+                          timeout=min(30000, max(1000, int((deadline - time.monotonic()) * 1000))))
+                _launch_fabric_controller(page, deadline)
+                submitted = _fabric_controller_service_setup(page, deadline)
+                result = _set_fabric_controller_data(page, deadline)
+                status, body = _external_ip_response(page, "GET")  # Dashboard API remains read-only here.
+                if status != 200 or not isinstance(body, dict):
+                    raise NexusDashboardBrowserError("Nexus Dashboard external-IP read validation is unavailable")
+                fabrics = page.evaluate("""async () => { const r = await fetch(
+                    '/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics');
+                    return {status:r.status, body:await r.text()}; }""")
+                if fabrics.get("status") != 200:
+                    raise NexusDashboardBrowserError("Fabric Controller documented fabrics API is not ready after DATA selection")
+                try:
+                    listing = json.loads(fabrics.get("body", ""))
+                except json.JSONDecodeError as error:
+                    raise NexusDashboardBrowserError("Fabric Controller fabrics API returned an invalid response") from error
+                if not isinstance(listing, list) or listing:
+                    raise NexusDashboardBrowserError("Fabric Controller baseline must contain no fabrics")
+                return {"status": result, "service_setup_submitted": submitted,
+                        "fabrics": 0}
+            finally:
+                browser.close()
+    except PlaywrightTimeoutError as error:
+        raise NexusDashboardBrowserError("Timed out in Fabric Controller lifecycle transition") from error
+
+
 def bringup(intent, username, password, timeout=600):
     """Run or classify the documented initial Cluster Bringup wizard.
 

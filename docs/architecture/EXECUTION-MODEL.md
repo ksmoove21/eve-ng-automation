@@ -106,6 +106,26 @@ mutation, process termination, global EVE changes, or recovery actions still
 require the authorization applicable to the task. Observation does not imply
 standing permission to alter the EVE host.
 
+## Lifecycle-first controller automation
+
+Controller platforms expose console, GUI, and API capabilities at different
+points in their lifecycle. Model the current product state, its documented next
+transition, and that transition's prerequisites before classifying an API error,
+GUI condition, or service state as a fault.
+
+The supported operator lifecycle is the behavioral authority. Use a documented
+API only when it is both supported and available in the current lifecycle state.
+When that API is not yet available, automate the equivalent documented GUI, CLI,
+or serial-console action a human operator would perform. An unavailable API
+before its expected lifecycle state is evidence about the transition; it is not
+by itself a platform failure. Do not replace such a transition with undocumented
+browser endpoints or internal GUI requests.
+
+After each transition, collect only the health and state evidence that the
+product documents for that stage. Continue to the next lifecycle action when
+that evidence is satisfied; investigate or repair only when a documented
+prerequisite or expected transition fails.
+
 ## External research
 
 Research is part of implementation when observed behavior depends on uncertain

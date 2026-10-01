@@ -28,6 +28,7 @@ from .initialize_nexus_dashboard import (
 from .nexus_dashboard_browser import (
     bringup as nexus_dashboard_bringup,
     configure_external_ips as nexus_dashboard_external_ips,
+    configure_fabric_controller as nexus_dashboard_fabric_controller,
 )
 
 
@@ -376,6 +377,8 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                         commands, login[0], login[1], timeout=timeout)
                     if lifecycle["status"] == "ready-or-post-bringup":
                         lifecycle["external_ips"] = nexus_dashboard_external_ips(
+                            commands, login[0], login[1], timeout=timeout)
+                        lifecycle["fabric_controller"] = nexus_dashboard_fabric_controller(
                             commands, login[0], login[1], timeout=timeout)
                     result['lifecycle'][name] = lifecycle
                     result['completed'].append(name)
