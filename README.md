@@ -200,6 +200,8 @@ Do not run live or destructive commands against an EVE instance you do not own o
 
 | Path | Purpose |
 | --- | --- |
+| `ARCHITECTURE.md` | Top-level system components, boundaries, and ownership |
+| `docs/README.md` | Documentation index and source-of-truth map |
 | `docs/operations/validation.md` | Validation schema, evidence and limitations |
 | `docs/operations/environment.md` | Environment and operator setup |
 | `docs/operations/baseline-validation-windows.md` | Windows baseline/testing notes |
