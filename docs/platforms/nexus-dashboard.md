@@ -142,20 +142,26 @@ that the documented management-network NTP validation succeeded with the
 replacement intent; it necessarily resolved and reached the declared NTP target
 through the configured DNS providers. It is not an ICMP-only claim.
 
-**OBSERVED:** Cluster Bringup has persisted and is deploying its core
-infrastructure. The Dashboard reports completed Kubernetes runtime, local
-networks, base system services, peer networking, Kubernetes stack, cluster
-health, and ND-cluster setup phases. Core-infrastructure service deployment is
-still in progress. A temporary empty HTTPS body and login-service restart were
-observed during that transition; the node stayed running and serial observation
-reported no fatal marker.
+**OBSERVED:** Cluster Bringup has persisted and completed. The Dashboard
+reported completed Kubernetes runtime, local networks, base system services,
+peer networking, Kubernetes stack, cluster health, and ND-cluster setup phases.
+The former service-installation gate cleared. A temporary empty HTTPS body and
+login-service restart were observed during that transition; the node stayed
+running and serial observation reported no fatal marker.
+
+**OBSERVED:** The running appliance's documented `/apidocs/` surface returns
+HTTP 200 and publishes the 3.2.1i OpenAPI schema. Its documented platform
+cluster and node collection GETs return HTTP 200 with `Active` state; the
+external-IP collection GET returns HTTP 200 with an empty baseline. The schema
+documents external-IP POST/PUT with `targetNetwork: Data`. These read-only
+observations are not an implementation dependency on internal UI requests.
 
 **VERSION-SPECIFIC / OBSERVED:** 3.2.1i has no editable persistent/service-IP
 control in its documented initial Summary UI, including View Advanced Settings.
 Those values must remain pending a supported post-cluster API discovery; no
 undocumented GUI request may be used to configure them.
 
-**Current next action:** wait for the persisted cluster deployment to complete,
+**Current next action:** use the documented platform and Fabric Controller APIs to establish Fabric Controller readiness,
 then discover the running `/apidocs/`, use only documented cluster/node/external
 IP and Fabric Controller APIs, configure the pending intent, implement
 read-only validation, and run two complete clean build/bootstrap/validation

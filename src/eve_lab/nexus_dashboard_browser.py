@@ -114,7 +114,7 @@ def _login(page, username, password, timeout):
     if login.count() != 1:
         raise NexusDashboardBrowserError("Nexus Dashboard login button was not uniquely available")
     login.click()
-    page.wait_for_timeout(min(1000, timeout * 1000))
+    page.wait_for_timeout(min(5000, timeout * 1000))
     if page.locator("input[type=password]").count():
         raise NexusDashboardBrowserError("Nexus Dashboard rejected the configured administrator password")
     return True
