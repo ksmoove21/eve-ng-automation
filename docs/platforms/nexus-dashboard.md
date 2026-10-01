@@ -217,6 +217,14 @@ EVE-host, image-readiness, disk-layout, or pre-QEMU launch diagnosis. Clean
 cycle 1 is therefore not a PASS. Preserve the running appliance; do not restart,
 repair, or recreate it solely to clear evidence, and do not begin clean cycle 2
 without a new, evidence-backed recovery hypothesis.
+**OBSERVED / NETWORK DISAMBIGUATION:** A bounded header-only capture on the
+management TAP during a failed HTTPS probe observed inbound TCP SYN traffic and
+no SYN-ACK from the guest. TAP carrier and error counters were clean. Together
+with QMP `running` and both block devices reporting `io-status: ok`, this is
+evidence that EVE delivers the attempted management connection to ND-01 but the
+guest network/service stack does not answer. It does not identify the internal
+Nexus Dashboard component responsible. A VM restart remains a live mutation and
+requires explicit owner authorization before it is used as a recovery diagnostic.
 **Current next action:** preserve the failed clean-cycle-1 appliance and obtain
 a new, evidence-backed guest-service recovery or supported diagnostic path before
 retrying. Do not create a fabric, onboard a device, restart, repair, or clean-wipe
