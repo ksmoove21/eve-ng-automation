@@ -57,6 +57,24 @@ def _address_list(values, label):
         raise ValueError(label + " entries must be IPv4 addresses") from None
 
 
+def _ntp_list(values):
+    """Accept documented NTP targets as either IPv4 literals or hostnames."""
+    if not isinstance(values, list) or not values or len(values) != len(set(values)):
+        raise ValueError("ntp_servers must be a nonempty unique list")
+    normalized = []
+    for value in values:
+        if not isinstance(value, str):
+            raise ValueError("ntp_servers entries must be IPv4 addresses or DNS hostnames")
+        try:
+            normalized.append(str(IPv4Address(value)))
+        except ValueError:
+            if not _DOMAIN.fullmatch(value):
+                raise ValueError(
+                    "ntp_servers entries must be IPv4 addresses or DNS hostnames") from None
+            normalized.append(value)
+    return normalized
+
+
 def normalize_intent(data):
     """Validate declarative first-boot and supported post-bootstrap intent."""
     fields = (
@@ -124,7 +142,7 @@ def normalize_intent(data):
         "data": networks["data"],
         "dns_servers": _address_list(data["dns_servers"], "dns_servers"),
         "search_domains": list(search_domains),
-        "ntp_servers": _address_list(data["ntp_servers"], "ntp_servers"),
+        "ntp_servers": _ntp_list(data["ntp_servers"]),
         "persistent_service_ips": persistent,
         "fabric_controller": {
             "enabled": fabric["enabled"],

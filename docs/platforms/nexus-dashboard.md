@@ -85,29 +85,25 @@ opens a strict nested SSH command to the satellite-local console port. The live
 The guest must receive CR only. Sending CRLF caused the LF to be consumed as an
 empty answer at the adjacent password-confirmation prompt.
 
-Management is `172.18.3.9/24` via `172.18.3.1`. Serial first boot is complete,
-HTTPS on `172.18.3.9:443` is available, and documented `POST /login` succeeds.
+The declared management interface is configured. Serial first boot is complete,
+HTTPS is available on the declared management address, and documented `POST /login` succeeds.
 A repeated operator-facing `eve init` returned `already-configured` based on the
 existing management HTTPS listener without reopening or submitting input to the
 serial setup. This proves idempotence for the serial-first-boot phase only.
 
-## Declarative pending configuration
+## Declarative configuration
 
-The private workspace stores the following in
-`labs/nexus-dashboard-disposable/configs/ND-01-init.yaml`:
+The private workspace stores the environment-specific Nexus Dashboard intent in
+`labs/nexus-dashboard-disposable/configs/ND-01-init.yaml`, including management
+and DATA addressing, both declared DNS providers, the declared FQDN NTP target,
+the search domain, five derived persistent/service addresses, Fabric Controller,
+and DATA device-management connectivity. These values are schema-validated and
+remain private; no environment address or hostname is encoded in reusable code.
 
-- data interface `172.22.3.10/24`, gateway `172.22.3.1`
-- DNS `10.100.0.1`
-- search domain `UNSC.IN`
-- NTP `10.100.0.1` and `10.100.0.254`
-- five derived persistent/service addresses, `172.22.3.11` through
-  `172.22.3.15`
-- Fabric Controller enabled
-- Fabric Controller device-management connectivity set to `data`
-
-These values are declared and schema-validated but are not applied. The initial
-Cluster Bringup wizard is incomplete. Fabric Controller readiness and DATA
-selection therefore remain unproven.
+The owner superseded the earlier DNS and IP-address NTP sources. The current
+intent uses two DNS providers and an FQDN NTP target. Persistent/service-IP
+configuration, Fabric Controller readiness, and DATA selection remain pending
+post-cluster validation.
 
 ## Supported API boundary
 
@@ -130,17 +126,41 @@ operator to the HTTPS Cluster Bringup wizard after serial setup.
 **UNSUPPORTED / UNDOCUMENTED:** internal browser/XHR endpoints must not become
 implementation dependencies merely because the GUI calls them.
 
-**Current blocker and exact next action:** settle the supported execution path
-for the 3.2.1i HTTPS Cluster Bringup wizard. Either explicitly authorize and
-test HTTPS browser UI automation, or have an operator complete the documented
-wizard. After that, discover the running `/apidocs/`, use only documented
-cluster/node/external-IP and Fabric Controller APIs, configure the pending
-intent, implement read-only validation, and run two complete clean
-build/bootstrap/validation cycles.
+## 3.2.1i browser Cluster Bringup evidence
 
-The preserved running discovery node is useful and must not be deleted merely
-for handoff. Neither required full clean acceptance cycle is complete.
+**OBSERVED / SUPERSEDED:** The earlier private DNS and IP-address NTP intent
+failed the documented NTP management validation. It is no longer current owner
+intent and must not be restored.
 
+**OBSERVED:** After the owner supplied replacement private DNS providers and an
+FQDN NTP target, the documented browser workflow accepted DNS, search domain,
+NTP with preferred source, no-proxy confirmation, the narrowly normalized
+UI-invalid App/Service CIDR defaults, the primary-node DATA CIDR/gateway, and
+Fabric Controller selection. It advanced through Node Details, Deployment Mode,
+and Summary, then accepted the deployment confirmation. This is live evidence
+that the documented management-network NTP validation succeeded with the
+replacement intent; it necessarily resolved and reached the declared NTP target
+through the configured DNS providers. It is not an ICMP-only claim.
+
+**OBSERVED:** Cluster Bringup has persisted and is deploying its core
+infrastructure. The Dashboard reports completed Kubernetes runtime, local
+networks, base system services, peer networking, Kubernetes stack, cluster
+health, and ND-cluster setup phases. Core-infrastructure service deployment is
+still in progress. A temporary empty HTTPS body and login-service restart were
+observed during that transition; the node stayed running and serial observation
+reported no fatal marker.
+
+**VERSION-SPECIFIC / OBSERVED:** 3.2.1i has no editable persistent/service-IP
+control in its documented initial Summary UI, including View Advanced Settings.
+Those values must remain pending a supported post-cluster API discovery; no
+undocumented GUI request may be used to configure them.
+
+**Current next action:** wait for the persisted cluster deployment to complete,
+then discover the running `/apidocs/`, use only documented cluster/node/external
+IP and Fabric Controller APIs, configure the pending intent, implement
+read-only validation, and run two complete clean build/bootstrap/validation
+cycles. The preserved running appliance must not be deleted merely for
+observation.
 ## Current implementation and tests
 
 The worktree currently contains:
@@ -149,6 +169,7 @@ The worktree currently contains:
 - native satellite console routing through configured manager SSH
 - Nexus Dashboard structured intent validation
 - the live-observed CR-only serial first-boot state machine
+- browser-driven documented Cluster Bringup after serial setup, with an explicit post-bootstrap username control when rendered
 - a bounded management HTTPS-listener check for serial-phase idempotence
 - focused regression coverage for the satellite and initializer paths
 

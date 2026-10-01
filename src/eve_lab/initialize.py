@@ -25,6 +25,7 @@ from .initialize_nexus_dashboard import (
     load_bootstrap as load_nexus_dashboard_bootstrap,
     management_https_ready as nexus_dashboard_https_ready,
 )
+from .nexus_dashboard_browser import bringup as nexus_dashboard_bringup
 
 
 IOS_TEMPLATES = ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol')
@@ -368,10 +369,8 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 login = logins[template]
                 if (template == NEXUS_DASHBOARD_TEMPLATE
                         and nexus_dashboard_https_ready(commands)):
-                    result['lifecycle'][name] = {
-                        'status': 'already-configured',
-                        'readiness': 'management-https-port',
-                    }
+                    result['lifecycle'][name] = nexus_dashboard_bringup(
+                        commands, login[0], login[1], timeout=timeout)
                     result['completed'].append(name)
                     continue
                 satellite_target = None
