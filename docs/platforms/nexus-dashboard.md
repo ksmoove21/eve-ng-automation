@@ -163,16 +163,23 @@ empty collection accepted one DATA-targeted resource containing the five derived
 private service addresses, and read-back returned HTTP 200 with one resource.
 No undocumented GUI request was used.
 
-**OBSERVED / BLOCKING:** After the Service Installation banner cleared, the
-documented Fabric Controller fabrics GET
-`/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics` still returns
-HTTP 404 across bounded rechecks. The Dashboard platform and node APIs remain
-`Active`; this is specifically Fabric Controller service-gateway absence, not
-Cluster Bringup, DNS/NTP, management/data addressing, or external-IP failure.
+**OBSERVED / CONVERGENCE:** Cisco's supported `rescue-user` commands report
+`Running deployment mode ndfc` for `acs deployment running` and `All components
+are healthy` for `acs health`, including a fresh bounded recheck. This confirms
+the expected Controller deployment mode and healthy platform components. Cisco
+release notes identify Fabric Controller **12.2.2.241** as the service bundled
+with Nexus Dashboard 3.2.1i; 12.2.3 is not the live target.
+
+**OBSERVED / CONVERGENCE:** The documented Fabric Controller fabrics GET
+`/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics` remains HTTP 404
+across bounded, token-authenticated rechecks after the documented 30-minute
+startup window. The Dashboard platform and node APIs remain `Active`; this is
+specifically Fabric Controller service-gateway registration absence, not Cluster
+Bringup, DNS/NTP, management/data addressing, external-IP, or API-login failure.
 Do not create a fabric, onboard a device, or use an undocumented app endpoint
 as a workaround.
 
-**Current next action:** determine, from the documented Service Status/application lifecycle surface or owner-approved service repair, why the selected Fabric Controller service has not registered its documented gateway;
+**Current next action:** continue bounded readiness polling; if the authenticated gateway remains absent despite the healthy `ndfc` deployment, obtain Cisco-supported service-lifecycle evidence or owner authorization for a demonstrated Fabric Controller repair path;
 then discover the running `/apidocs/`, use only documented cluster/node/external
 IP and Fabric Controller APIs, configure the pending intent, implement
 read-only validation, and run two complete clean build/bootstrap/validation
