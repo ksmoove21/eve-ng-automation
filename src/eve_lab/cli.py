@@ -20,6 +20,7 @@ from .securecrt import generate as generate_securecrt
 from .session_discovery import discover as discover_sessions
 from .dhcp import clear as clear_dhcp, report as report_dhcp, update_dns as update_dhcp_dns, update as update_dhcp
 from .deploy import apply, delete, lab_status, lifecycle, plan
+from .sdwan_intent import load_and_compile as compile_sdwan
 from .topology import load_lab_target, load_topology
 from .validation import validate_lab
 
@@ -62,6 +63,9 @@ def main():
     credential_options.add_argument("--username", help="Device SSH username (default: blank)")
     securecrt.add_argument("--interactive", action="store_true", help="Prompt for each session name")
     securecrt.add_argument("--port", type=int, default=22, help="Device SSH port (default: 22)")
+    sdwan_plan = commands.add_parser(
+        "sdwan-plan", help="Validate and compile a private Catalyst SD-WAN intent without live access")
+    sdwan_plan.add_argument("lab")
     for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
         command = commands.add_parser(name)
         command.add_argument("--server", default="default")
@@ -110,6 +114,10 @@ def main():
             command.add_argument("name")
     args = parser.parse_args()
     try:
+        if args.command == "sdwan-plan":
+            topology = load_topology(args.root, args.lab)
+            print(json.dumps(compile_sdwan(args.root, args.lab, topology), indent=2))
+            return
         server = load_server(args.root, args.server, auth="ssh" if args.command in ("dhcp", "securecrt", "nat") else "web")
         if args.command == "nat":
             print(json.dumps(configure_nat(server, args.nat_action, args.interface, args.dry_run), indent=2))

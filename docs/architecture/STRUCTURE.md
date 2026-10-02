@@ -114,6 +114,22 @@ A lab may later be generated from a higher-level semantic specification, but
 that semantic layer should compile into the explicit topology rather than
 replace it.
 
+Platform workflow intent may also live beside the explicit topology when it
+describes ordered guest lifecycle, configuration, API, and desired-state
+operations that the low-level EVE topology cannot express. Such a compiler must:
+
+- remain offline and side-effect free;
+- cross-check every referenced node and interface against `topology.yaml`;
+- preserve the explicit topology rather than creating hidden topology intent;
+- emit one-shot and secret-handling metadata before those operations execute;
+- reject runtime tokens, passwords, generated identities, and other secret
+  material from Git-backed intent.
+
+For Catalyst SD-WAN labs, `eve sdwan-plan <lab>` validates
+`labs/<lab>/intent.yaml` and emits this secret-free execution plan. Live
+execution adapters consume the compiled operations; compilation itself does not
+authenticate to EVE or a Manager.
+
 Topology definitions should describe:
 
 - lab identity and remote folder
