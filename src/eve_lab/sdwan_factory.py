@@ -645,6 +645,11 @@ def _ensure_payg(context, api, name):
 
 
 def _transition_edge(context, name, edge, timeout):
+    # A prior attempt is never replayed. Post-transition mode and credentials
+    # are classified by _configure_edge, which owns the one-time factory-login
+    # fallback after Controller-mode resets the admin password.
+    if edge.get("controller_mode_attempted"):
+        return
     login = credentials(context.root)
     with _eve_console(context, name, Console, timeout) as console:
         console.login(*login)
@@ -656,8 +661,6 @@ def _transition_edge(context, name, edge, timeout):
             return
         if "Router operating mode: Autonomous" not in version:
             raise RuntimeError(name + " operating mode is unclassified")
-        if edge.get("controller_mode_attempted"):
-            raise RuntimeError(name + " controller-mode was attempted but did not converge")
         edge.update({"controller_mode_attempted": True,
                      "controller_mode_attempted_at": _now()})
         context.ledger.save()
