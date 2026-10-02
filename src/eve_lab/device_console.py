@@ -221,6 +221,7 @@ class Console:
         wake = not read_only
         secret_prompts = set()
         password_sent = False
+        username_sent = False
         password_setup_stages = set()
         correlation_recorded = False
         persona_selected = False
@@ -321,6 +322,7 @@ class Console:
                 after_format = True
                 password = new_password or password
                 password_sent = False
+                username_sent = False
                 wake = False
                 print('Confirming format of correlated Manager data disk.',
                       file=sys.stderr, flush=True)
@@ -328,7 +330,22 @@ class Console:
             elif prompt.startswith('Username:') or prompt.lower().startswith('login:'):
                 if after_format:
                     post_format_login = True
+                if password_sent:
+                    if (new_password is not None
+                            and 'confirm' in password_setup_stages
+                            and 'relogin' not in password_setup_stages):
+                        password = new_password
+                        password_sent = False
+                        username_sent = False
+                        password_setup_stages.add('relogin')
+                    else:
+                        raise RuntimeError(
+                            'Console returned to login after one credential submission')
+                if username_sent:
+                    raise RuntimeError(
+                        'Console repeated login after one username submission')
                 self.send(username)
+                username_sent = True
                 wake = False
             elif (re.match(r'(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password', prompt, re.I)
                   and not re.match(r'(?:Enter|Confirm) the password for .*admin', prompt, re.I)):
@@ -344,6 +361,7 @@ class Console:
                 self.send_secret(new_password or password)
                 wake = False
             elif prompt.startswith('Password:'):
+                username_sent = False
                 if password_sent:
                     if (_VIPTELA_INITIAL_PASSWORD.search(observed)
                             and 'new' not in password_setup_stages):

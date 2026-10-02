@@ -88,6 +88,23 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
                          ['\r', 'admin\r', 'admin\r'])
 
+    def test_login_stops_after_one_repeated_login_prompt(self):
+        c, ch = self.console(['login:', 'login:'])
+        with self.assertRaisesRegex(RuntimeError, 'repeated login'):
+            c.login('admin', 'admin', 'unused-enable')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
+                         ['\r', 'admin\r'])
+
+    def test_initial_password_setup_can_relogin_once_with_new_password(self):
+        c, ch = self.console([
+            'login:', 'Password:', 'Enter new password:',
+            'Confirm new password:', 'login:', 'Password:', 'vSmart#'])
+        c.login('admin', 'admin', 'unused-enable',
+                new_password='private-password')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
+            '\r', 'admin\r', 'admin\r', 'private-password\r',
+            'private-password\r', 'admin\r', 'private-password\r'])
+
     def test_login_exhaustion_reports_only_prompt_classes(self):
         c, _ = self.console(['Would you like to enter setup?'] * 20)
         with self.assertRaisesRegex(
