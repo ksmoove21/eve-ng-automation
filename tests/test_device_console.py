@@ -78,6 +78,12 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
                          ['\r', 'admin\r', 'admin\r'])
 
+    def test_login_exhaustion_reports_only_prompt_classes(self):
+        c, _ = self.console(['Would you like to enter setup?'] * 20)
+        with self.assertRaisesRegex(
+                RuntimeError, r'prompt sequence: (other-interactive,){19}'):
+            c.login('admin', 'secret-value', 'enable-value')
+
     def test_login_calls_correlation_hook_before_first_password(self):
         c, ch = self.console(['login:', 'Password:', 'Router#'])
         events = []

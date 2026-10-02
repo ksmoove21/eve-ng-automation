@@ -23,6 +23,24 @@ _VIPTELA_INITIAL_PASSWORD = re.compile(
     r'(?:must|required to).*?(?:set|change).*?(?:initial )?admin password')
 
 
+def _prompt_label(prompt):
+    """Return a non-secret prompt class suitable for failure diagnostics."""
+    checks = (
+        (r'(?i)(?:Username:|.*login:)$', 'login'),
+        (r'(?i)Password:$', 'password'),
+        (r'(?i)(?:New|Re-enter|Confirm).*password|Enter.*new password',
+         'password-setup'),
+        (r'(?i)Select persona for vManage', 'manager-persona'),
+        (r'(?i)Are you sure', 'confirmation'),
+        (r'(?i)Select storage device to use', 'manager-storage'),
+        (r'(?i)Would you like to format', 'manager-format'),
+        (r'.*>$', 'exec-unprivileged'),
+        (r'.*#$', 'exec-privileged'),
+    )
+    return next((label for pattern, label in checks
+                 if re.match(pattern, prompt)), 'other-interactive')
+
+
 _READ_ONLY_UNSAFE = re.compile(
     r'(?im)(?:'
     r'Enter enable secret\s*:|Confirm enable secret\s*:|'
@@ -208,6 +226,7 @@ class Console:
         persona_selected = False
         storage_selected = None
         after_format = False
+        prompt_trace = []
         pattern = (r'(?i:(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password)\s*:\s*$|' +
                    r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
@@ -236,6 +255,7 @@ class Console:
                 observed, match = self.expect(
                     pattern, timeout=self.boot_timeout, wake=wake, latest=True)
             prompt = match.group().strip()
+            prompt_trace.append(_prompt_label(prompt))
             if read_only and _READ_ONLY_UNSAFE.search(observed):
                 raise RuntimeError('Read-only login refused interactive or configuration-mode prompt')
             if re.match(r'(Enter|Confirm) enable secret', prompt, re.I):
@@ -355,7 +375,9 @@ class Console:
             else:
                 self.prompt = prompt
                 return
-        raise RuntimeError('Console login failed; check CISCO credentials')
+        raise RuntimeError(
+            'Console login failed after prompt sequence: ' +
+            ','.join(prompt_trace))
 
     def command(self, command, timeout=60):
         self.send(command)
