@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import socket
 import sys
+import time
 from urllib.parse import urlsplit
 
 import paramiko
@@ -278,6 +279,26 @@ def _ensure_manager_application_enabled(
     return True
 
 
+def _read_parseable_application_status(console, *, timeout, poll_seconds,
+                                       monotonic=time.monotonic,
+                                       sleep=time.sleep):
+    """Retry transient, incomplete NMS status output during application start."""
+    deadline = monotonic() + timeout
+    while True:
+        output = console.command(
+            "request nms application-server status", timeout=60)
+        try:
+            parse_application_status(output)
+        except ValueError as error:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    "Manager initial application status remained malformed") from error
+            sleep(min(poll_seconds, remaining))
+            continue
+        return output
+
+
 def qualify_manager(client, topology, root, server_name, node_name, *,
                     timeout=3600, minimum_uptime=900, poll_seconds=12,
                     restart_disabled=False):
@@ -325,8 +346,8 @@ def qualify_manager(client, topology, root, server_name, node_name, *,
         version = console.command("show version", timeout=60)
         if "20.15.1" not in version:
             raise RuntimeError("Manager version read-back did not prove 20.15.1")
-        initial_status = console.command(
-            "request nms application-server status", timeout=60)
+        initial_status = _read_parseable_application_status(
+            console, timeout=timeout, poll_seconds=poll_seconds)
         restarted = _ensure_manager_application_enabled(
             console, initial_status, record, state, state_path,
             restart_disabled=restart_disabled, timeout=timeout)

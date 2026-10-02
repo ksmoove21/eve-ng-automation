@@ -7,7 +7,8 @@ from eve_lab.sdwan_readiness import (
     wait_for_application_server,
 )
 from eve_lab.sdwan_initialize import (
-    _ensure_manager_application_enabled, qualify_manager,
+    _ensure_manager_application_enabled, _read_parseable_application_status,
+    qualify_manager,
 )
 
 
@@ -107,6 +108,20 @@ class ReadinessTests(unittest.TestCase):
                 record, {"version": 1, "nodes": {}}, "state.json",
                 restart_disabled=True, timeout=1200)
         console.command.assert_not_called()
+
+    def test_initial_application_status_retries_transient_incomplete_output(self):
+        console = unittest.mock.MagicMock()
+        console.command.side_effect = [
+            "NMS application server\n",
+            cli_status(uptime=10),
+        ]
+        now = [0]
+        output = _read_parseable_application_status(
+            console, timeout=24, poll_seconds=12,
+            monotonic=lambda: now[0],
+            sleep=lambda seconds: now.__setitem__(0, now[0] + seconds))
+        self.assertIn("PID:42 for 10s", output)
+        self.assertEqual(console.command.call_count, 2)
 
     def test_manager_qualification_requires_completed_correlated_init(self):
         topology = {"name": "lab", "path": "/sdwan/lab.unl"}
