@@ -73,7 +73,10 @@ def control_component_record(api, *, device_ip, personality):
     matches = [
         record for record in records
         if str(record.get("deviceIP", "")) == device_ip
-        and str(record.get("personality", "")).lower() == personality.lower()
+        and personality.lower() in {
+            str(record.get("personality", "")).lower(),
+            str(record.get("deviceType", "")).lower(),
+        }
     ]
     if len(matches) != 1:
         raise RuntimeError(

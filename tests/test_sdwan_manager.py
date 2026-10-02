@@ -59,6 +59,16 @@ class ManagerFabricTests(unittest.TestCase):
         self.assertIs(control_component_record(
             api, device_ip="172.16.1.101", personality="vmanage"), expected)
 
+    def test_control_record_uses_device_type_for_20_15_vbond(self):
+        api = MagicMock()
+        expected = {
+            "deviceIP": "10.1.0.2", "deviceType": "vbond",
+            "personality": "vedge",
+        }
+        api.inventory.return_value = (expected,)
+        self.assertIs(control_component_record(
+            api, device_ip="10.1.0.2", personality="vbond"), expected)
+
     def test_certificate_acceptance_requires_status_and_real_serial(self):
         self.assertTrue(certificate_is_installed({
             "certInstallStatus": "Installed", "serialNumber": "1234"}))
