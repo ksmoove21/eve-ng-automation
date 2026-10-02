@@ -205,6 +205,10 @@ class CompilerTests(unittest.TestCase):
                       validator["operations"][0]["commands"])
         self.assertIn("no interface eth0",
                       validator["operations"][1]["commands"])
+        self.assertIn("allow-service netconf",
+                      validator["operations"][1]["commands"])
+        self.assertIn("allow-service sshd",
+                      validator["operations"][1]["commands"])
         edge = result["node_operations"]["EDGE-A"]["desired"]
         self.assertEqual(edge["vpn512_address"], "172.19.3.23/24")
 

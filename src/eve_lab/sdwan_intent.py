@@ -267,6 +267,11 @@ def _control_operations(component, organization, vbond, color,
     ]
     if component["personality"] != "manager":
         vpn0.append("encapsulation ipsec")
+        # 20.15.1 control appliances can retain the detailed default denies
+        # even when ``allow-service all`` is present.  Manager enrollment uses
+        # NETCONF/830 and operational recovery uses SSH, so make both ingress
+        # requirements explicit for Validator and Controller.
+        vpn0.extend(("allow-service netconf", "allow-service sshd"))
     vpn0 += [
         "color " + color,
         "allow-service all",
