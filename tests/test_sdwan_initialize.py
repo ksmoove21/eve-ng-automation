@@ -85,6 +85,14 @@ class DesiredStateTests(unittest.TestCase):
         with self.assertRaisesRegex(DesiredStateMissing, "missing desired"):
             verify_stage(console, stage)
 
+    def test_stage_comparison_ignores_optional_single_token_quotes(self):
+        stage = ControlStage("identity", (
+            "system", 'organization-name "nwl-lab-sdwan"', "exit"))
+        console = MagicMock()
+        console.command.return_value = (
+            "system\n organization-name nwl-lab-sdwan\n")
+        self.assertEqual(verify_stage(console, stage)["missing"], 0)
+
     def test_matching_stage_is_not_reapplied(self):
         stage = ControlStage("identity", (
             "system", "host-name vManage1", "exit"))
@@ -101,12 +109,15 @@ class DesiredStateTests(unittest.TestCase):
         console = MagicMock()
         console.command.side_effect = [
             "system\n", "system\n host-name vManage1\n"]
-        result, changed = ensure_stage(console, stage, timeout=123)
+        on_apply = MagicMock()
+        result, changed = ensure_stage(
+            console, stage, timeout=123, on_apply=on_apply)
         self.assertTrue(changed)
         self.assertEqual(result["missing"], 0)
         self.assertEqual(
             [call.kwargs["timeout"] for call in console.command.call_args_list],
             [123, 123])
+        on_apply.assert_called_once_with()
         console.configure_stage.assert_called_once_with(stage, timeout=123)
 
     def test_transport_failure_never_applies_stage(self):

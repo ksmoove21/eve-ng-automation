@@ -127,25 +127,34 @@ def _expected_lines(stage):
             and not command.startswith("no interface ")]
 
 
+def _normalize_line(line):
+    collapsed = re.sub(r"\s+", " ", line.strip())
+    return re.sub(r'"([^"\s]+)"', r"\1", collapsed)
+
+
 def verify_stage(console, stage, *, timeout=60):
     output = console.command(_stage_command(stage.name), timeout=timeout)
-    normalized = {re.sub(r"\s+", " ", line.strip())
+    normalized = {_normalize_line(line)
                   for line in output.splitlines() if line.strip()}
-    missing = [line for line in _expected_lines(stage)
-               if re.sub(r"\s+", " ", line) not in normalized]
+    expected = _expected_lines(stage)
+    missing = [index for index, line in enumerate(expected, start=1)
+               if _normalize_line(line) not in normalized]
     if missing:
         raise DesiredStateMissing(
             "Control-component " + stage.name +
-            " read-back is missing desired state")
-    return {"stage": stage.name, "desired_lines": len(_expected_lines(stage)),
+            " read-back is missing desired state at line indexes " +
+            ",".join(str(index) for index in missing))
+    return {"stage": stage.name, "desired_lines": len(expected),
             "missing": 0}
 
 
-def ensure_stage(console, stage, *, timeout=300):
+def ensure_stage(console, stage, *, timeout=300, on_apply=None):
     """Read back a stage first and mutate only confirmed missing state."""
     try:
         return verify_stage(console, stage, timeout=timeout), False
     except DesiredStateMissing:
+        if on_apply is not None:
+            on_apply()
         console.configure_stage(stage, timeout=timeout)
         return verify_stage(console, stage, timeout=timeout), True
 
@@ -193,8 +202,19 @@ def initialize_control(client, topology, root, server_name, node_name,
         for stage in stages:
             print("Reading control-component " + stage.name + " stage...",
                   file=sys.stderr, flush=True)
-            result, changed = ensure_stage(
-                console, stage, timeout=min(timeout, 300))
+            completed = record.setdefault("completed_stages", [])
+            attempted = record.setdefault("attempted_stages", [])
+            if stage.name in completed or stage.name in attempted:
+                result = verify_stage(
+                    console, stage, timeout=min(timeout, 300))
+                changed = False
+            else:
+                def persist_attempt():
+                    attempted.append(stage.name)
+                    _write_state(path, state)
+                result, changed = ensure_stage(
+                    console, stage, timeout=min(timeout, 300),
+                    on_apply=persist_attempt)
             if changed:
                 print("Control-component " + stage.name +
                       " missing state was committed.",
@@ -206,7 +226,6 @@ def initialize_control(client, topology, root, server_name, node_name,
             evidence.append(result)
             print("Control-component " + stage.name + " read-back passed.",
                   file=sys.stderr, flush=True)
-            completed = record.setdefault("completed_stages", [])
             if stage.name not in completed:
                 completed.append(stage.name)
                 _write_state(path, state)
