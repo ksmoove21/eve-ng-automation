@@ -43,6 +43,34 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
             '\r', 'admin\r', 'admin\r', 'private-password\r', 'private-password\r'])
 
+    def test_vmanage_first_boot_selects_persona_largest_data_disk_and_relogs(self):
+        c, ch = self.console([
+            'vmanage login:', 'Password:',
+            'Welcome to Viptela CLI\nYou must set an initial admin password.\nPassword:',
+            'Re-enter password:',
+            '1) COMPUTE_AND_DATA\n2) DATA\n3) COMPUTE\n'
+            'Select persona for vManage (1, 2 or 3):',
+            'You chose persona COMPUTE_AND_DATA (1)\nAre you sure? [y/n]:',
+            'Available storage devices:\nvdb 100GB\nhdc 3GB\n'
+            '1) vdb\n2) hdc\nSelect storage device to use:',
+            'Would you like to format vdb? (y/n):',
+            'vmanage login:', 'Password:', 'vManage#'])
+        c.login('admin', 'admin', 'unused', new_password='private-password',
+                vmanage_first_boot=True)
+        self.assertEqual(c.prompt, 'vManage#')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
+            '\r', 'admin\r', 'admin\r', 'private-password\r',
+            'private-password\r', '1\r', 'y\r', '1\r', 'y\r',
+            'admin\r', 'private-password\r'])
+
+    def test_vmanage_first_boot_rejects_only_small_or_uncorrelated_storage(self):
+        c, _ = self.console([
+            'Available storage devices:\nhdc 3GB\n1) hdc\n'
+            'Select storage device to use:'])
+        with self.assertRaisesRegex(RuntimeError, 'eligible 100GB'):
+            c.login('admin', 'admin', 'unused', new_password='private-password',
+                    vmanage_first_boot=True)
+
     def test_login_stops_after_one_repeated_password_prompt(self):
         c, ch = self.console(['login:', 'Password:', 'Password:'])
         with self.assertRaisesRegex(RuntimeError, 'repeated a password prompt after one'):

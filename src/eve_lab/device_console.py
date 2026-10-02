@@ -19,8 +19,8 @@ _PROMPT = r'^[ \t]*[\w.()/:-]+[>#](?=[ \t]*(?:$|[*%]))'
 _PRIVILEGED_PROMPT = r'^[ \t]*[\w.()/:-]+#(?=[ \t]*(?:$|[*%]))'
 _OSC_TITLE = re.compile(r'\x1b\][012];[\x20-\x7e]*(?:\x07|\x1b\\)')
 _VIPTELA_INITIAL_PASSWORD = re.compile(
-    r'(?is)Welcome to Viptela CLI.*?You must set an initial admin password '
-    r'different from default password\.')
+    r'(?is)Welcome to (?:Viptela|Cisco).*?'
+    r'(?:must|required to).*?(?:set|change).*?(?:initial )?admin password')
 
 
 _READ_ONLY_UNSAFE = re.compile(
@@ -192,7 +192,7 @@ class Console:
 
     def login(self, username, password, secret, *, new_password=None,
               read_only=False, enforce_secure_password_standard=True,
-              on_password_submit=None):
+              on_password_submit=None, vmanage_first_boot=False):
         if on_password_submit is not None and not callable(on_password_submit):
             raise TypeError('on_password_submit must be callable')
         if read_only:
@@ -204,13 +204,21 @@ class Console:
         secret_prompts = set()
         password_sent = False
         password_setup_stages = set()
+        correlation_recorded = False
+        persona_selected = False
+        storage_selected = None
+        after_format = False
         pattern = (r'(?i:(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password)\s*:\s*$|' +
                    r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
                    r'Username:\s*$|login:\s*$|Password:\s*$|Abort Power On Auto Provisioning[^\n]*[?:]|Do you want to enforce secure password standard[^\n]*[?:]|(?:Enter|Confirm) the password for [^\n]*admin[^\n]*:|Would you like to enter[^\n]*[?:]\s*$|'
+                   r'Select persona for vManage[^\n]*:\s*$|'
+                   r'Are you sure[^\n]*[?:]\s*$|'
+                   r'Select storage device to use\s*:\s*$|'
+                   r'Would you like to format[^\n]*[?:]\s*$|'
                    r'Press RETURN to get started[^\n]*$|' + _PROMPT)
         probe = read_only
-        for _ in range(12):
+        for _ in range(20):
             if probe:
                 observed, match = self.expect(
                     pattern, timeout=min(2, self.boot_timeout), wake=False,
@@ -245,6 +253,48 @@ class Console:
             elif prompt.startswith('Enter your selection'):
                 wake = False
                 self.send('2')  # Save the initial secret to NVRAM and exit setup.
+            elif re.match(r'Select persona for vManage', prompt, re.I):
+                if not vmanage_first_boot or persona_selected:
+                    raise RuntimeError('Unexpected or repeated Manager persona prompt')
+                persona_selected = True
+                wake = False
+                self.send('1')
+            elif re.match(r'Are you sure', prompt, re.I):
+                if not vmanage_first_boot or not persona_selected:
+                    raise RuntimeError('Unexpected Manager confirmation prompt')
+                wake = False
+                self.send('y')
+            elif re.match(r'Select storage device to use', prompt, re.I):
+                if not vmanage_first_boot or storage_selected is not None:
+                    raise RuntimeError('Unexpected or repeated Manager storage prompt')
+                choices = re.findall(
+                    r'(?m)^\s*(\d+)\)\s+([A-Za-z0-9._/-]+)\s*$', observed)
+                sizes = {}
+                for device, value, unit in re.findall(
+                        r'(?mi)^\s*([a-z][a-z0-9]*)\s+(\d+(?:\.\d+)?)\s*([tg]b)\s*$',
+                        observed):
+                    sizes[device] = float(value) * (1024 if unit.lower() == 'tb' else 1)
+                eligible = [(number, device, sizes.get(device, 0))
+                            for number, device in choices
+                            if sizes.get(device, 0) >= 100]
+                if not eligible:
+                    raise RuntimeError(
+                        'Manager first boot did not expose an eligible 100GB data disk')
+                number, storage_selected, _ = max(eligible, key=lambda item: item[2])
+                wake = False
+                self.send(number)
+            elif re.match(r'Would you like to format', prompt, re.I):
+                device = re.search(
+                    r'(?i)format\s+([A-Za-z0-9._/-]+)', prompt)
+                if (not vmanage_first_boot or storage_selected is None
+                        or device is None or device.group(1) != storage_selected
+                        or after_format):
+                    raise RuntimeError('Manager storage-format prompt was not correlated')
+                after_format = True
+                password = new_password or password
+                password_sent = False
+                wake = False
+                self.send('y')
             elif prompt.startswith('Username:') or prompt.lower().startswith('login:'):
                 self.send(username)
                 wake = False
@@ -273,8 +323,9 @@ class Console:
                     else:
                         raise RuntimeError('Console repeated a password prompt after one password submission')
                 else:
-                    if on_password_submit is not None:
+                    if on_password_submit is not None and not correlation_recorded:
                         on_password_submit()
+                        correlation_recorded = True
                     self.send_secret(password)
                     password_sent = True
                     wake = False

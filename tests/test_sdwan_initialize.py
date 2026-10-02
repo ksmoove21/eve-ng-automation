@@ -38,7 +38,9 @@ class StateTests(unittest.TestCase):
             console.command.return_value = "20.15.1\n"
             _first_login(console, ["admin", "private", "enable"], state,
                          path, "MGR", "uuid-1")
-            console.login.assert_called_once_with("admin", "private", "enable")
+        console.login.assert_called_once_with(
+            "admin", "private", "enable", new_password="private",
+            vmanage_first_boot=False)
 
 
 class DesiredStateTests(unittest.TestCase):

@@ -46,7 +46,7 @@ def _write_state(path, value):
     temporary.replace(path)
 
 
-def _first_login(console, login, state, path, node_name, node_uuid):
+def _first_login(console, login, state, path, node_name, node_uuid, *, manager=False):
     record = state["nodes"].get(node_name)
     if not isinstance(record, dict) or record.get("eve_uuid") != node_uuid:
         record = {"eve_uuid": node_uuid, "first_login": "pending",
@@ -55,10 +55,12 @@ def _first_login(console, login, state, path, node_name, node_uuid):
             state["nodes"][node_name] = record
             _write_state(path, state)
         console.login("admin", "admin", login[2], new_password=login[1],
-                      on_password_submit=persist_pending)
+                      on_password_submit=persist_pending,
+                      vmanage_first_boot=manager)
         state["nodes"][node_name] = record
     else:
-        console.login(login[0], login[1], login[2])
+        console.login(login[0], login[1], login[2], new_password=login[1],
+                      vmanage_first_boot=manager)
     version = console.command("show version", timeout=60)
     if "20.15.1" not in version:
         raise RuntimeError("Control component version read-back did not prove 20.15.1")
@@ -132,7 +134,8 @@ def initialize_control(client, topology, root, server_name, node_name,
         path = _state_path(root, topology["name"])
         state = _read_state(path)
         record = _first_login(
-            console, login, state, path, node_name, str(node.get("uuid", "")))
+            console, login, state, path, node_name, str(node.get("uuid", "")),
+            manager=plan.get("personality") == "manager")
         evidence = []
         for stage in stages:
             console.configure_stage(stage, timeout=min(timeout, 300))
