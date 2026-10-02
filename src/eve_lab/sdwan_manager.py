@@ -82,14 +82,14 @@ def control_component_record(api, *, device_ip, personality):
     return matches[0]
 
 
-def certificate_is_installed(record, *, root_sha1=None):
+def certificate_is_installed(record, *, root_hash=None):
     """Require Manager's certificate state and serial read-back to agree."""
     status = str(record.get("certInstallStatus", "")).strip().lower()
     serial = str(record.get("serialNumber", "")).strip()
     installed = (status == "installed" and bool(serial)
                  and serial.lower() != "no certificate installed")
-    if root_sha1 is not None:
-        expected = root_sha1.replace(":", "").strip().lower()
+    if root_hash is not None:
+        expected = root_hash.replace(":", "").strip().lower()
         observed = str(record.get("rootCertHash", "")).strip().lower()
         installed = installed and observed == expected
     return installed

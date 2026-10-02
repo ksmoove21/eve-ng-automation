@@ -69,10 +69,10 @@ class ManagerFabricTests(unittest.TestCase):
             "certInstallStatus": "Pending", "serialNumber": "1234"}))
         self.assertTrue(certificate_is_installed({
             "certInstallStatus": "Installed", "serialNumber": "1234",
-            "rootCertHash": "aabb"}, root_sha1="AA:BB"))
+            "rootCertHash": "aabb"}, root_hash="AA:BB"))
         self.assertFalse(certificate_is_installed({
             "certInstallStatus": "Installed", "serialNumber": "1234",
-            "rootCertHash": "ccdd"}, root_sha1="AA:BB"))
+            "rootCertHash": "ccdd"}, root_hash="AA:BB"))
 
     def test_conflicting_existing_setting_fails_before_mutation(self):
         api = MagicMock()
