@@ -291,11 +291,19 @@ def qualify_manager(client, topology, root, server_name, node_name, *,
         version = console.command("show version", timeout=60)
         if "20.15.1" not in version:
             raise RuntimeError("Manager version read-back did not prove 20.15.1")
+        def report_wait(reason, pid, uptime):
+            fields = [reason]
+            if pid is not None:
+                fields.append("PID=" + str(pid))
+            if uptime is not None:
+                fields.append("uptime=" + str(uptime) + "s")
+            print("Manager application readiness: " + ", ".join(fields),
+                  file=sys.stderr, flush=True)
         observation = wait_for_application_server(
             lambda: console.command(
                 "request nms application-server status", timeout=60),
             timeout_seconds=timeout, poll_seconds=poll_seconds,
-            minimum_seconds=minimum_uptime)
+            minimum_seconds=minimum_uptime, on_wait=report_wait)
         return {"lab": topology["name"], "node": node_name,
                 "version": "20.15.1", "qualified": observation.qualified,
                 "pid": observation.pid,

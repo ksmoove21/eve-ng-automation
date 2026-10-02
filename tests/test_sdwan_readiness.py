@@ -48,6 +48,21 @@ class ReadinessTests(unittest.TestCase):
                 lambda: cli_status(uptime=100), timeout_seconds=24,
                 poll_seconds=12, monotonic=lambda: now[0], sleep=sleep)
 
+    def test_wait_reports_sanitized_status(self):
+        now = [0]
+        reports = []
+        def sleep(seconds):
+            now[0] += seconds
+        with self.assertRaises(TimeoutError):
+            wait_for_application_server(
+                lambda: cli_status(uptime=100), timeout_seconds=12,
+                poll_seconds=12, monotonic=lambda: now[0], sleep=sleep,
+                on_wait=lambda reason, pid, uptime:
+                reports.append((reason, pid, uptime)))
+        self.assertEqual(
+            reports,
+            [("application uptime below qualification threshold", 42, 100)])
+
     def test_manager_qualification_requires_completed_correlated_init(self):
         topology = {"name": "lab", "path": "/sdwan/lab.unl"}
         client = object()

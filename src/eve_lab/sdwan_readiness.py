@@ -84,13 +84,17 @@ class ApplicationReadiness:
 def wait_for_application_server(read_status: Callable[[], str], *,
                                 timeout_seconds=3600, poll_seconds=12,
                                 minimum_seconds=900,
-                                monotonic=time.monotonic, sleep=time.sleep):
+                                monotonic=time.monotonic, sleep=time.sleep,
+                                on_wait=None):
     if timeout_seconds < 1 or poll_seconds < 1:
         raise ValueError("timeout_seconds and poll_seconds must be positive")
+    if on_wait is not None and not callable(on_wait):
+        raise TypeError("on_wait must be callable")
     tracker = ApplicationReadiness(minimum_seconds)
     deadline = monotonic() + timeout_seconds
     last_reason = "CLI unavailable"
     while True:
+        pid = uptime = None
         try:
             observation = tracker.observe(read_status())
         except (OSError, RuntimeError, ValueError) as error:
@@ -100,9 +104,12 @@ def wait_for_application_server(read_status: Callable[[], str], *,
             if observation.qualified:
                 return observation
             last_reason = observation.reason
+            pid, uptime = observation.pid, observation.uptime_seconds
         remaining = deadline - monotonic()
         if remaining <= 0:
             raise TimeoutError(
                 "Manager application readiness timed out: " + last_reason)
+        if on_wait is not None:
+            on_wait(last_reason, pid, uptime)
         sleep(min(poll_seconds, remaining))
 
