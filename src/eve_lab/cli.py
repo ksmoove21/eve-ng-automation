@@ -22,6 +22,7 @@ from .dhcp import clear as clear_dhcp, report as report_dhcp, update_dns as upda
 from .deploy import apply, delete, lab_status, lifecycle, plan
 from .live_guard import enforce_live_guard
 from .sdwan_intent import load_and_compile as compile_sdwan
+from .sdwan_initialize import initialize_control
 from .topology import load_lab_target, load_topology
 from .validation import validate_lab
 
@@ -67,6 +68,14 @@ def main():
     sdwan_plan = commands.add_parser(
         "sdwan-plan", help="Validate and compile a private Catalyst SD-WAN intent without live access")
     sdwan_plan.add_argument("lab")
+    sdwan_control = commands.add_parser(
+        "sdwan-control-init",
+        help="Initialize one Manager, Validator, or Controller from compiled intent")
+    sdwan_control.add_argument("lab")
+    sdwan_control.add_argument("node")
+    sdwan_control.add_argument("--server", default="default")
+    sdwan_control.add_argument("--check", action="store_true")
+    sdwan_control.add_argument("--timeout", type=int, default=900)
     for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
         command = commands.add_parser(name)
         command.add_argument("--server", default="default")
@@ -165,7 +174,8 @@ def main():
                           else clear_dhcp(server, args.interface, args.dry_run))
             print(json.dumps(result, indent=2))
             return
-        if args.command in ("stop", "backup", "restore", "init", "bootstrap") or (args.command == "start" and args.node):
+        if args.command in ("stop", "backup", "restore", "init", "bootstrap",
+                            "sdwan-control-init") or (args.command == "start" and args.node):
             topology = load_lab_target(args.root, args.lab, getattr(args, "remote_folder", None))
         else:
             topology = (load_topology(args.root, args.lab, getattr(args, "scenario", None))
@@ -176,13 +186,18 @@ def main():
             result = plan(topology, server)
         else:
             client = EveClient(server["url"], server.get("timeout", 15))
-            if args.command in ("init", "backup", "restore", "validate"):
+            if args.command in ("init", "backup", "restore", "validate",
+                                "sdwan-control-init"):
                 client.login(server["username"], server["password"], html5=False)
             else:
                 client.login(server["username"], server["password"])
             try:
                 if args.command == "apply":
                     result = apply(client, topology, prune=args.prune)
+                elif args.command == "sdwan-control-init":
+                    result = initialize_control(
+                        client, topology, args.root, args.server, args.node,
+                        args.check, args.timeout)
                 elif args.command == "init":
                     if args.prepare_console:
                         if args.management_ip:

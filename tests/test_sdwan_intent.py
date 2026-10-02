@@ -47,6 +47,10 @@ def topology():
             direct("edge-b", "EDGE-A", "GigabitEthernet2", "WAN-B", "Ethernet0/1"),
             direct("access", "EDGE-A", "GigabitEthernet3", "ACCESS-A",
                    "GigabitEthernet0/0"),
+            {"node": "MGR", "interface": "eth1", "network": "MGMT"},
+            {"node": "VAL", "interface": "eth0", "network": "MGMT"},
+            {"node": "CTRL", "interface": "eth1", "network": "MGMT"},
+            {"node": "EDGE-A", "interface": "GigabitEthernet4", "network": "MGMT"},
         ],
     }
 
@@ -60,6 +64,7 @@ def intent():
             "site_id": 1,
             "service_network": "192.0.2.0/24",
             "vbond_address": "192.0.2.2",
+            "transport_color": "private1",
             "aggregation": {
                 "node": "AGG",
                 "controller_svi": {
@@ -120,7 +125,12 @@ def intent():
         ],
         "management": {
             "network": "MGMT", "vpn": 512,
-            "addressing_source": "private-management-addressing",
+            "addressing_source": "context/management-addressing.yaml",
+            "pool": "172.19.3.0/24", "gateway": "172.19.3.1",
+            "assignments": {
+                "MGR": "172.19.3.20/24", "VAL": "172.19.3.21/24",
+                "CTRL": "172.19.3.22/24", "EDGE-A": "172.19.3.23/24",
+            },
         },
         "acceptance": {
             "forbid_transport_prefixes": ["/30", "/31"],
@@ -179,6 +189,36 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("ip address 10.10.0.2 255.255.255.0", switch)
         self.assertIn("ip default-gateway 10.10.0.254", switch)
 
+    def test_compiles_controller_interfaces_stages_and_management(self):
+        result = compile_intent(intent(), topology())
+        manager = result["node_operations"]["MGR"]
+        self.assertEqual(manager["adapter"], "viptela-control")
+        self.assertEqual([stage["name"] for stage in manager["operations"]],
+                         ["identity", "vpn0", "vpn512"])
+        self.assertIn("interface eth0", manager["operations"][1]["commands"])
+        self.assertIn("allow-service all", manager["operations"][1]["commands"])
+        self.assertIn("interface eth1", manager["operations"][2]["commands"])
+        self.assertIn("ip address 172.19.3.20/24",
+                      manager["operations"][2]["commands"])
+        validator = result["node_operations"]["VAL"]
+        self.assertIn("vbond 192.0.2.2 local",
+                      validator["operations"][0]["commands"])
+        self.assertIn("no interface eth0",
+                      validator["operations"][1]["commands"])
+        edge = result["node_operations"]["EDGE-A"]["desired"]
+        self.assertEqual(edge["vpn512_address"], "172.19.3.23/24")
+
+    def test_rejects_incomplete_duplicate_or_off_pool_management(self):
+        missing = intent()
+        del missing["management"]["assignments"]["CTRL"]
+        duplicate = intent()
+        duplicate["management"]["assignments"]["CTRL"] = "172.19.3.20/24"
+        off_pool = intent()
+        off_pool["management"]["assignments"]["CTRL"] = "172.18.3.22/24"
+        for value in (missing, duplicate, off_pool):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                compile_intent(value, topology())
+
     def test_rejects_subdivision_wrong_gateway_and_missing_direct_link(self):
         cases = []
         subdivided = intent()
@@ -197,7 +237,8 @@ class CompilerTests(unittest.TestCase):
             with self.subTest(item=item), self.assertRaises(ValueError):
                 compile_intent(item, topology())
         disconnected = topology()
-        disconnected["links"] = disconnected["links"][:-2] + disconnected["links"][-1:]
+        disconnected["links"] = [item for item in disconnected["links"]
+                                 if item.get("name") != "access"]
         with self.assertRaisesRegex(ValueError, "not linked"):
             compile_intent(intent(), disconnected)
 

@@ -18,6 +18,9 @@ from .config import load_server
 _PROMPT = r'^[ \t]*[\w.()/:-]+[>#](?=[ \t]*(?:$|[*%]))'
 _PRIVILEGED_PROMPT = r'^[ \t]*[\w.()/:-]+#(?=[ \t]*(?:$|[*%]))'
 _OSC_TITLE = re.compile(r'\x1b\][012];[\x20-\x7e]*(?:\x07|\x1b\\)')
+_VIPTELA_INITIAL_PASSWORD = re.compile(
+    r'(?is)Welcome to Viptela CLI.*?You must set an initial admin password '
+    r'different from default password\.')
 
 
 _READ_ONLY_UNSAFE = re.compile(
@@ -137,6 +140,13 @@ class Console:
     def send(self, line):
         self.channel.sendall(line + '\r')
 
+    def send_secret(self, value):
+        """Transmit one sensitive console value without exposing it in diagnostics."""
+        if not isinstance(value, str) or not value or any(
+                char in value for char in ('\r', '\n')):
+            raise ValueError('Console secret must be a nonempty single line')
+        self.channel.sendall(value + '\r')
+
     def expect(self, pattern, timeout=60, wake=False, latest=False, return_on_timeout=False, redisplay=False):
         data, self.pending = self.pending, ''
         started = time.monotonic()
@@ -180,7 +190,11 @@ class Console:
         # Never include console output: it may contain passwords/configuration.
         raise RuntimeError('Timed out waiting for console prompt; inspect the EVE console for boot progress or an interactive setup prompt')
 
-    def login(self, username, password, secret, *, read_only=False):
+    def login(self, username, password, secret, *, new_password=None,
+              read_only=False, enforce_secure_password_standard=True,
+              on_password_submit=None):
+        if on_password_submit is not None and not callable(on_password_submit):
+            raise TypeError('on_password_submit must be callable')
         if read_only:
             # Redisplay, never submit a pending command or a setup default.
             self.channel.sendall('\x12')
@@ -188,7 +202,10 @@ class Console:
             self.send('')
         wake = not read_only
         secret_prompts = set()
-        pattern = (r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
+        password_sent = False
+        password_setup_stages = set()
+        pattern = (r'(?i:(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password)\s*:\s*$|' +
+                   r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
                    r'Username:\s*$|login:\s*$|Password:\s*$|Abort Power On Auto Provisioning[^\n]*[?:]|Do you want to enforce secure password standard[^\n]*[?:]|(?:Enter|Confirm) the password for [^\n]*admin[^\n]*:|Would you like to enter[^\n]*[?:]\s*$|'
                    r'Press RETURN to get started[^\n]*$|' + _PROMPT)
@@ -224,25 +241,49 @@ class Console:
                 wake = False
                 print('Answering initial enable-secret ' + ('confirmation' if stage == 'confirm' else 'prompt') +
                       ' using CISCO_ENABLE_SECRET.', file=sys.stderr, flush=True)
-                self.send(secret)
+                self.send_secret(secret)
             elif prompt.startswith('Enter your selection'):
                 wake = False
                 self.send('2')  # Save the initial secret to NVRAM and exit setup.
             elif prompt.startswith('Username:') or prompt.lower().startswith('login:'):
                 self.send(username)
                 wake = False
+            elif (re.match(r'(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password', prompt, re.I)
+                  and not re.match(r'(?:Enter|Confirm) the password for .*admin', prompt, re.I)):
+                stage = 'confirm' if re.match(r'(?:Re-enter|Confirm)', prompt, re.I) else 'new'
+                if stage in password_setup_stages:
+                    raise RuntimeError('Initial password setup was rejected or repeated')
+                if new_password is None:
+                    raise RuntimeError('Console requires post-authentication password initialization')
+                password_setup_stages.add(stage)
+                self.send_secret(new_password)
+                wake = False
             elif re.match(r'(?:Enter|Confirm) the password for .*admin', prompt, re.I):
-                self.send(password)
+                self.send_secret(password)
                 wake = False
             elif prompt.startswith('Password:'):
-                self.send(password)
-                wake = False
+                if password_sent:
+                    if (_VIPTELA_INITIAL_PASSWORD.search(observed)
+                            and 'new' not in password_setup_stages):
+                        if new_password is None:
+                            raise RuntimeError('Console requires post-authentication password initialization')
+                        password_setup_stages.add('new')
+                        self.send_secret(new_password)
+                        wake = False
+                    else:
+                        raise RuntimeError('Console repeated a password prompt after one password submission')
+                else:
+                    if on_password_submit is not None:
+                        on_password_submit()
+                    self.send_secret(password)
+                    password_sent = True
+                    wake = False
             elif re.match(r'Abort Power On Auto Provisioning', prompt, re.I):
                 wake = False
                 self.send('yes')
             elif re.match(r'Do you want to enforce secure password standard', prompt, re.I):
                 wake = False
-                self.send('yes')
+                self.send('yes' if enforce_secure_password_standard else 'no')
             elif prompt.startswith('Would you like'):
                 self.send('no')
             elif prompt.startswith('Press RETURN'):
@@ -252,7 +293,7 @@ class Console:
                 self.send('enable')
                 _, enabled = self.expect(r'Password:\s*$|' + _PRIVILEGED_PROMPT)
                 if enabled.group().strip().startswith('Password:'):
-                    self.send(secret)
+                    self.send_secret(secret)
                 else:
                     if read_only and '(config' in enabled.group():
                         raise RuntimeError('Read-only login refused configuration-mode prompt')

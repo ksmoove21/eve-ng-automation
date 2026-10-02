@@ -10,11 +10,54 @@ class ConsoleTests(unittest.TestCase):
         channel.recv.side_effect = [r.encode() for r in responses]
         return Console(channel), channel
 
+    def test_send_secret_is_single_line_and_has_no_diagnostic_output(self):
+        c, ch = self.console([])
+        with patch('sys.stderr') as stderr:
+            c.send_secret('sensitive-value')
+        ch.sendall.assert_called_once_with('sensitive-value\r')
+        self.assertNotIn('sensitive-value', str(stderr.write.call_args_list))
+        with self.assertRaisesRegex(ValueError, 'single line'):
+            c.send_secret('bad\nvalue')
+
     def test_login_with_credentials_and_enable(self):
         c, ch = self.console(['Username:', 'Password:', 'R0>', 'Password:', 'R0#'])
         c.login('admin', 'loginpass', 'enablepass')
         self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
                          ['\r', 'admin\r', 'loginpass\r', 'enable\r', 'enablepass\r'])
+
+    def test_login_handles_first_boot_password_initialization_with_secret_sends(self):
+        c, ch = self.console(['login:', 'Password:', 'Enter new password:',
+                              'Confirm new password:', 'vManage#'])
+        c.login('admin', 'admin', 'unused-enable', new_password='private-password')
+        self.assertEqual(c.prompt, 'vManage#')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
+            '\r', 'admin\r', 'admin\r', 'private-password\r', 'private-password\r'])
+
+    def test_login_handles_viptela_initial_password_after_positive_banner(self):
+        c, ch = self.console(['vmanage login:', 'Password:',
+            'Last login: today\nWelcome to Viptela CLI\n'
+            'You must set an initial admin password different from default password.\nPassword:',
+            'Re-enter password:', 'vManage#'])
+        c.login('admin', 'admin', 'unused-enable', new_password='private-password')
+        self.assertEqual(c.prompt, 'vManage#')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
+            '\r', 'admin\r', 'admin\r', 'private-password\r', 'private-password\r'])
+
+    def test_login_stops_after_one_repeated_password_prompt(self):
+        c, ch = self.console(['login:', 'Password:', 'Password:'])
+        with self.assertRaisesRegex(RuntimeError, 'repeated a password prompt after one'):
+            c.login('admin', 'admin', 'unused-enable')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
+                         ['\r', 'admin\r', 'admin\r'])
+
+    def test_login_calls_correlation_hook_before_first_password(self):
+        c, ch = self.console(['login:', 'Password:', 'Router#'])
+        events = []
+        def correlated():
+            events.append(('correlated', ch.sendall.call_count))
+        c.login('admin', 'loginpass', 'enable',
+                on_password_submit=correlated)
+        self.assertEqual(events, [('correlated', 2)])
 
     def test_initial_boot(self):
         c, ch = self.console(['Would you like to enter the initial configuration dialog? [yes/no]:',

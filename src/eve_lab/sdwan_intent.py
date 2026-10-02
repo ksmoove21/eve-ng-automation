@@ -104,6 +104,25 @@ def _linked(links, left_node, left_interface, right_node):
                for link in links)
 
 
+def _peer_interface(links, node, peer):
+    matches = [interface for link in links
+               if any(endpoint[0] == node for endpoint in link)
+               and any(endpoint[0] == peer for endpoint in link)
+               for endpoint_node, interface in link if endpoint_node == node]
+    if len(matches) != 1:
+        raise ValueError(node + " must have one direct link to " + peer)
+    return _interface(matches[0], node + ".vpn0_interface")
+
+
+def _network_interface(topology, node, network):
+    matches = [item.get("interface") for item in topology.get("links", [])
+               if isinstance(item, dict) and item.get("node") == node
+               and item.get("network") == network]
+    if len(matches) != 1:
+        raise ValueError(node + " must have one attachment to " + network)
+    return _interface(matches[0], node + ".vpn512_interface")
+
+
 def _node_map(topology):
     nodes = topology.get("nodes", [])
     if not isinstance(nodes, list):
@@ -221,6 +240,61 @@ def _bridge_commands(fabric):
     return commands
 
 
+def _control_operations(component, organization, vbond, color,
+                        vpn0_interface, vpn512_interface,
+                        management_address, management_gateway):
+    transport = _address(component["vpn0_address"], component["name"] + ".vpn0_address")
+    management = _address(management_address, component["name"] + ".vpn512_address")
+    identity = [
+        "system",
+        "host-name " + component["hostname"],
+        "system-ip " + component["system_ip"],
+        "site-id " + str(component["site_id"]),
+        'organization-name "' + organization + '"',
+    ]
+    if component["personality"] == "validator":
+        identity.append("vbond " + str(transport.ip) + " local")
+    else:
+        identity.append("vbond " + str(vbond))
+    identity += ["clock timezone UTC", "exit"]
+    vpn0 = ["vpn 0"]
+    if component["personality"] == "validator":
+        vpn0.append("no interface " + vpn512_interface)
+    vpn0 += [
+        "interface " + vpn0_interface,
+        "ip address " + str(transport),
+        "tunnel-interface",
+    ]
+    if component["personality"] != "manager":
+        vpn0.append("encapsulation ipsec")
+    vpn0 += [
+        "color " + color,
+        "allow-service all",
+        "exit",
+        "no shutdown",
+        "exit",
+        "ip route 0.0.0.0/0 " + component["vpn0_gateway"],
+        "exit",
+    ]
+    vpn512 = [
+        "vpn 512",
+        "interface " + vpn512_interface,
+        "ip address " + str(management),
+        "no shutdown",
+        "exit",
+        "ip route 0.0.0.0/0 " + str(management_gateway),
+        "exit",
+    ]
+    return [
+        {"name": "identity", "mode": "config-transaction",
+         "commands": identity, "commit": True},
+        {"name": "vpn0", "mode": "config-transaction",
+         "commands": vpn0, "commit": True},
+        {"name": "vpn512", "mode": "config-transaction",
+         "commands": vpn512, "commit": True},
+    ]
+
+
 def compile_intent(intent, topology):
     """Return a deterministic secret-free execution plan."""
     _mapping(intent, "intent", _TOP_LEVEL)
@@ -237,10 +311,12 @@ def compile_intent(intent, topology):
     nodes = _node_map(topology)
     links = _direct_links(topology)
     control = _mapping(intent.get("control_plane"), "control_plane",
-                       {"site_id", "service_network", "vbond_address",
+                       {"site_id", "service_network", "vbond_address", "transport_color",
                         "aggregation", "components"})
     service_network = _network(control.get("service_network"), "control_plane.service_network")
     vbond = _ipv4(control.get("vbond_address"), "control_plane.vbond_address")
+    transport_color = _token(control.get("transport_color"),
+                             "control_plane.transport_color")
     if type(control.get("site_id")) is not int:
         raise ValueError("control_plane.site_id must be an integer")
     aggregation = _mapping(control.get("aggregation"), "control_plane.aggregation",
@@ -453,15 +529,72 @@ def compile_intent(intent, topology):
     if acceptance.get("require_dual_controller_routes") is not True:
         raise ValueError("acceptance must require dual controller routes")
     management = _mapping(intent.get("management"), "management",
-                          {"network", "vpn", "addressing_source"})
+                          {"network", "vpn", "addressing_source", "pool",
+                           "gateway", "assignments"})
     if management.get("vpn") != 512:
         raise ValueError("Management network must use VPN 512")
     if management.get("network") != acceptance.get("require_only_visible_network"):
         raise ValueError("Management network must be the sole visible network")
+    if not isinstance(management.get("addressing_source"), str) or not management["addressing_source"]:
+        raise ValueError("Management addressing_source must be nonempty")
+    management_pool = _network(management.get("pool"), "management.pool")
+    if management_pool.prefixlen != 24:
+        raise ValueError("Management pool must preserve its approved /24")
+    management_gateway = _ipv4(management.get("gateway"), "management.gateway")
+    if management_gateway not in management_pool:
+        raise ValueError("Management gateway is outside the management pool")
+    assignments = _mapping(management.get("assignments"), "management.assignments")
+    managed_names = {component["name"] for component in components} | {
+        edge["name"] for edge in edges}
+    if set(assignments) != managed_names:
+        raise ValueError("Management assignments must exactly cover controllers and edges")
+    normalized_management = {}
+    used_management_ips = set()
+    for name, value in assignments.items():
+        address = _address(value, "management.assignments." + name)
+        if address.network != management_pool or address.ip == management_gateway:
+            raise ValueError(name + " management address does not match the approved pool")
+        if address.ip in used_management_ips:
+            raise ValueError("Duplicate management address: " + str(address.ip))
+        used_management_ips.add(address.ip)
+        normalized_management[name] = str(address)
+        _network_interface(topology, name, management["network"])
     visible_networks = {item.get("name") for item in topology.get("networks", [])
                         if isinstance(item, dict)}
     if visible_networks != {management["network"]}:
         raise ValueError("Topology must declare only the management visible network")
+
+    control_plans = {}
+    for component in components:
+        name = component["name"]
+        vpn0_interface = _peer_interface(links, name, aggregate_name)
+        vpn512_interface = _network_interface(
+            topology, name, management["network"])
+        control_plans[name] = {
+            "adapter": "viptela-control",
+            "personality": component["personality"],
+            "operations": _control_operations(
+                component, organization, vbond, transport_color,
+                vpn0_interface, vpn512_interface,
+                normalized_management[name], management_gateway),
+            "desired": {
+                "hostname": component["hostname"],
+                "system_ip": component["system_ip"],
+                "site_id": component["site_id"],
+                "organization_name": organization,
+                "vbond": str(vbond),
+                "vpn0_interface": vpn0_interface,
+                "vpn0_address": component["vpn0_address"],
+                "vpn512_interface": vpn512_interface,
+                "vpn512_address": normalized_management[name],
+                "management_gateway": str(management_gateway),
+            },
+        }
+    for name, plan in edge_plans.items():
+        plan["desired"]["vpn512_interface"] = _network_interface(
+            topology, name, management["network"])
+        plan["desired"]["vpn512_address"] = normalized_management[name]
+        plan["desired"]["management_gateway"] = str(management_gateway)
 
     node_operations = {
         aggregate_name: {
@@ -487,6 +620,7 @@ def compile_intent(intent, topology):
             },
         }
     node_operations.update(switch_plans)
+    node_operations.update(control_plans)
     node_operations.update(edge_plans)
 
     return {
