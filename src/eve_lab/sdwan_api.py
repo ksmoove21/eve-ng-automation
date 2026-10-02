@@ -140,14 +140,47 @@ class ManagerApi:
             raise ManagerApiError("Manager inventory returned unexpected records")
         return tuple(records)
 
-    def _json_post(self, endpoint, request, operation):
+    def _json_write(self, method, endpoint, request, operation):
         status, payload, _ = self._request(
-            "POST", endpoint,
+            method, endpoint,
             body=json.dumps(request, separators=(",", ":")).encode(),
             content_type="application/json", xsrf=True)
         if status != 200:
             raise ManagerApiError(operation + " failed: HTTP " + str(status))
         return self._decode(payload, operation) if payload.strip() else {}
+
+    def _json_post(self, endpoint, request, operation):
+        return self._json_write("POST", endpoint, request, operation)
+
+    def _json_put(self, endpoint, request, operation):
+        return self._json_write("PUT", endpoint, request, operation)
+
+    def setting(self, endpoint):
+        allowed = {
+            "/dataservice/settings/configuration/organization",
+            "/dataservice/settings/configuration/device",
+            "/dataservice/settings/configuration/certificate",
+            "/dataservice/settings/configuration/certificate/enterpriserootca",
+        }
+        if endpoint not in allowed:
+            raise ValueError("Unsupported Manager setting endpoint")
+        status, payload, _ = self._request("GET", endpoint, xsrf=True)
+        if status != 200:
+            raise ManagerApiError("Manager setting read failed: HTTP " + str(status))
+        records = self._decode(payload, "Manager setting read").get("data")
+        if (not isinstance(records, list) or len(records) != 1
+                or not isinstance(records[0], dict)):
+            raise ManagerApiError("Manager setting read returned unexpected records")
+        return records[0]
+
+    def set_organization(self, organization):
+        if (not isinstance(organization, str) or not organization.strip()
+                or len(organization) > 128 or any(
+                    ord(character) < 32 for character in organization)):
+            raise ValueError("Invalid SD-WAN organization name")
+        self._json_post(
+            "/dataservice/settings/configuration/organization",
+            {"org": organization.strip()}, "Manager organization setting")
 
     def set_vbond(self, address, port=12346):
         parsed = ipaddress.ip_address(address)
@@ -161,8 +194,7 @@ class ManagerApi:
     def set_enterprise_certificate_mode(self):
         self._json_post(
             "/dataservice/settings/configuration/certificate",
-            {"certificateSigning": "enterprise",
-             "challengeAvailable": "false"},
+            {"certificateSigning": "enterprise"},
             "Manager enterprise certificate mode")
 
     def set_enterprise_root(self, certificate):
@@ -171,7 +203,7 @@ class ManagerApi:
                 r"-----BEGIN CERTIFICATE-----\n.+\n-----END CERTIFICATE-----\n",
                 normalized, re.S):
             raise ValueError("A single enterprise root certificate is required")
-        self._json_post(
+        self._json_put(
             "/dataservice/settings/configuration/certificate/enterpriserootca",
             {"enterpriseRootCA": normalized}, "Manager enterprise root CA")
 

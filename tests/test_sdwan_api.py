@@ -34,16 +34,27 @@ class ManagerApiTests(unittest.TestCase):
         self.assertEqual(api.session_id, "session")
 
     def test_enterprise_settings_use_field_proven_2015_contracts(self):
-        api = FixtureApi([(200, b"{}", {}), (200, b"{}", {}), (200, b"{}", {})])
+        api = FixtureApi([
+            (200, b"{}", {}), (200, b"{}", {}),
+            (200, b"{}", {}), (200, b"{}", {})])
+        api.set_organization("nwl-lab-sdwan")
         api.set_vbond("10.1.0.2")
         api.set_enterprise_certificate_mode()
         api.set_enterprise_root(
             "-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n")
         requests = [json.loads(call[2]["body"]) for call in api.calls]
-        self.assertEqual(requests[0], {"domainIp": "10.1.0.2", "port": "12346"})
-        self.assertEqual(requests[1], {
-            "certificateSigning": "enterprise", "challengeAvailable": "false"})
-        self.assertIn("enterpriseRootCA", requests[2])
+        self.assertEqual(requests[0], {"org": "nwl-lab-sdwan"})
+        self.assertEqual(requests[1], {"domainIp": "10.1.0.2", "port": "12346"})
+        self.assertEqual(requests[2], {"certificateSigning": "enterprise"})
+        self.assertIn("enterpriseRootCA", requests[3])
+        self.assertEqual([call[0] for call in api.calls],
+                         ["POST", "POST", "POST", "PUT"])
+
+    def test_setting_read_requires_one_record(self):
+        api = FixtureApi([(200, b'{"data":[{"org":"nwl-lab-sdwan"}]}', {})])
+        self.assertEqual(
+            api.setting("/dataservice/settings/configuration/organization"),
+            {"org": "nwl-lab-sdwan"})
 
     def test_csr_is_correlated_by_target_ip(self):
         payload = {"data": [{"deviceIP": "10.1.0.1", "deviceCSR":
