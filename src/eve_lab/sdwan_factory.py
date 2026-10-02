@@ -790,11 +790,18 @@ def _complete_edge(context, api, name, edge, timeout):
                 raise RuntimeError(name + " cannot reach controller " + address)
         root = console.command("show sdwan certificate root-ca-cert", timeout=120)
         if "nwl-lab-sdwan-CA" not in root:
-            console.copy_scp_absolute(
-                login[0], "10.1.0.1", "/home/admin/SDWAN.pem",
-                "bootflash:SDWAN.pem", login[1], fingerprints, timeout=120)
-            destination_pem, size = console.read_certificate_file(
-                "bootflash:SDWAN.pem")
+            try:
+                destination_pem, size = console.read_certificate_file(
+                    "bootflash:SDWAN.pem")
+                copied = certificate_sha256(destination_pem) == source_hash
+            except RuntimeError:
+                copied = False
+            if not copied:
+                console.copy_scp_absolute(
+                    login[0], "10.1.0.1", "/home/admin/SDWAN.pem",
+                    "bootflash:SDWAN.pem", login[1], fingerprints, timeout=120)
+                destination_pem, size = console.read_certificate_file(
+                    "bootflash:SDWAN.pem")
             if size <= 0 or certificate_sha256(destination_pem) != source_hash:
                 raise RuntimeError("Transferred Manager CA failed source validation")
             console.install_root(
