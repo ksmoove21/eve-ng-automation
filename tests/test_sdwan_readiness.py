@@ -1,10 +1,12 @@
 """Manager application readiness behavior."""
 import unittest
+from unittest.mock import patch
 
 from eve_lab.sdwan_readiness import (
     ApplicationReadiness, parse_application_status,
     wait_for_application_server,
 )
+from eve_lab.sdwan_initialize import qualify_manager
 
 
 def cli_status(state="running", enabled=True, pid=42, uptime=899):
@@ -45,6 +47,23 @@ class ReadinessTests(unittest.TestCase):
             wait_for_application_server(
                 lambda: cli_status(uptime=100), timeout_seconds=24,
                 poll_seconds=12, monotonic=lambda: now[0], sleep=sleep)
+
+    def test_manager_qualification_requires_completed_correlated_init(self):
+        topology = {"name": "lab", "path": "/sdwan/lab.unl"}
+        client = object()
+        compiled = {"node_operations": {"MGR": {
+            "adapter": "viptela-control", "personality": "manager"}}}
+        with (patch("eve_lab.sdwan_initialize.load_topology", return_value={}),
+              patch("eve_lab.sdwan_initialize.load_and_compile",
+                    return_value=compiled),
+              patch("eve_lab.sdwan_initialize.named", return_value={"MGR": {
+                  "status": 2, "uuid": "new", "url": "telnet://eve:1"}}),
+              patch("eve_lab.sdwan_initialize._read_state", return_value={
+                  "version": 1, "nodes": {"MGR": {
+                      "eve_uuid": "old", "first_login": "complete",
+                      "completed_stages": ["identity", "vpn0", "vpn512"]}}})):
+            with self.assertRaisesRegex(RuntimeError, "correlation is incomplete"):
+                qualify_manager(client, topology, ".", "default", "MGR")
 
 
 if __name__ == "__main__":

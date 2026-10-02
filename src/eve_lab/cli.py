@@ -22,7 +22,7 @@ from .dhcp import clear as clear_dhcp, report as report_dhcp, update_dns as upda
 from .deploy import apply, delete, lab_status, lifecycle, plan
 from .live_guard import enforce_live_guard
 from .sdwan_intent import load_and_compile as compile_sdwan
-from .sdwan_initialize import initialize_control
+from .sdwan_initialize import initialize_control, qualify_manager
 from .topology import load_lab_target, load_topology
 from .validation import validate_lab
 
@@ -76,6 +76,15 @@ def main():
     sdwan_control.add_argument("--server", default="default")
     sdwan_control.add_argument("--check", action="store_true")
     sdwan_control.add_argument("--timeout", type=int, default=900)
+    sdwan_ready = commands.add_parser(
+        "sdwan-manager-ready",
+        help="Qualify the declared Manager application PID and uptime")
+    sdwan_ready.add_argument("lab")
+    sdwan_ready.add_argument("node")
+    sdwan_ready.add_argument("--server", default="default")
+    sdwan_ready.add_argument("--timeout", type=int, default=3600)
+    sdwan_ready.add_argument("--minimum-uptime", type=int, default=900)
+    sdwan_ready.add_argument("--poll", type=int, default=12)
     for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
         command = commands.add_parser(name)
         command.add_argument("--server", default="default")
@@ -175,7 +184,7 @@ def main():
             print(json.dumps(result, indent=2))
             return
         if args.command in ("stop", "backup", "restore", "init", "bootstrap",
-                            "sdwan-control-init") or (args.command == "start" and args.node):
+                            "sdwan-control-init", "sdwan-manager-ready") or (args.command == "start" and args.node):
             topology = load_lab_target(args.root, args.lab, getattr(args, "remote_folder", None))
         else:
             topology = (load_topology(args.root, args.lab, getattr(args, "scenario", None))
@@ -187,7 +196,7 @@ def main():
         else:
             client = EveClient(server["url"], server.get("timeout", 15))
             if args.command in ("init", "backup", "restore", "validate",
-                                "sdwan-control-init"):
+                                "sdwan-control-init", "sdwan-manager-ready"):
                 client.login(server["username"], server["password"], html5=False)
             else:
                 client.login(server["username"], server["password"])
@@ -198,6 +207,12 @@ def main():
                     result = initialize_control(
                         client, topology, args.root, args.server, args.node,
                         args.check, args.timeout)
+                elif args.command == "sdwan-manager-ready":
+                    result = qualify_manager(
+                        client, topology, args.root, args.server, args.node,
+                        timeout=args.timeout,
+                        minimum_uptime=args.minimum_uptime,
+                        poll_seconds=args.poll)
                 elif args.command == "init":
                     if args.prepare_console:
                         if args.management_ip:

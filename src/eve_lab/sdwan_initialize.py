@@ -17,6 +17,7 @@ from .initialize import _open_telnet_console, telnet_console_url
 from .live_guard import enforce_live_guard
 from .sdwan_control import ViptelaConsole, stages_from_plan
 from .sdwan_intent import load_and_compile
+from .sdwan_readiness import wait_for_application_server
 from .topology import load_lab_target, load_topology
 
 
@@ -143,6 +144,67 @@ def initialize_control(client, topology, root, server_name, node_name,
         return {"lab": topology["name"], "node": node_name,
                 "first_login": record["first_login"],
                 "version": "20.15.1", "stages": evidence}
+    finally:
+        if channel is not None:
+            channel.close()
+        ssh.close()
+
+
+def qualify_manager(client, topology, root, server_name, node_name, *,
+                    timeout=3600, minimum_uptime=900, poll_seconds=12):
+    """Prove a configured Manager application process is stable over its CLI."""
+    declared = load_topology(Path(root), topology["name"])
+    plan = load_and_compile(Path(root), topology["name"], declared)[
+        "node_operations"].get(node_name)
+    if (not isinstance(plan, dict)
+            or plan.get("adapter") != "viptela-control"
+            or plan.get("personality") != "manager"):
+        raise ValueError(node_name + " is not the declared Manager")
+    nodes = named(client, lab_path(topology) + "/nodes")
+    if node_name not in nodes:
+        raise ValueError("Manager not found: " + node_name)
+    node = nodes[node_name]
+    if str(node.get("status")) != "2":
+        raise RuntimeError("Start " + node_name + " before qualification")
+    state = _read_state(_state_path(root, topology["name"]))
+    record = state["nodes"].get(node_name)
+    if (not isinstance(record, dict)
+            or record.get("eve_uuid") != str(node.get("uuid", ""))
+            or record.get("first_login") != "complete"
+            or set(record.get("completed_stages", ()))
+            != {"identity", "vpn0", "vpn512"}):
+        raise RuntimeError(
+            "Manager initialization correlation is incomplete; qualification refused")
+    url = telnet_console_url(node)
+    if url is None:
+        raise RuntimeError("Manager lacks a native Telnet console")
+
+    login = credentials(Path(root))
+    server = load_server(Path(root), server_name, auth="ssh")
+    ssh = paramiko.SSHClient()
+    channel = None
+    try:
+        ssh.load_system_host_keys()
+        ssh.connect(server.get("ssh_host") or urlsplit(server["url"]).hostname,
+                    username=server["ssh_username"], password=server["ssh_password"],
+                    timeout=10, auth_timeout=10, banner_timeout=10,
+                    allow_agent=False, look_for_keys=False)
+        channel = _open_telnet_console(ssh, url.port)
+        console = ViptelaConsole(channel, boot_timeout=min(timeout, 900))
+        console.login(login[0], login[1], login[2])
+        version = console.command("show version", timeout=60)
+        if "20.15.1" not in version:
+            raise RuntimeError("Manager version read-back did not prove 20.15.1")
+        observation = wait_for_application_server(
+            lambda: console.command(
+                "request nms application-server status", timeout=60),
+            timeout_seconds=timeout, poll_seconds=poll_seconds,
+            minimum_seconds=minimum_uptime)
+        return {"lab": topology["name"], "node": node_name,
+                "version": "20.15.1", "qualified": observation.qualified,
+                "pid": observation.pid,
+                "uptime_seconds": observation.uptime_seconds,
+                "minimum_uptime_seconds": minimum_uptime}
     finally:
         if channel is not None:
             channel.close()
