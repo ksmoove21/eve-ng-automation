@@ -219,14 +219,15 @@ def initialize_control(client, topology, root, server_name, node_name,
                   file=sys.stderr, flush=True)
             completed = record.setdefault("completed_stages", [])
             attempted = record.setdefault("attempted_stages", [])
-            if stage.name in completed or stage.name in attempted:
+            if stage.name in completed:
                 result = verify_stage(
                     console, stage, timeout=min(timeout, 300))
                 changed = False
             else:
                 def persist_attempt():
-                    attempted.append(stage.name)
-                    _write_state(path, state)
+                    if stage.name not in attempted:
+                        attempted.append(stage.name)
+                        _write_state(path, state)
                 result, changed = ensure_stage(
                     console, stage, timeout=min(timeout, 300),
                     on_apply=persist_attempt)

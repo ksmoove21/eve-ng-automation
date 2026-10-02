@@ -265,8 +265,9 @@ def _control_operations(component, organization, vbond, color,
         "ip address " + str(transport),
         "tunnel-interface",
     ]
-    if component["personality"] != "manager":
+    if component["personality"] == "validator":
         vpn0.append("encapsulation ipsec")
+    if component["personality"] != "manager":
         # 20.15.1 control appliances can retain the detailed default denies
         # while ``allow-service all`` is present.  Remove that override and
         # make Manager enrollment (NETCONF/830) and recovery (SSH) explicit.
