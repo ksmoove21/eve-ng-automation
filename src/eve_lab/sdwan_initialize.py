@@ -1,10 +1,12 @@
 """Initialize one Catalyst SD-WAN control component from compiled intent."""
 import argparse
 import hashlib
+from ipaddress import ip_interface
 import json
 import os
 from pathlib import Path
 import re
+import socket
 import sys
 from urllib.parse import urlsplit
 
@@ -416,20 +418,35 @@ def ensure_manager_ca_live(client, topology, root, server_name, node_name,
             or set(record.get("completed_stages", ()))
             != {"identity", "vpn0", "vpn512"}):
         raise RuntimeError("Manager baseline is not durably correlated")
-    url = telnet_console_url(node)
     login = credentials(Path(root))
-    server = load_server(Path(root), server_name, auth="ssh")
-    ssh = paramiko.SSHClient()
+    del server_name
+    try:
+        address = str(ip_interface(
+            declared["management"]["assignments"][node_name]).ip)
+    except (KeyError, ValueError) as error:
+        raise ValueError(
+            "Manager requires one declared VPN512 management address") from error
+    sock = socket.create_connection((address, 22), timeout=10)
+    transport = paramiko.Transport(sock)
     channel = None
     try:
-        ssh.load_system_host_keys()
-        ssh.connect(server.get("ssh_host") or urlsplit(server["url"]).hostname,
-                    username=server["ssh_username"], password=server["ssh_password"],
-                    timeout=10, auth_timeout=10, banner_timeout=10,
-                    allow_agent=False, look_for_keys=False)
-        channel = _open_telnet_console(ssh, url.port)
-        console = ViptelaConsole(channel, boot_timeout=timeout)
-        console.login(login[0], login[1], login[2])
+        transport.start_client(timeout=10)
+        fingerprint = hashlib.sha256(
+            transport.get_remote_server_key().asbytes()).hexdigest()
+        expected = record.get("management_ssh_sha256")
+        if expected is not None and expected != fingerprint:
+            raise RuntimeError("Manager VPN512 SSH host key changed")
+        transport.auth_password(login[0], login[1])
+        if expected is None:
+            record["management_ssh_sha256"] = fingerprint
+            _write_state(state_path, state)
+        channel = transport.open_session(timeout=10)
+        channel.get_pty()
+        channel.invoke_shell()
+        console = ViptelaConsole(channel, boot_timeout=min(timeout, 300))
+        console.expect(
+            r"(?m)^[A-Za-z0-9_.-]+#\s*$", timeout=min(timeout, 300),
+            wake=True, latest=True)
         created = ensure_manager_ca(console, declared["organization"])
         certificate = manager_ca_certificate(console)
         fingerprint = hashlib.sha256(certificate.encode("ascii")).hexdigest()
@@ -444,7 +461,7 @@ def ensure_manager_ca_live(client, topology, root, server_name, node_name,
     finally:
         if channel is not None:
             channel.close()
-        ssh.close()
+        transport.close()
 
 
 def main(argv=None):
