@@ -144,7 +144,8 @@ def _record_csr(record):
 
 def wait_for_control_component_csr(
         api, *, record_uuid, personality, timeout=300, poll_seconds=5,
-        stable_observations=2, _sleep=time.sleep, _clock=time.monotonic):
+        stable_observations=2, require_lifecycle_complete=True,
+        _sleep=time.sleep, _clock=time.monotonic):
     """Wait for the post-Add lifecycle's final, stable Manager-owned CSR."""
     if timeout <= 0 or poll_seconds <= 0:
         raise ValueError("CSR wait timeout and poll interval must be positive")
@@ -158,7 +159,7 @@ def wait_for_control_component_csr(
             api, record_uuid=record_uuid, personality=personality)
         csr = _record_csr(record)
         lifecycle_complete = record.get("lifeCycleRequired") is False
-        if lifecycle_complete and csr:
+        if (lifecycle_complete or not require_lifecycle_complete) and csr:
             current = hashlib.sha256(csr.encode("ascii")).hexdigest()
             observations = observations + 1 if current == previous else 1
             previous = current

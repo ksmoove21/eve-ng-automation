@@ -458,7 +458,8 @@ def _enroll_control_component(context, api, name, personality):
     else:
         settled = wait_for_control_component_csr(
             api, record_uuid=record_uuid, personality=personality,
-            timeout=900, poll_seconds=15)
+            timeout=900, poll_seconds=15,
+            require_lifecycle_complete=personality == "vsmart")
         certificate = _sign_on_manager(
             context, settled.csr,
             "validator-control" if personality == "vbond" else "controller-control")
