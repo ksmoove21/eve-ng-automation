@@ -430,12 +430,23 @@ def apply(client, topology, prune=True):
                 updated = named(client, path + "/networks")
                 if name not in updated or str(updated[name].get("visibility")) != "0":
                     raise RuntimeError(f"Server did not hide direct-link bridge {name}")
+        # Direct links are topology semantics. EVE requires an exclusive bridge
+        # record as runtime backing, but every such record must remain hidden so
+        # the native canvas presents one device-to-device cable.
+        final_networks = named(client, path + "/networks")
+        visible_backing = [name for name, _ in direct
+                           if name not in final_networks
+                           or str(final_networks[name].get("visibility", 1)) != "0"]
+        if visible_backing:
+            raise RuntimeError(f"Direct-link backing networks are not hidden: {visible_backing}")
     except (RuntimeError, ValueError) as error:
         raise RuntimeError(
             f"Apply did not complete: {error}. Completed: {changes}. "
             "No rollback performed; inspect the lab and rerun after resolving the error."
         ) from error
     return {"lab": topology["name"], "path": path, "changes": changes, "deferred": deferred,
+            "presentation": {"direct_links": len(direct),
+                             "backing_networks_hidden": len(direct)},
             "message": "Applied safe changes; deferred objects left unchanged" if deferred else ("Applied; no nodes started" if changes else "Already matches; no changes")}
 
 
@@ -572,8 +583,29 @@ def stop_all(client, topology, node_name=None):
 
 def lab_status(client, topology):
     path = lab_path(topology)
-    return {"lab": topology["name"], "nodes": client.request("GET", path + "/nodes"),
-            "networks": client.request("GET", path + "/networks")}
+    nodes = client.request("GET", path + "/nodes")
+    runtime_networks = indexed(client.request("GET", path + "/networks"))
+    _, direct = expand_links(topology)
+    backing_names = {name for name, _ in direct}
+    presentation_networks = {
+        ident: network for ident, network in runtime_networks.items()
+        if network.get("name") not in backing_names
+    }
+    direct_links = [
+        {"name": name,
+         "from": {"node": attachments[0]["node"], "interface": attachments[0]["interface"]},
+         "to": {"node": attachments[1]["node"], "interface": attachments[1]["interface"]}}
+        for name, attachments in direct
+    ]
+    backing = [network for network in runtime_networks.values()
+               if network.get("name") in backing_names]
+    return {"lab": topology["name"], "nodes": nodes,
+            "networks": presentation_networks, "links": direct_links,
+            "runtime_backing": {
+                "direct_link_networks": len(backing),
+                "all_hidden": len(backing) == len(direct) and all(
+                    str(network.get("visibility", 1)) == "0" for network in backing),
+            }}
 
 
 def delete(client, topology):

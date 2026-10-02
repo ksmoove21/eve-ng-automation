@@ -124,6 +124,15 @@ Topology definitions should describe:
 - validation intent
 
 A reusable disposable lab may keep alternate desired states under
+Direct links are topology semantics, separate from EVE presentation and runtime
+storage. The EVE adapter may materialize an exclusive hidden bridge record when
+the platform requires a `network_id`, but that record is adapter-private: it is
+not a declared network, must have exactly the two declared endpoints, must stay
+hidden on the native EVE canvas, and must not appear as a cloud/network in the
+semantic status view. Explicitly declared networks remain user-visible topology
+objects. This follows the same topology-versus-presentation separation used by
+EVE-IaC; Git intent describes nodes, networks, and links while presentation
+metadata controls how those objects are rendered.
 `labs/<lab>/scenarios/<name>.yaml`. `eve apply <lab> --scenario <name>` feeds
 the selected state through the same reconciler and retains the topology `name`,
 so scenarios do not create separate permanent EVE labs.

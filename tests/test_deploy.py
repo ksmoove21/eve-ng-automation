@@ -7,7 +7,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 
 from eve_lab.client import EveAPIError, EveClient
-from eve_lab.deploy import apply, delete, ensure_folder, lab_path, lifecycle
+from eve_lab.deploy import apply, delete, ensure_folder, lab_path, lab_status, lifecycle
 from eve_lab.topology import expand_links, interface_key, load_lab_target, load_topology, validate
 
 
@@ -388,6 +388,16 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(self.client.ports["1"]["7"]["network_id"], 1)
         self.assertEqual(self.client.ports["2"]["7"]["network_id"], 1)
         self.assertEqual(apply(self.client, topology)["changes"], [])
+
+    def test_status_presents_direct_links_without_backing_clouds(self):
+        topology = self.direct_topology()
+        topology["networks"] = [{"name": "mgmt", "type": "pnet1"}]
+        apply(self.client, topology)
+        result = lab_status(self.client, topology)
+        self.assertEqual([item["name"] for item in result["networks"].values()], ["mgmt"])
+        self.assertEqual(result["links"], topology["links"])
+        self.assertEqual(result["runtime_backing"],
+                         {"direct_link_networks": 1, "all_hidden": True})
 
     def test_direct_link_reuses_visible_bridge_without_rewiring(self):
         topology = self.direct_topology()
