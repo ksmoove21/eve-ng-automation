@@ -100,6 +100,22 @@ class ManagerFabricTests(unittest.TestCase):
             timeout=30, poll_seconds=1, _sleep=lambda _: None,
             _clock=lambda: 0)
         self.assertEqual(result.csr, CSR_2)
+
+    def test_csr_wait_ignores_20_15_non_pem_csr_detail_placeholder(self):
+        api = MagicMock()
+        api.inventory.side_effect = [
+            ({"uuid": UUID, "personality": "vbond",
+              "lifeCycleRequired": False, "deviceCSR": CSR_1,
+              "CSRDetail": "N/A"},),
+            ({"uuid": UUID, "personality": "vbond",
+              "lifeCycleRequired": False, "deviceCSR": CSR_1,
+              "CSRDetail": "N/A"},),
+        ]
+        result = wait_for_control_component_csr(
+            api, record_uuid=UUID, personality="vbond", timeout=5,
+            poll_seconds=1, _sleep=lambda _: None,
+            _clock=MagicMock(side_effect=[0, 0, 0]))
+        self.assertEqual(result.csr, CSR_1)
         self.assertEqual(len(result.sha256), 64)
         self.assertEqual(api.inventory.call_count, 3)
 

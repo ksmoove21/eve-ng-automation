@@ -120,6 +120,14 @@ def _record_csr(record):
         value = record.get(key)
         if isinstance(value, str) and value.strip():
             normalized = value.replace("\r\n", "\n").strip() + "\n"
+            # 20.15.1 exposes a short non-CSR placeholder in CSRDetail while
+            # deviceCSR contains the actual PEM during the Add lifecycle.
+            # Ignore fields with neither marker, but reject malformed partial
+            # or duplicate PEM so a real CSR cannot be silently substituted.
+            has_begin = "-----BEGIN CERTIFICATE REQUEST-----" in normalized
+            has_end = "-----END CERTIFICATE REQUEST-----" in normalized
+            if not has_begin and not has_end:
+                continue
             if not (normalized.startswith("-----BEGIN CERTIFICATE REQUEST-----\n")
                     and normalized.endswith(
                         "-----END CERTIFICATE REQUEST-----\n")
