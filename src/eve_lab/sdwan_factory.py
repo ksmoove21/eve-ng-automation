@@ -715,7 +715,17 @@ def _configure_edge(context, name, edge, timeout):
                     console.login(*login)
                 except RuntimeError:
                     if edge.get("post_mode_factory_login_attempted"):
-                        raise
+                        if edge.get("post_mode_factory_login_retry_attempted"):
+                            raise
+                        edge.update({
+                            "post_mode_factory_login_retry_attempted": True,
+                            "post_mode_factory_login_retry_attempted_at": _now(),
+                            "post_mode_factory_login_retry_basis":
+                                "configured-credentials-rejected-after-"
+                                "interrupted-factory-login"})
+                        context.ledger.save()
+                        factory_login = True
+                        continue
                     if login[0].lower() != "admin":
                         raise RuntimeError("Configured Cisco user is not factory admin")
                     edge["post_mode_factory_login_attempted"] = True
