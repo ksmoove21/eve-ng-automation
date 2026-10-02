@@ -47,10 +47,17 @@ class ManagerPkiTests(unittest.TestCase):
         self.assertEqual(console.sent[-1], "exit")
         self.assertFalse(console.secrets)
 
-    def test_partial_ca_fails_closed_and_shell_is_exited(self):
-        console = FakeConsole(shell_outputs(1, 0))
-        with self.assertRaisesRegex(RuntimeError, "partial"):
+    def test_certificate_without_key_fails_closed(self):
+        console = FakeConsole(shell_outputs(1, 1, 0))
+        with self.assertRaisesRegex(RuntimeError, "without its private key"):
             ensure_manager_ca(console, "nwl-lab-sdwan")
+        self.assertEqual(console.sent[-1], "exit")
+
+    def test_existing_key_recovers_missing_certificate(self):
+        console = FakeConsole(shell_outputs(
+            1, 0, 1, 0, 0, 0, 0, 0))
+        self.assertTrue(ensure_manager_ca(console, "nwl-lab-sdwan"))
+        self.assertFalse(any("genrsa" in command for command in console.sent))
         self.assertEqual(console.sent[-1], "exit")
 
     def test_reads_single_public_certificate_and_exits_shell(self):

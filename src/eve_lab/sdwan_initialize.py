@@ -1,5 +1,6 @@
 """Initialize one Catalyst SD-WAN control component from compiled intent."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ from .initialize import _open_telnet_console, telnet_console_url
 from .live_guard import enforce_live_guard
 from .sdwan_control import ViptelaConsole, stages_from_plan
 from .sdwan_intent import load_and_compile
+from .sdwan_pki import ensure_manager_ca, manager_ca_certificate
 from .sdwan_readiness import (
     parse_all_nms_status, parse_application_status,
     wait_for_application_server,
@@ -386,6 +388,59 @@ def inspect_manager_services(client, topology, root, server_name, node_name,
                  "uptime_seconds": item.uptime_seconds}
                 for item in services],
         }
+    finally:
+        if channel is not None:
+            channel.close()
+        ssh.close()
+
+
+def ensure_manager_ca_live(client, topology, root, server_name, node_name,
+                           *, timeout=900):
+    """Create/read back the Manager-local CA and persist only its public root."""
+    declared = load_topology(Path(root), topology["name"])
+    plan = load_and_compile(Path(root), topology["name"], declared)[
+        "node_operations"].get(node_name)
+    if (not isinstance(plan, dict)
+            or plan.get("adapter") != "viptela-control"
+            or plan.get("personality") != "manager"):
+        raise ValueError(node_name + " is not the declared Manager")
+    nodes = named(client, lab_path(topology) + "/nodes")
+    node = nodes.get(node_name)
+    if node is None or str(node.get("status")) != "2":
+        raise RuntimeError("Manager must be running for CA initialization")
+    state_path = _state_path(root, topology["name"])
+    state = _read_state(state_path)
+    record = state["nodes"].get(node_name)
+    if (not isinstance(record, dict)
+            or record.get("eve_uuid") != str(node.get("uuid", ""))
+            or set(record.get("completed_stages", ()))
+            != {"identity", "vpn0", "vpn512"}):
+        raise RuntimeError("Manager baseline is not durably correlated")
+    url = telnet_console_url(node)
+    login = credentials(Path(root))
+    server = load_server(Path(root), server_name, auth="ssh")
+    ssh = paramiko.SSHClient()
+    channel = None
+    try:
+        ssh.load_system_host_keys()
+        ssh.connect(server.get("ssh_host") or urlsplit(server["url"]).hostname,
+                    username=server["ssh_username"], password=server["ssh_password"],
+                    timeout=10, auth_timeout=10, banner_timeout=10,
+                    allow_agent=False, look_for_keys=False)
+        channel = _open_telnet_console(ssh, url.port)
+        console = ViptelaConsole(channel, boot_timeout=timeout)
+        console.login(login[0], login[1], login[2])
+        created = ensure_manager_ca(console, declared["organization"])
+        certificate = manager_ca_certificate(console)
+        fingerprint = hashlib.sha256(certificate.encode("ascii")).hexdigest()
+        public_path = Path(root) / ".state" / (
+            topology["name"] + "-enterprise-root.pem")
+        public_path.write_text(certificate)
+        record["enterprise_ca_sha256"] = fingerprint
+        _write_state(state_path, state)
+        return {"lab": topology["name"], "node": node_name,
+                "created": created, "certificate_sha256": fingerprint,
+                "public_certificate": str(public_path)}
     finally:
         if channel is not None:
             channel.close()

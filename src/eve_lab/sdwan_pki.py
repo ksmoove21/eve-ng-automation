@@ -43,18 +43,20 @@ def ensure_manager_ca(console: ViptelaConsole, organization: str) -> bool:
         complete, _ = _shell_command(
             console, "test -s ~/SDWAN.key && test -s ~/SDWAN.pem")
         if complete != "0":
-            partial, _ = _shell_command(
-                console, "test -e ~/SDWAN.key || test -e ~/SDWAN.pem")
-            if partial == "0":
-                raise RuntimeError("Manager CA has a partial key/certificate pair")
-            commands = (
-                "umask 077",
-                "openssl genrsa -out ~/SDWAN.key 2048",
+            key_exists, _ = _shell_command(console, "test -s ~/SDWAN.key")
+            certificate_exists, _ = _shell_command(
+                console, "test -s ~/SDWAN.pem")
+            if key_exists != "0" and certificate_exists == "0":
+                raise RuntimeError(
+                    "Manager CA certificate exists without its private key")
+            commands = ["umask 077"]
+            if key_exists != "0":
+                commands.append("openssl genrsa -out ~/SDWAN.key 2048")
+            commands.append(
                 "openssl req -new -x509 -sha256 -days 1825 "
                 "-key ~/SDWAN.key -out ~/SDWAN.pem "
                 f"-subj '/C=US/ST=CA/L=SanJose/O={organization}/OU=Lab/"
-                f"CN={organization}-CA'",
-            )
+                f"CN={organization}-CA'")
             for command in commands:
                 status, _ = _shell_command(console, command, timeout=180)
                 if status != "0":
