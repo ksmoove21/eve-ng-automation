@@ -2,7 +2,8 @@
 import unittest
 
 from eve_lab.sdwan_pki import (
-    ensure_manager_ca, manager_ca_certificate, sign_csr_on_manager,
+    ensure_manager_ca, install_controller_root, manager_ca_certificate,
+    sign_csr_on_manager,
 )
 
 
@@ -17,8 +18,9 @@ QUJD
 
 
 class FakeConsole:
-    def __init__(self, outputs):
+    def __init__(self, outputs, commands=()):
         self.outputs = iter(outputs)
+        self.commands = iter(commands)
         self.sent = []
         self.secrets = []
 
@@ -30,6 +32,9 @@ class FakeConsole:
 
     def expect(self, *_args, **_kwargs):
         return next(self.outputs), None
+
+    def command(self, *_args, **_kwargs):
+        return next(self.commands)
 
 
 def shell_outputs(*statuses):
@@ -80,6 +85,25 @@ class ManagerPkiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sign_csr_on_manager(console, CSR + CSR, name="manager")
         self.assertFalse(console.sent)
+
+    def test_controller_root_requires_install_and_readback(self):
+        console = FakeConsole(
+            ["controller:~$", "SDWAN_EXIT:0\ncontroller:~$", "controller#"],
+            ["Successfully installed the root certificate chain",
+             "Subject: CN=nwl-lab-sdwan-CA"])
+        path = install_controller_root(
+            console, CERT, subject_marker="CN=nwl-lab-sdwan-CA")
+        self.assertEqual(path, "/home/admin/enterprise-root.pem")
+        self.assertEqual(console.secrets, ["<secret>"])
+        self.assertNotIn(CERT, "\n".join(console.sent))
+
+    def test_controller_root_refuses_command_marker_without_readback(self):
+        console = FakeConsole(
+            ["controller:~$", "SDWAN_EXIT:0\ncontroller:~$", "controller#"],
+            ["Successfully installed the root certificate chain", "other"])
+        with self.assertRaisesRegex(RuntimeError, "read-back"):
+            install_controller_root(
+                console, CERT, subject_marker="CN=nwl-lab-sdwan-CA")
 
 
 if __name__ == "__main__":

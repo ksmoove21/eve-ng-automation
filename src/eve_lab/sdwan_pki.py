@@ -123,3 +123,37 @@ def sign_csr_on_manager(console: ViptelaConsole, csr: str, *, name: str) -> str:
         return certificates[0].strip() + "\n"
     finally:
         _leave_shell(console)
+
+
+def install_controller_root(console: ViptelaConsole, certificate: str, *,
+                            subject_marker: str) -> str:
+    """Stage, install, and read back one enterprise root on a controller."""
+    normalized = certificate.replace("\r\n", "\n").strip() + "\n"
+    blocks = _CERTIFICATE.findall(normalized)
+    if len(blocks) != 1 or blocks[0].strip() + "\n" != normalized:
+        raise ValueError("A single PEM root certificate is required")
+    if (not isinstance(subject_marker, str) or not subject_marker
+            or "\n" in subject_marker or "\r" in subject_marker):
+        raise ValueError("A safe root subject marker is required")
+    encoded = base64.b64encode(normalized.encode("ascii")).decode("ascii")
+    path = "/home/admin/enterprise-root.pem"
+    _enter_shell(console)
+    try:
+        console.send_secret(
+            "umask 077; printf %s " + encoded + " | base64 -d > " + path +
+            "; test -s " + path + "; openssl x509 -in " + path +
+            " -noout -checkend 0; echo SDWAN_EXIT:$?")
+        output, _ = console.expect(_SHELL_PROMPT, timeout=60, latest=True)
+        if not re.search(r"(?m)^SDWAN_EXIT:0\s*$", output):
+            raise RuntimeError("Controller root staging or validation failed")
+    finally:
+        _leave_shell(console)
+    installed = console.command(
+        "request root-cert-chain install " + path, timeout=180)
+    if "Successfully installed the root certificate chain" not in installed:
+        raise RuntimeError("Controller root certificate installation failed")
+    readback = console.command(
+        "show certificate root-ca-cert | nomore", timeout=60)
+    if subject_marker not in readback:
+        raise RuntimeError("Controller root certificate read-back failed")
+    return path
