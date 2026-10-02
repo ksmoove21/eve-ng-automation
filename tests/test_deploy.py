@@ -256,6 +256,21 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(apply(self.client, topology, prune=True)["changes"], [])
         self.assertEqual(self.client.networks["1"]["visibility"], 0)
 
+    def test_running_exact_direct_link_can_be_hidden(self):
+        topology = self.direct_topology()
+        apply(self.client, topology)
+        self.client.networks["1"]["visibility"] = 1
+        self.client.nodes["1"]["status"] = 2
+        self.client.nodes["2"]["status"] = 2
+        self.client.writes.clear()
+        result = apply(self.client, topology, prune=True)
+        self.assertEqual(self.client.networks["1"]["visibility"], 0)
+        self.assertEqual(
+            self.client.writes,
+            [("PUT", "labs/palo-lab.unl/networks/1", {"visibility": 0})])
+        self.assertFalse(any(item["kind"] == "direct-link"
+                             for item in result["deferred"]))
+
     def test_prune_running_node_is_preserved(self):
         apply(self.client, self.topology)
         self.client.nodes["1"]["status"] = 2

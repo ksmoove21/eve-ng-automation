@@ -117,6 +117,8 @@ def check_link(client, path, link, nodes, networks, rewire=False):
 
 def check_direct_bridges(client, path, direct, nodes, networks):
     """Never hide a shared LAN when converting a visible bridge to a cable."""
+    node_ports = {node["name"]: interfaces(client, path, node)
+                  for node in nodes.values()}
     for name, attachments in direct:
         if name not in networks:
             continue
@@ -124,15 +126,34 @@ def check_direct_bridges(client, path, direct, nodes, networks):
         for link in attachments:
             if link["node"] in nodes:
                 node = nodes[link["node"]]
-                ident, _ = resolve(interfaces(client, path, node), link["interface"])
+                ident, _ = resolve(node_ports[node["name"]], link["interface"])
                 expected.add((node["id"], ident))
         actual = set()
         for node in nodes.values():
-            for ident, port in interfaces(client, path, node).items():
+            for ident, port in node_ports[node["name"]].items():
                 if str(port.get("network_id")) == networks[name]["id"]:
                     actual.add((node["id"], ident))
         if actual - expected:
             raise RuntimeError(f"Direct link {name} has other attached interfaces; cannot hide a shared network")
+
+
+def direct_bridge_is_exact(name, attachments, nodes, networks, node_ports):
+    """Return true only when an existing bridge backs exactly one declared cable."""
+    if name not in networks:
+        return False
+    expected = set()
+    for link in attachments:
+        if link["node"] not in nodes:
+            return False
+        node = nodes[link["node"]]
+        ident, _ = resolve(node_ports[node["name"]], link["interface"])
+        expected.add((node["id"], ident))
+    actual = set()
+    for node in nodes.values():
+        for ident, port in node_ports[node["name"]].items():
+            if str(port.get("network_id")) == networks[name]["id"]:
+                actual.add((node["id"], ident))
+    return len(expected) == 2 and actual == expected
 
 
 def prune_objects(client, path, topology, changes):
@@ -196,6 +217,8 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     if not active:
         return topology, direct, []
     ports = {name: interfaces(client, path, nodes[name]) for name in active}
+    node_ports = {name: ports.get(name) or interfaces(client, path, node)
+                  for name, node in nodes.items()}
     by_id = {network['id']: name for name, network in networks.items()}
     live_networks = {by_id[str(port['network_id'])] for name in active for port in ports[name].values()
                      if str(port.get('network_id', 0)) in by_id}
@@ -221,12 +244,17 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     result['links'] += [{'node': name, 'interface': port['name'], 'network': by_id[str(port['network_id'])]}
                         for name in sorted(active) for port in ports[name].values()
                         if str(port.get('network_id')) in by_id]
-    # Stopped endpoints may be connected immediately, but don't hide a bridge
-    # as a completed direct cable while its running endpoint is deferred.
+    # Stopped endpoints may be connected immediately. An existing exact bridge
+    # may also be hidden while its endpoints run because visibility does not
+    # alter connectivity. Any incomplete/shared/mismatched bridge stays deferred.
     ready_direct = []
     for name, links in direct:
         if name in live_networks or any(link['node'] in active for link in links):
-            deferred.append({'kind': 'direct-link', 'name': name, 'reason': 'Direct-link visibility/exclusivity check deferred until its running endpoints stop'})
+            if direct_bridge_is_exact(
+                    name, links, nodes, networks, node_ports):
+                ready_direct.append((name, links))
+            else:
+                deferred.append({'kind': 'direct-link', 'name': name, 'reason': 'Direct-link attachment repair deferred until its running endpoints stop'})
         else:
             ready_direct.append((name, links))
     return result, ready_direct, deferred
