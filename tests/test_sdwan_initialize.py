@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from eve_lab.sdwan_control import ControlStage
 from eve_lab.sdwan_initialize import (
-    _first_login, _read_state, verify_stage,
+    DesiredStateMissing, _first_login, _read_state, ensure_stage, verify_stage,
 )
 
 
@@ -82,8 +82,38 @@ class DesiredStateTests(unittest.TestCase):
             "system\n host-name vManage1\n system-ip 172.16.1.101\n")
         self.assertEqual(verify_stage(console, stage)["missing"], 0)
         console.command.return_value = "system\n host-name vManage1\n"
-        with self.assertRaisesRegex(RuntimeError, "missing desired"):
+        with self.assertRaisesRegex(DesiredStateMissing, "missing desired"):
             verify_stage(console, stage)
+
+    def test_matching_stage_is_not_reapplied(self):
+        stage = ControlStage("identity", (
+            "system", "host-name vManage1", "exit"))
+        console = MagicMock()
+        console.command.return_value = "system\n host-name vManage1\n"
+        result, changed = ensure_stage(console, stage)
+        self.assertFalse(changed)
+        self.assertEqual(result["missing"], 0)
+        console.configure_stage.assert_not_called()
+
+    def test_only_confirmed_missing_stage_is_applied_once(self):
+        stage = ControlStage("identity", (
+            "system", "host-name vManage1", "exit"))
+        console = MagicMock()
+        console.command.side_effect = [
+            "system\n", "system\n host-name vManage1\n"]
+        result, changed = ensure_stage(console, stage, timeout=123)
+        self.assertTrue(changed)
+        self.assertEqual(result["missing"], 0)
+        console.configure_stage.assert_called_once_with(stage, timeout=123)
+
+    def test_transport_failure_never_applies_stage(self):
+        stage = ControlStage("identity", (
+            "system", "host-name vManage1", "exit"))
+        console = MagicMock()
+        console.command.side_effect = RuntimeError("console timed out")
+        with self.assertRaisesRegex(RuntimeError, "console timed out"):
+            ensure_stage(console, stage)
+        console.configure_stage.assert_not_called()
 
 
 if __name__ == "__main__":

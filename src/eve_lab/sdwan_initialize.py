@@ -21,6 +21,10 @@ from .sdwan_readiness import wait_for_application_server
 from .topology import load_lab_target, load_topology
 
 
+class DesiredStateMissing(RuntimeError):
+    """The device was read successfully but lacks declared configuration."""
+
+
 def _state_path(root, lab):
     return Path(root) / ".state" / (lab + "-control-state.json")
 
@@ -102,6 +106,8 @@ def _first_login(console, login, state, path, node_name, node_uuid, *, manager=F
         break
     if version is None or "20.15.1" not in version:
         raise RuntimeError("Control component version read-back did not prove 20.15.1")
+    print("Control-component version 20.15.1 read-back passed.",
+          file=sys.stderr, flush=True)
     record["first_login"] = "complete"
     _write_state(path, state)
     return record
@@ -128,11 +134,20 @@ def verify_stage(console, stage):
     missing = [line for line in _expected_lines(stage)
                if re.sub(r"\s+", " ", line) not in normalized]
     if missing:
-        raise RuntimeError(
+        raise DesiredStateMissing(
             "Control-component " + stage.name +
             " read-back is missing desired state")
     return {"stage": stage.name, "desired_lines": len(_expected_lines(stage)),
             "missing": 0}
+
+
+def ensure_stage(console, stage, *, timeout=300):
+    """Read back a stage first and mutate only confirmed missing state."""
+    try:
+        return verify_stage(console, stage), False
+    except DesiredStateMissing:
+        console.configure_stage(stage, timeout=timeout)
+        return verify_stage(console, stage), True
 
 
 def initialize_control(client, topology, root, server_name, node_name,
@@ -176,8 +191,21 @@ def initialize_control(client, topology, root, server_name, node_name,
             manager=plan.get("personality") == "manager")
         evidence = []
         for stage in stages:
-            console.configure_stage(stage, timeout=min(timeout, 300))
-            evidence.append(verify_stage(console, stage))
+            print("Reading control-component " + stage.name + " stage...",
+                  file=sys.stderr, flush=True)
+            result, changed = ensure_stage(
+                console, stage, timeout=min(timeout, 300))
+            if changed:
+                print("Control-component " + stage.name +
+                      " missing state was committed.",
+                      file=sys.stderr, flush=True)
+            else:
+                print("Control-component " + stage.name +
+                      " already matched desired state.",
+                      file=sys.stderr, flush=True)
+            evidence.append(result)
+            print("Control-component " + stage.name + " read-back passed.",
+                  file=sys.stderr, flush=True)
             completed = record.setdefault("completed_stages", [])
             if stage.name not in completed:
                 completed.append(stage.name)
