@@ -124,6 +124,17 @@ class DesiredStateTests(unittest.TestCase):
             ["show running-config vpn 0 | nomore",
              "show running-config vpn 0 | details | nomore"])
 
+    def test_vpn0_requires_management_interface_absent(self):
+        stage = ControlStage("vpn0", (
+            "vpn 0", "no interface eth0", "interface eth1",
+            "ip address 192.0.2.1/24", "exit", "exit"))
+        console = MagicMock()
+        console.command.return_value = (
+            "vpn 0\n interface eth0\n interface eth1\n"
+            "  ip address 192.0.2.1/24\n")
+        with self.assertRaisesRegex(DesiredStateMissing, "missing desired"):
+            verify_stage(console, stage)
+
     def test_matching_stage_is_not_reapplied(self):
         stage = ControlStage("identity", (
             "system", "host-name vManage1", "exit"))

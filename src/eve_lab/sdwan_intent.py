@@ -258,8 +258,7 @@ def _control_operations(component, organization, vbond, color,
         identity.append("vbond " + str(vbond))
     identity += ["clock timezone UTC", "exit"]
     vpn0 = ["vpn 0"]
-    if component["personality"] == "validator":
-        vpn0.append("no interface " + vpn512_interface)
+    vpn0.append("no interface " + vpn512_interface)
     vpn0 += [
         "interface " + vpn0_interface,
         "ip address " + str(transport),

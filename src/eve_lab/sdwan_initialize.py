@@ -144,8 +144,18 @@ def verify_stage(console, stage, *, timeout=60):
     normalized = {_normalize_line(line)
                   for line in output.splitlines() if line.strip()}
     expected = _expected_lines(stage)
-    missing = [index for index, line in enumerate(expected, start=1)
-               if _normalize_line(line) not in normalized]
+    absent_interfaces = [
+        command.removeprefix("no interface ")
+        for command in stage.commands if command.startswith("no interface ")]
+    def missing_indexes():
+        indexes = [index for index, line in enumerate(expected, start=1)
+                   if _normalize_line(line) not in normalized]
+        indexes.extend(
+            len(expected) + offset
+            for offset, interface in enumerate(absent_interfaces, start=1)
+            if _normalize_line("interface " + interface) in normalized)
+        return indexes
+    missing = missing_indexes()
     if missing and stage.name in {"identity", "vpn0"}:
         detailed = console.command(
             ("show running-config system | details | nomore"
@@ -155,8 +165,7 @@ def verify_stage(console, stage, *, timeout=60):
         normalized.update(
             _normalize_line(line) for line in detailed.splitlines()
             if line.strip())
-        missing = [index for index, line in enumerate(expected, start=1)
-                   if _normalize_line(line) not in normalized]
+        missing = missing_indexes()
     if missing:
         raise DesiredStateMissing(
             "Control-component " + stage.name +
@@ -222,18 +231,13 @@ def initialize_control(client, topology, root, server_name, node_name,
                   file=sys.stderr, flush=True)
             completed = record.setdefault("completed_stages", [])
             attempted = record.setdefault("attempted_stages", [])
-            if stage.name in completed:
-                result = verify_stage(
-                    console, stage, timeout=min(timeout, 300))
-                changed = False
-            else:
-                def persist_attempt():
-                    if stage.name not in attempted:
-                        attempted.append(stage.name)
-                        _write_state(path, state)
-                result, changed = ensure_stage(
-                    console, stage, timeout=min(timeout, 300),
-                    on_apply=persist_attempt)
+            def persist_attempt():
+                if stage.name not in attempted:
+                    attempted.append(stage.name)
+                    _write_state(path, state)
+            result, changed = ensure_stage(
+                console, stage, timeout=min(timeout, 300),
+                on_apply=persist_attempt)
             if changed:
                 print("Control-component " + stage.name +
                       " missing state was committed.",
