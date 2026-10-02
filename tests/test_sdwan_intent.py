@@ -38,18 +38,18 @@ def topology():
         ],
         "networks": [{"name": "MGMT", "type": "pnet0"}],
         "links": [
-            direct("mgr", "MGR", "eth0", "AGG", "GigabitEthernet0/0"),
-            direct("val", "VAL", "eth0", "AGG", "GigabitEthernet0/1"),
-            direct("ctrl", "CTRL", "eth0", "AGG", "GigabitEthernet0/2"),
+            direct("mgr", "MGR", "eth1", "AGG", "GigabitEthernet0/0"),
+            direct("val", "VAL", "ge0/0", "AGG", "GigabitEthernet0/1"),
+            direct("ctrl", "CTRL", "eth1", "AGG", "GigabitEthernet0/2"),
             direct("wan-a", "AGG", "GigabitEthernet1/0", "WAN-A", "Ethernet0/0"),
             direct("wan-b", "AGG", "GigabitEthernet1/1", "WAN-B", "Ethernet0/0"),
             direct("edge-a", "EDGE-A", "GigabitEthernet1", "WAN-A", "Ethernet0/1"),
             direct("edge-b", "EDGE-A", "GigabitEthernet2", "WAN-B", "Ethernet0/1"),
             direct("access", "EDGE-A", "GigabitEthernet3", "ACCESS-A",
                    "GigabitEthernet0/0"),
-            {"node": "MGR", "interface": "eth1", "network": "MGMT"},
+            {"node": "MGR", "interface": "eth0", "network": "MGMT"},
             {"node": "VAL", "interface": "eth0", "network": "MGMT"},
-            {"node": "CTRL", "interface": "eth1", "network": "MGMT"},
+            {"node": "CTRL", "interface": "eth0", "network": "MGMT"},
             {"node": "EDGE-A", "interface": "GigabitEthernet4", "network": "MGMT"},
         ],
     }
@@ -195,9 +195,9 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(manager["adapter"], "viptela-control")
         self.assertEqual([stage["name"] for stage in manager["operations"]],
                          ["identity", "vpn0", "vpn512"])
-        self.assertIn("interface eth0", manager["operations"][1]["commands"])
+        self.assertIn("interface eth1", manager["operations"][1]["commands"])
         self.assertIn("allow-service all", manager["operations"][1]["commands"])
-        self.assertIn("interface eth1", manager["operations"][2]["commands"])
+        self.assertIn("interface eth0", manager["operations"][2]["commands"])
         self.assertIn("ip address 172.19.3.20/24",
                       manager["operations"][2]["commands"])
         validator = result["node_operations"]["VAL"]
@@ -226,6 +226,16 @@ class CompilerTests(unittest.TestCase):
         for value in (missing, duplicate, off_pool):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 compile_intent(value, topology())
+
+    def test_rejects_reversed_control_appliance_interface_roles(self):
+        value = topology()
+        for link in value["links"]:
+            if link.get("name") == "mgr":
+                link["from"]["interface"] = "eth0"
+            elif link.get("node") == "MGR" and link.get("network") == "MGMT":
+                link["interface"] = "eth1"
+        with self.assertRaisesRegex(ValueError, "transport/management interfaces"):
+            compile_intent(intent(), value)
 
     def test_rejects_subdivision_wrong_gateway_and_missing_direct_link(self):
         cases = []

@@ -576,6 +576,15 @@ def compile_intent(intent, topology):
         vpn0_interface = _peer_interface(links, name, aggregate_name)
         vpn512_interface = _network_interface(
             topology, name, management["network"])
+        required_interfaces = {
+            "manager": ("eth1", "eth0"),
+            "validator": ("ge0/0", "eth0"),
+            "controller": ("eth1", "eth0"),
+        }[component["personality"]]
+        if (vpn0_interface, vpn512_interface) != required_interfaces:
+            raise ValueError(
+                name + " must use appliance transport/management interfaces "
+                + required_interfaces[0] + "/" + required_interfaces[1])
         control_plans[name] = {
             "adapter": "viptela-control",
             "personality": component["personality"],
