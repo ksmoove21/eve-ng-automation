@@ -104,6 +104,9 @@ class DesiredStateTests(unittest.TestCase):
         result, changed = ensure_stage(console, stage, timeout=123)
         self.assertTrue(changed)
         self.assertEqual(result["missing"], 0)
+        self.assertEqual(
+            [call.kwargs["timeout"] for call in console.command.call_args_list],
+            [123, 123])
         console.configure_stage.assert_called_once_with(stage, timeout=123)
 
     def test_transport_failure_never_applies_stage(self):
@@ -112,7 +115,9 @@ class DesiredStateTests(unittest.TestCase):
         console = MagicMock()
         console.command.side_effect = RuntimeError("console timed out")
         with self.assertRaisesRegex(RuntimeError, "console timed out"):
-            ensure_stage(console, stage)
+            ensure_stage(console, stage, timeout=234)
+        console.command.assert_called_once_with(
+            "show running-config system", timeout=234)
         console.configure_stage.assert_not_called()
 
 

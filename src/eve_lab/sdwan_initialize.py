@@ -127,8 +127,8 @@ def _expected_lines(stage):
             and not command.startswith("no interface ")]
 
 
-def verify_stage(console, stage):
-    output = console.command(_stage_command(stage.name), timeout=60)
+def verify_stage(console, stage, *, timeout=60):
+    output = console.command(_stage_command(stage.name), timeout=timeout)
     normalized = {re.sub(r"\s+", " ", line.strip())
                   for line in output.splitlines() if line.strip()}
     missing = [line for line in _expected_lines(stage)
@@ -144,10 +144,10 @@ def verify_stage(console, stage):
 def ensure_stage(console, stage, *, timeout=300):
     """Read back a stage first and mutate only confirmed missing state."""
     try:
-        return verify_stage(console, stage), False
+        return verify_stage(console, stage, timeout=timeout), False
     except DesiredStateMissing:
         console.configure_stage(stage, timeout=timeout)
-        return verify_stage(console, stage), True
+        return verify_stage(console, stage, timeout=timeout), True
 
 
 def initialize_control(client, topology, root, server_name, node_name,
