@@ -2,7 +2,10 @@
 import unittest
 from unittest.mock import MagicMock
 
-from eve_lab.sdwan_manager import ensure_fabric_settings
+from eve_lab.sdwan_manager import (
+    certificate_is_installed, control_component_record,
+    ensure_fabric_settings,
+)
 
 
 ROOT = "-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n"
@@ -45,6 +48,25 @@ class ManagerFabricTests(unittest.TestCase):
         api.set_vbond.assert_not_called()
         api.set_enterprise_certificate_mode.assert_not_called()
         api.set_enterprise_root.assert_not_called()
+
+    def test_control_record_requires_exact_ip_and_personality(self):
+        api = MagicMock()
+        expected = {"deviceIP": "172.16.1.101", "personality": "vmanage"}
+        api.inventory.return_value = (
+            expected,
+            {"deviceIP": "172.16.1.102", "personality": "vbond"},
+        )
+        self.assertIs(control_component_record(
+            api, device_ip="172.16.1.101", personality="vmanage"), expected)
+
+    def test_certificate_acceptance_requires_status_and_real_serial(self):
+        self.assertTrue(certificate_is_installed({
+            "certInstallStatus": "Installed", "serialNumber": "1234"}))
+        self.assertFalse(certificate_is_installed({
+            "certInstallStatus": "Installed",
+            "serialNumber": "No certificate installed"}))
+        self.assertFalse(certificate_is_installed({
+            "certInstallStatus": "Pending", "serialNumber": "1234"}))
 
     def test_conflicting_existing_setting_fails_before_mutation(self):
         api = MagicMock()

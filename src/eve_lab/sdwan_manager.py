@@ -65,3 +65,26 @@ def ensure_fabric_settings(api, *, organization, vbond, root_certificate,
         "organization": organization,
         "validator": vbond + ":" + str(port),
     }
+
+
+def control_component_record(api, *, device_ip, personality):
+    """Return one exactly correlated control-component certificate record."""
+    records = api.inventory("/dataservice/certificate/record")
+    matches = [
+        record for record in records
+        if str(record.get("deviceIP", "")) == device_ip
+        and str(record.get("personality", "")).lower() == personality.lower()
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Manager certificate inventory did not contain one correlated "
+            + personality + " record")
+    return matches[0]
+
+
+def certificate_is_installed(record):
+    """Require Manager's certificate state and serial read-back to agree."""
+    status = str(record.get("certInstallStatus", "")).strip().lower()
+    serial = str(record.get("serialNumber", "")).strip()
+    return (status == "installed" and bool(serial)
+            and serial.lower() != "no certificate installed")
