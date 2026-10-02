@@ -7,7 +7,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 
 from eve_lab.client import EveAPIError, EveClient
-from eve_lab.deploy import apply, delete, lab_path, lifecycle
+from eve_lab.deploy import apply, delete, ensure_folder, lab_path, lifecycle
 from eve_lab.topology import expand_links, interface_key, load_lab_target, load_topology, validate
 
 
@@ -988,3 +988,34 @@ class DeploymentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FolderReconcilerTests(unittest.TestCase):
+    def test_missing_nested_folder_is_created_and_read_back(self):
+        class Client:
+            def __init__(self):
+                self.folders = {"/"}
+                self.posts = []
+
+            def request(self, method, path, payload=None):
+                if method == "GET" and path.startswith("folders"):
+                    folder = "/" + path.removeprefix("folders").strip("/")
+                    if folder not in self.folders:
+                        raise EveAPIError("missing", 404)
+                    return {}
+                if method == "POST" and path == "folders":
+                    self.posts.append(payload)
+                    parent = payload["path"].rstrip("/")
+                    self.folders.add((parent + "/" + payload["name"]).replace("//", "/"))
+                    return None
+                raise AssertionError((method, path, payload))
+
+        client = Client()
+        ensure_folder(client, "/sdwan/r1")
+        self.assertEqual(client.posts, [
+            {"path": "/", "name": "sdwan"},
+            {"path": "/sdwan", "name": "r1"},
+        ])
+        self.assertIn("/sdwan/r1", client.folders)
+
+

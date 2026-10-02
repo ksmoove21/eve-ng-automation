@@ -32,6 +32,26 @@ def lab_path(topology):
     return "labs" + quote(f"{folder}/{topology['name']}.unl", safe="/")
 
 
+def ensure_folder(client, folder):
+    """Create missing remote folder components and verify each result."""
+    if folder in ("", "/"):
+        return
+    current = ""
+    for component in folder.strip("/").split("/"):
+        parent = current or "/"
+        current += "/" + component
+        endpoint = "folders" + quote(current, safe="/") + "/"
+        try:
+            client.request("GET", endpoint)
+        except EveAPIError as error:
+            if error.code != 404:
+                raise
+            client.request("POST", "folders", {"path": parent, "name": component})
+            try:
+                client.request("GET", endpoint)
+            except EveAPIError as verification:
+                raise RuntimeError(f"EVE did not create remote folder {current}") from verification
+
 def plan(topology: dict, server: dict) -> dict:
     return {
         "lab": topology["name"], "server": server["url"],
@@ -216,7 +236,13 @@ def apply(client, topology, prune=True):
     topology, direct = expand_links(topology)
     path = lab_path(topology)
     folder = topology.get("remote_folder", "/").rstrip("/")
-    client.request("GET", "folders" + quote(folder, safe="/") + "/")
+    folder_missing = False
+    try:
+        client.request("GET", "folders" + quote(folder, safe="/") + "/")
+    except EveAPIError as error:
+        if error.code != 404:
+            raise
+        folder_missing = True
     try:
         client.request("GET", path)
         exists = True
@@ -321,6 +347,9 @@ def apply(client, topology, prune=True):
     changes = []
     try:
         if not exists:
+            if folder_missing:
+                ensure_folder(client, folder)
+                changes.append(f"created folder: {folder}")
             client.request("POST", "labs", {
                 "path": folder or "/", "name": topology["name"], "version": "1",
                 "author": "eve", "description": topology.get("description", ""), "body": "",
