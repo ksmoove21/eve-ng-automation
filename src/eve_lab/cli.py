@@ -20,6 +20,7 @@ from .securecrt import generate as generate_securecrt
 from .session_discovery import discover as discover_sessions
 from .dhcp import clear as clear_dhcp, report as report_dhcp, update_dns as update_dhcp_dns, update as update_dhcp
 from .deploy import apply, delete, lab_status, lifecycle, plan
+from .live_guard import enforce_live_guard
 from .sdwan_intent import load_and_compile as compile_sdwan
 from .topology import load_lab_target, load_topology
 from .validation import validate_lab
@@ -133,6 +134,7 @@ def main():
                     raise ValueError('Lab console discovery names sessions automatically; omit --interactive')
                 topology = load_lab_target(args.root, args.interface)
                 web = load_server(args.root, args.server)
+                enforce_live_guard(args.root, topology, web)
                 client = EveClient(web['url'], web['timeout'])
                 client.login(web['username'], web['password'], html5=False)
                 try:
@@ -168,6 +170,8 @@ def main():
         else:
             topology = (load_topology(args.root, args.lab, getattr(args, "scenario", None))
                         if getattr(args, "lab", None) else None)
+        if topology is not None:
+            enforce_live_guard(args.root, topology, server)
         if args.command == "plan":
             result = plan(topology, server)
         else:

@@ -130,6 +130,12 @@ For Catalyst SD-WAN labs, `eve sdwan-plan <lab>` validates
 execution adapters consume the compiled operations; compilation itself does not
 authenticate to EVE or a Manager.
 
+Labs that require an exact live authorization boundary may add
+`labs/<lab>/live-guard.yaml`. The guard binds that lab to one EVE username and
+one exact remote `.unl` path before any lab API or console action. It is
+deliberately per-lab: labs without the file retain existing behavior, and the
+guard schema has no compatibility-alias mechanism.
+
 Topology definitions should describe:
 
 - lab identity and remote folder
