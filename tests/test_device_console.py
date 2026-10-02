@@ -50,16 +50,16 @@ class ConsoleTests(unittest.TestCase):
             'Re-enter password:',
             '1) COMPUTE_AND_DATA\n2) DATA\n3) COMPUTE\n'
             'Select persona for vManage (1, 2 or 3):',
-            'You chose persona COMPUTE_AND_DATA (1)\nAre you sure? [y/n]:',
+            'You chose persona COMPUTE_AND_DATA (1)\nAre you sure? [y/n]',
             'Available storage devices:\nvdb 100GB\nhdc 3GB\n'
             '1) vdb\n2) hdc\nSelect storage device to use:',
             'Would you like to format vdb? (y/n):',
-            'vmanage login:', 'Password:', 'vManage#'])
+            'vManage#', 'vmanage login:', 'Password:', 'vManage#'])
         c.login('admin', 'admin', 'unused', new_password='private-password',
                 vmanage_first_boot=True)
         self.assertEqual(c.prompt, 'vManage#')
         self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
-            '\r', 'admin\r', 'admin\r', 'private-password\r',
+            '\x12', 'admin\r', 'admin\r', 'private-password\r',
             'private-password\r', '1\r', 'y\r', '1\r', 'y\r',
             'admin\r', 'private-password\r'])
 
@@ -70,6 +70,16 @@ class ConsoleTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'eligible 100GB'):
             c.login('admin', 'admin', 'unused', new_password='private-password',
                     vmanage_first_boot=True)
+
+    def test_vmanage_resume_accepts_prompt_redisplayed_by_ctrl_r_without_return(self):
+        c, ch = self.console([
+            '1) COMPUTE_AND_DATA\n2) DATA\n3) COMPUTE\n'
+            'Select persona for vManage (1, 2 or 3):',
+            'vManage#'])
+        c.login('admin', 'private-password', 'unused',
+                new_password='private-password', vmanage_first_boot=True)
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
+                         ['\x12', '1\r'])
 
     def test_login_stops_after_one_repeated_password_prompt(self):
         c, ch = self.console(['login:', 'Password:', 'Password:'])

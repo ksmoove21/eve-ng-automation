@@ -232,6 +232,10 @@ def _open_telnet_console(ssh, port):
     channel = ssh.get_transport().open_session(timeout=10)
     channel.get_pty(term='vt100', width=512, height=1000)
     channel.exec_command('telnet 127.0.0.1 ' + str(port))
+    # The EVE host shell can accept bytes before the telnet client has attached
+    # them to QEMU. Give the local handshake a bounded moment so prompt
+    # redisplay/input cannot be lost during one-shot bootstrap interactions.
+    time.sleep(1)
     return channel
 
 

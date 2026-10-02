@@ -42,6 +42,35 @@ class StateTests(unittest.TestCase):
             "admin", "private", "enable", new_password="private",
             vmanage_first_boot=False)
 
+    def test_manager_reauthenticates_after_transient_first_boot_cli(self):
+        console = MagicMock()
+        console.command.side_effect = [RuntimeError("reboot"), "20.15.1"]
+        state = {"version": 1, "nodes": {"MGR": {
+            "eve_uuid": "same", "first_login": "pending",
+            "completed_stages": []}}}
+        with patch("eve_lab.sdwan_initialize._write_state"):
+            record = _first_login(
+                console, ("admin", "private", "enable"), state,
+                Path("state.json"), "MGR", "same", manager=True)
+        self.assertEqual(record["first_login"], "complete")
+        self.assertEqual(console.login.call_count, 2)
+        self.assertEqual(console.command.call_count, 2)
+
+    def test_manager_retries_transient_configured_login(self):
+        console = MagicMock()
+        console.login.side_effect = [RuntimeError("boot"), None]
+        console.command.return_value = "20.15.1"
+        state = {"version": 1, "nodes": {"MGR": {
+            "eve_uuid": "same", "first_login": "pending",
+            "completed_stages": []}}}
+        with patch("eve_lab.sdwan_initialize._write_state"):
+            record = _first_login(
+                console, ("admin", "private", "enable"), state,
+                Path("state.json"), "MGR", "same", manager=True)
+        self.assertEqual(record["first_login"], "complete")
+        self.assertEqual(console.login.call_count, 2)
+        console.command.assert_called_once_with("show version", timeout=60)
+
 
 class DesiredStateTests(unittest.TestCase):
     def test_stage_requires_every_desired_readback_line(self):

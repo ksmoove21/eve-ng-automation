@@ -48,21 +48,59 @@ def _write_state(path, value):
 
 def _first_login(console, login, state, path, node_name, node_uuid, *, manager=False):
     record = state["nodes"].get(node_name)
-    if not isinstance(record, dict) or record.get("eve_uuid") != node_uuid:
+    fresh = not isinstance(record, dict) or record.get("eve_uuid") != node_uuid
+    logged_in = False
+    if fresh:
         record = {"eve_uuid": node_uuid, "first_login": "pending",
                   "completed_stages": []}
         def persist_pending():
             state["nodes"][node_name] = record
             _write_state(path, state)
-        console.login("admin", "admin", login[2], new_password=login[1],
-                      on_password_submit=persist_pending,
-                      vmanage_first_boot=manager)
-        state["nodes"][node_name] = record
-    else:
-        console.login(login[0], login[1], login[2], new_password=login[1],
-                      vmanage_first_boot=manager)
-    version = console.command("show version", timeout=60)
-    if "20.15.1" not in version:
+        try:
+            console.login("admin", "admin", login[2], new_password=login[1],
+                          on_password_submit=persist_pending,
+                          vmanage_first_boot=manager)
+        except RuntimeError:
+            # Recovery is safe only after the hook durably proves the factory
+            # password was submitted for this exact EVE node UUID.
+            if (not manager
+                    or state["nodes"].get(node_name) is not record):
+                raise
+            print(
+                "Manager first-boot session crossed the correlated password "
+                "boundary; continuing with configured credentials...",
+                file=sys.stderr, flush=True)
+        else:
+            state["nodes"][node_name] = record
+            logged_in = True
+    version = None
+    for attempt in range(6 if manager else 1):
+        if not logged_in:
+            try:
+                console.login(
+                    login[0], login[1], login[2], new_password=login[1],
+                    vmanage_first_boot=manager)
+            except RuntimeError:
+                if not manager or attempt == 5:
+                    raise
+                print(
+                    "Manager login was transient during first boot; waiting "
+                    "for the next configured post-reboot login...",
+                    file=sys.stderr, flush=True)
+                continue
+            logged_in = True
+        try:
+            version = console.command("show version", timeout=60)
+        except RuntimeError:
+            if not manager or attempt == 5:
+                raise
+            logged_in = False
+            print(
+                "Manager CLI was transient during first boot; waiting for the "
+                "configured post-reboot login...", file=sys.stderr, flush=True)
+            continue
+        break
+    if version is None or "20.15.1" not in version:
         raise RuntimeError("Control component version read-back did not prove 20.15.1")
     record["first_login"] = "complete"
     _write_state(path, state)

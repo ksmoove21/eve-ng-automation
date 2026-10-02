@@ -213,7 +213,7 @@ class Console:
               on_password_submit=None, vmanage_first_boot=False):
         if on_password_submit is not None and not callable(on_password_submit):
             raise TypeError('on_password_submit must be callable')
-        if read_only:
+        if read_only or vmanage_first_boot:
             # Redisplay, never submit a pending command or a setup default.
             self.channel.sendall('\x12')
         else:
@@ -226,25 +226,27 @@ class Console:
         persona_selected = False
         storage_selected = None
         after_format = False
+        post_format_login = False
         prompt_trace = []
         pattern = (r'(?i:(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password)\s*:\s*$|' +
                    r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
                    r'Username:\s*$|login:\s*$|Password:\s*$|Abort Power On Auto Provisioning[^\n]*[?:]|Do you want to enforce secure password standard[^\n]*[?:]|(?:Enter|Confirm) the password for [^\n]*admin[^\n]*:|Would you like to enter[^\n]*[?:]\s*$|'
                    r'Select persona for vManage[^\n]*:\s*$|'
-                   r'Are you sure[^\n]*[?:]\s*$|'
+                   r'Are you sure[^\n]*(?:\[[^\]]+\]\s*:?\s*|[?:]\s*)$|'
                    r'Select storage device to use\s*:\s*$|'
-                   r'Would you like to format[^\n]*[?:]\s*$|'
+                   r'Would you like to format[^\n]*(?:\([yn/]+\)\s*:?\s*|[?:]\s*)$|'
                    r'Press RETURN to get started[^\n]*$|' + _PROMPT)
-        probe = read_only
+        probe = read_only or vmanage_first_boot
         for _ in range(20):
             if probe:
                 observed, match = self.expect(
-                    pattern, timeout=min(2, self.boot_timeout), wake=False,
+                    pattern, timeout=min(5, self.boot_timeout), wake=False,
                     latest=True, return_on_timeout=True)
                 probe = False
                 if match is None:
-                    if _READ_ONLY_UNSAFE.search(observed) or not _safe_read_only_nudge(observed):
+                    if (read_only and (_READ_ONLY_UNSAFE.search(observed)
+                                      or not _safe_read_only_nudge(observed))):
                         evidence = _read_only_nudge_diagnostic(observed)
                         raise RuntimeError(
                             'Read-only login refused Return because the console was not safely idle '
@@ -278,11 +280,15 @@ class Console:
                     raise RuntimeError('Unexpected or repeated Manager persona prompt')
                 persona_selected = True
                 wake = False
+                print('Selecting Manager COMPUTE_AND_DATA persona.',
+                      file=sys.stderr, flush=True)
                 self.send('1')
             elif re.match(r'Are you sure', prompt, re.I):
                 if not vmanage_first_boot or not persona_selected:
                     raise RuntimeError('Unexpected Manager confirmation prompt')
                 wake = False
+                print('Confirming Manager persona selection.',
+                      file=sys.stderr, flush=True)
                 self.send('y')
             elif re.match(r'Select storage device to use', prompt, re.I):
                 if not vmanage_first_boot or storage_selected is not None:
@@ -302,6 +308,8 @@ class Console:
                         'Manager first boot did not expose an eligible 100GB data disk')
                 number, storage_selected, _ = max(eligible, key=lambda item: item[2])
                 wake = False
+                print('Selecting correlated Manager data disk ' + storage_selected + '.',
+                      file=sys.stderr, flush=True)
                 self.send(number)
             elif re.match(r'Would you like to format', prompt, re.I):
                 device = re.search(
@@ -314,8 +322,12 @@ class Console:
                 password = new_password or password
                 password_sent = False
                 wake = False
+                print('Confirming format of correlated Manager data disk.',
+                      file=sys.stderr, flush=True)
                 self.send('y')
             elif prompt.startswith('Username:') or prompt.lower().startswith('login:'):
+                if after_format:
+                    post_format_login = True
                 self.send(username)
                 wake = False
             elif (re.match(r'(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password', prompt, re.I)
@@ -373,6 +385,12 @@ class Console:
             elif '(config' in prompt:
                 self.send('end')
             else:
+                if after_format and not post_format_login:
+                    # Formatting returns a transient CLI prompt before the
+                    # automatic reboot. Only a subsequent login makes the
+                    # prompt authoritative for post-install configuration.
+                    wake = False
+                    continue
                 self.prompt = prompt
                 return
         raise RuntimeError(
