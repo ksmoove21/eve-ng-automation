@@ -1382,6 +1382,34 @@ name; matching attachments are reused. A bridge with other attached interfaces
 is rejected rather than hidden. `plan` counts the direct link as one YAML link;
 its generated bridge is not included in the declared network count.
 
+### Canvas presentation
+
+Keep visual annotations separate from topology semantics in
+`labs/<lab>/presentation.yaml`. Version 1 supports declarative `regions` and
+`labels`; applying the lab reconciles these to native EVE text objects. When the
+file exists, undeclared text objects are pruned. Node coordinates and icons stay
+in `topology.yaml`, while adapter-private bridges for direct links remain hidden.
+
+```yaml
+version: 1
+regions:
+  - name: site-1
+    left: 20
+    top: 220
+    width: 520
+    height: 720
+    stroke: "#6d8790"
+    fill: "#dceff5"
+    fill_opacity: 0.55
+labels:
+  - name: site-1-label
+    left: 390
+    top: 235
+    text: "Site 1\\n10.1.0.0/24"
+```
+    font_size: 20
+    background: "#dceff5"
+
 ## Structure
 
 - `README.md`: shared command usage and notes for all labs.

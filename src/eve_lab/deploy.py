@@ -5,6 +5,7 @@ import time
 import sys
 
 from .client import EveAPIError
+from .presentation import reconcile_presentation
 from .topology import expand_links, interface_key, validate
 
 STOP_TIMEOUT = 30
@@ -343,6 +344,7 @@ def apply(client, topology, prune=True):
                 if active_now != active_snapshot:
                     raise RuntimeError('Node running state changed during apply; rerun to recompute safe changes')
             return underlying.request(method, endpoint, payload)
+    presentation_report = {"declared": 0, "matched": 0}
     client = GuardedClient()
     changes = []
     try:
@@ -439,6 +441,7 @@ def apply(client, topology, prune=True):
                            or str(final_networks[name].get("visibility", 1)) != "0"]
         if visible_backing:
             raise RuntimeError(f"Direct-link backing networks are not hidden: {visible_backing}")
+        presentation_report = reconcile_presentation(client, path, topology.get("presentation"), changes)
     except (RuntimeError, ValueError) as error:
         raise RuntimeError(
             f"Apply did not complete: {error}. Completed: {changes}. "
@@ -446,7 +449,8 @@ def apply(client, topology, prune=True):
         ) from error
     return {"lab": topology["name"], "path": path, "changes": changes, "deferred": deferred,
             "presentation": {"direct_links": len(direct),
-                             "backing_networks_hidden": len(direct)},
+                             "backing_networks_hidden": len(direct),
+                             "objects": presentation_report},
             "message": "Applied safe changes; deferred objects left unchanged" if deferred else ("Applied; no nodes started" if changes else "Already matches; no changes")}
 
 
