@@ -17,7 +17,7 @@ from .initialize import _open_telnet_console, telnet_console_url
 from .live_guard import enforce_live_guard
 from .sdwan_control import ViptelaConsole, stages_from_plan
 from .sdwan_intent import load_and_compile
-from .sdwan_readiness import wait_for_application_server
+from .sdwan_readiness import parse_application_status, wait_for_application_server
 from .topology import load_lab_target, load_topology
 
 
@@ -246,8 +246,26 @@ def initialize_control(client, topology, root, server_name, node_name,
         ssh.close()
 
 
+def _ensure_manager_application_enabled(
+        console, output, record, state, path, *, restart_disabled, timeout):
+    status = parse_application_status(output)
+    if status.enabled:
+        return False
+    if not restart_disabled:
+        raise RuntimeError(
+            "Manager application server is disabled; restart was not authorized")
+    if record.get("nms_restart_attempted"):
+        raise RuntimeError(
+            "Manager NMS restart was already submitted for this EVE node UUID")
+    record["nms_restart_attempted"] = True
+    _write_state(path, state)
+    console.command("request nms all restart", timeout=min(timeout, 900))
+    return True
+
+
 def qualify_manager(client, topology, root, server_name, node_name, *,
-                    timeout=3600, minimum_uptime=900, poll_seconds=12):
+                    timeout=3600, minimum_uptime=900, poll_seconds=12,
+                    restart_disabled=False):
     """Prove a configured Manager application process is stable over its CLI."""
     declared = load_topology(Path(root), topology["name"])
     plan = load_and_compile(Path(root), topology["name"], declared)[
@@ -262,7 +280,8 @@ def qualify_manager(client, topology, root, server_name, node_name, *,
     node = nodes[node_name]
     if str(node.get("status")) != "2":
         raise RuntimeError("Start " + node_name + " before qualification")
-    state = _read_state(_state_path(root, topology["name"]))
+    state_path = _state_path(root, topology["name"])
+    state = _read_state(state_path)
     record = state["nodes"].get(node_name)
     if (not isinstance(record, dict)
             or record.get("eve_uuid") != str(node.get("uuid", ""))
@@ -291,6 +310,12 @@ def qualify_manager(client, topology, root, server_name, node_name, *,
         version = console.command("show version", timeout=60)
         if "20.15.1" not in version:
             raise RuntimeError("Manager version read-back did not prove 20.15.1")
+        initial_status = console.command(
+            "request nms application-server status", timeout=60)
+        restarted = _ensure_manager_application_enabled(
+            console, initial_status, record, state, state_path,
+            restart_disabled=restart_disabled, timeout=timeout)
+        pending_status = [] if restarted else [initial_status]
         def report_wait(reason, pid, uptime):
             fields = [reason]
             if pid is not None:
@@ -299,9 +324,13 @@ def qualify_manager(client, topology, root, server_name, node_name, *,
                 fields.append("uptime=" + str(uptime) + "s")
             print("Manager application readiness: " + ", ".join(fields),
                   file=sys.stderr, flush=True)
+        def read_status():
+            if pending_status:
+                return pending_status.pop()
+            return console.command(
+                "request nms application-server status", timeout=60)
         observation = wait_for_application_server(
-            lambda: console.command(
-                "request nms application-server status", timeout=60),
+            read_status,
             timeout_seconds=timeout, poll_seconds=poll_seconds,
             minimum_seconds=minimum_uptime, on_wait=report_wait)
         return {"lab": topology["name"], "node": node_name,

@@ -85,6 +85,9 @@ def main():
     sdwan_ready.add_argument("--timeout", type=int, default=3600)
     sdwan_ready.add_argument("--minimum-uptime", type=int, default=900)
     sdwan_ready.add_argument("--poll", type=int, default=12)
+    sdwan_ready.add_argument(
+        "--restart-disabled", action="store_true",
+        help="Restart all NMS services once when application status is disabled")
     for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
         command = commands.add_parser(name)
         command.add_argument("--server", default="default")
@@ -212,7 +215,8 @@ def main():
                         client, topology, args.root, args.server, args.node,
                         timeout=args.timeout,
                         minimum_uptime=args.minimum_uptime,
-                        poll_seconds=args.poll)
+                        poll_seconds=args.poll,
+                        restart_disabled=args.restart_disabled)
                 elif args.command == "init":
                     if args.prepare_console:
                         if args.management_ip:

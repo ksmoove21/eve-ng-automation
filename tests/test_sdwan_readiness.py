@@ -6,7 +6,9 @@ from eve_lab.sdwan_readiness import (
     ApplicationReadiness, parse_application_status,
     wait_for_application_server,
 )
-from eve_lab.sdwan_initialize import qualify_manager
+from eve_lab.sdwan_initialize import (
+    _ensure_manager_application_enabled, qualify_manager,
+)
 
 
 def cli_status(state="running", enabled=True, pid=42, uptime=899):
@@ -62,6 +64,34 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(
             reports,
             [("application uptime below qualification threshold", 42, 100)])
+
+    def test_disabled_application_restart_is_correlated_before_command(self):
+        console = unittest.mock.MagicMock()
+        record = {}
+        state = {"version": 1, "nodes": {"MGR": record}}
+        def command(*args, **kwargs):
+            self.assertTrue(record["nms_restart_attempted"])
+            return "restart submitted"
+        console.command.side_effect = command
+        with patch("eve_lab.sdwan_initialize._write_state") as write:
+            changed = _ensure_manager_application_enabled(
+                console, cli_status(state="stopped", enabled=False),
+                record, state, "state.json", restart_disabled=True,
+                timeout=1200)
+        self.assertTrue(changed)
+        write.assert_called_once_with("state.json", state)
+        console.command.assert_called_once_with(
+            "request nms all restart", timeout=900)
+
+    def test_disabled_application_restart_is_never_replayed(self):
+        console = unittest.mock.MagicMock()
+        record = {"nms_restart_attempted": True}
+        with self.assertRaisesRegex(RuntimeError, "already submitted"):
+            _ensure_manager_application_enabled(
+                console, cli_status(state="stopped", enabled=False),
+                record, {"version": 1, "nodes": {}}, "state.json",
+                restart_disabled=True, timeout=1200)
+        console.command.assert_not_called()
 
     def test_manager_qualification_requires_completed_correlated_init(self):
         topology = {"name": "lab", "path": "/sdwan/lab.unl"}
