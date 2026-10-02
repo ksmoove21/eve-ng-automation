@@ -724,12 +724,11 @@ def _configure_edge(context, name, edge, timeout):
                                 "configured-credentials-rejected-after-"
                                 "interrupted-factory-login"})
                         context.ledger.save()
-                        factory_login = True
-                        continue
-                    if login[0].lower() != "admin":
-                        raise RuntimeError("Configured Cisco user is not factory admin")
-                    edge["post_mode_factory_login_attempted"] = True
-                    context.ledger.save()
+                    else:
+                        if login[0].lower() != "admin":
+                            raise RuntimeError("Configured Cisco user is not factory admin")
+                        edge["post_mode_factory_login_attempted"] = True
+                        context.ledger.save()
                     factory_login = True
                 if not factory_login:
                     version = console.command(
