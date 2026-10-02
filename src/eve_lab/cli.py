@@ -238,7 +238,7 @@ def main():
             if args.command in ("init", "backup", "restore", "validate",
                                 "sdwan-control-init", "sdwan-manager-ready",
                                 "sdwan-manager-services",
-                                "sdwan-manager-ca"):
+                                "sdwan-manager-ca", "sdwan-factory"):
                 client.login(server["username"], server["password"], html5=False)
             else:
                 client.login(server["username"], server["password"])
