@@ -498,6 +498,23 @@ def _ensure_underlay(context, timeout):
             raise RuntimeError(name + " underlay initialization failed")
 
 
+def _initialize_control_until_ready(context, name, timeout):
+    """Reconnect through transient appliance boot/login churn."""
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while True:
+        try:
+            return initialize_control(
+                context.client, context.topology, context.root,
+                context.server_name, name, False, timeout)
+        except RuntimeError as error:
+            last_error = error
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                name + " initialization did not converge before timeout") from last_error
+        time.sleep(min(30, max(1, deadline - time.monotonic())))
+
+
 def _role_up(output, role):
     return bool(re.search(role + r".*\bup\b|\bup\b.*" + role, output, re.I))
 
@@ -531,8 +548,7 @@ def _validate_control_plane(context, api):
 def _ensure_control_plane(context, timeout):
     for name in _CONTROL:
         lifecycle(context.client, context.topology, "start", node_name=name)
-        initialize_control(context.client, context.topology, context.root,
-                           context.server_name, name, False, timeout)
+        _initialize_control_until_ready(context, name, timeout)
     qualify_manager(context.client, context.topology, context.root,
                     context.server_name, "MANAGER1",
                     timeout=max(timeout, 3600), minimum_uptime=900,
