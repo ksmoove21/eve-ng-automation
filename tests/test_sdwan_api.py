@@ -65,6 +65,28 @@ class ManagerApiTests(unittest.TestCase):
         self.assertTrue(csr.startswith("-----BEGIN CERTIFICATE REQUEST-----"))
         self.assertEqual(api.calls[0][1], "/dataservice/certificate/generate/csr")
 
+    def test_validator_add_matches_live_2015_ui_contract(self):
+        api = FixtureApi([(200, b'{}', {})])
+        api.add_control_component(
+            device_ip="10.1.0.2", username="admin", password="hidden",
+            personality="vbond")
+        self.assertEqual(api.calls[0][0:2],
+                         ("POST", "/dataservice/system/device"))
+        self.assertEqual(json.loads(api.calls[0][2]["body"]), {
+            "deviceIP": "10.1.0.2", "username": "admin",
+            "password": "hidden", "personality": "vbond",
+            "generateCSR": True,
+        })
+
+    def test_vsmart_dtls_add_preserves_empty_ui_port(self):
+        api = FixtureApi([(200, b'{}', {})])
+        api.add_control_component(
+            device_ip="10.1.0.3", username="admin", password="hidden",
+            personality="vsmart", protocol="DTLS")
+        request = json.loads(api.calls[0][2]["body"])
+        self.assertEqual(request["protocol"], "DTLS")
+        self.assertEqual(request["port"], "")
+
     def test_signed_install_preserves_2015_raw_pem_json_content_type(self):
         api = FixtureApi([(200, b'{"id":"task-1"}', {})])
         activity = api.install_signed_certificate(

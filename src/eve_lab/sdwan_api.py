@@ -207,6 +207,34 @@ class ManagerApi:
             "/dataservice/settings/configuration/certificate/enterpriserootca",
             {"enterpriseRootCA": normalized}, "Manager enterprise root CA")
 
+    def add_control_component(self, *, device_ip, username, password,
+                              personality, generate_csr=True,
+                              protocol=None, port=None):
+        parsed = ipaddress.ip_address(device_ip)
+        if parsed.version != 4:
+            raise ValueError("Control component requires an IPv4 address")
+        if personality not in {"vbond", "vsmart"}:
+            raise ValueError("Control component must be vbond or vsmart")
+        if (not isinstance(username, str) or not username
+                or not isinstance(password, str) or not password):
+            raise ValueError("Control-component credentials are required")
+        request = {
+            "deviceIP": str(parsed), "username": username,
+            "password": password, "personality": personality,
+            "generateCSR": bool(generate_csr),
+        }
+        if personality == "vsmart":
+            if protocol not in {"DTLS", "TLS"}:
+                raise ValueError("vSmart protocol must be DTLS or TLS")
+            if protocol == "TLS" and (not isinstance(port, int)
+                                       or not 1 <= port <= 65535):
+                raise ValueError("vSmart TLS requires a valid port")
+            request["protocol"] = protocol
+            request["port"] = "" if protocol == "DTLS" else str(port)
+        return self._json_post(
+            "/dataservice/system/device", request,
+            "Manager control-component enrollment")
+
     def generate_csr(self, device_ip):
         parsed = ipaddress.ip_address(device_ip)
         response = self._json_post(
