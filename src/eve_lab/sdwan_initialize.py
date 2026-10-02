@@ -422,7 +422,7 @@ def ensure_manager_ca_live(client, topology, root, server_name, node_name,
     del server_name
     try:
         address = str(ip_interface(
-            declared["management"]["assignments"][node_name]).ip)
+            plan["desired"]["vpn512_address"]).ip)
     except (KeyError, ValueError) as error:
         raise ValueError(
             "Manager requires one declared VPN512 management address") from error
@@ -447,7 +447,8 @@ def ensure_manager_ca_live(client, topology, root, server_name, node_name,
         console.expect(
             r"(?m)^[A-Za-z0-9_.-]+#\s*$", timeout=min(timeout, 300),
             wake=True, latest=True)
-        created = ensure_manager_ca(console, declared["organization"])
+        created = ensure_manager_ca(
+            console, plan["desired"]["organization_name"])
         certificate = manager_ca_certificate(console)
         fingerprint = hashlib.sha256(certificate.encode("ascii")).hexdigest()
         public_path = Path(root) / ".state" / (
