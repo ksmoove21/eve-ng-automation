@@ -128,7 +128,7 @@ class DesiredStateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "console timed out"):
             ensure_stage(console, stage, timeout=234)
         console.command.assert_called_once_with(
-            "show running-config system | nomore", timeout=234)
+            "show running-config system | details | nomore", timeout=234)
         console.configure_stage.assert_not_called()
 
 

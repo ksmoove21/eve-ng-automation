@@ -115,7 +115,7 @@ def _first_login(console, login, state, path, node_name, node_uuid, *, manager=F
 
 def _stage_command(name):
     return {
-        "identity": "show running-config system | nomore",
+        "identity": "show running-config system | details | nomore",
         "vpn0": "show running-config vpn 0 | nomore",
         "vpn512": "show running-config vpn 512 | nomore",
     }[name]
