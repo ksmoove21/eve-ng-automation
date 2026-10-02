@@ -146,9 +146,12 @@ def verify_stage(console, stage, *, timeout=60):
     expected = _expected_lines(stage)
     missing = [index for index, line in enumerate(expected, start=1)
                if _normalize_line(line) not in normalized]
-    if missing and stage.name == "identity":
+    if missing and stage.name in {"identity", "vpn0"}:
         detailed = console.command(
-            "show running-config system | details | nomore", timeout=timeout)
+            ("show running-config system | details | nomore"
+             if stage.name == "identity"
+             else "show running-config vpn 0 | details | nomore"),
+            timeout=timeout)
         normalized.update(
             _normalize_line(line) for line in detailed.splitlines()
             if line.strip())

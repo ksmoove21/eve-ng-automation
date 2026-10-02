@@ -106,6 +106,24 @@ class DesiredStateTests(unittest.TestCase):
             ["show running-config system | nomore",
              "show running-config system | details | nomore"])
 
+    def test_vpn0_combines_normal_and_explicit_default_views(self):
+        stage = ControlStage("vpn0", (
+            "vpn 0", "interface eth1", "tunnel-interface",
+            "no allow-service all", "allow-service netconf", "exit",
+            "exit", "exit"))
+        console = MagicMock()
+        console.command.side_effect = [
+            "vpn 0\n interface eth1\n  tunnel-interface\n"
+            "   allow-service netconf\n",
+            "vpn 0\n interface eth1\n  tunnel-interface\n"
+            "   no allow-service all\n   allow-service netconf\n",
+        ]
+        self.assertEqual(verify_stage(console, stage)["missing"], 0)
+        self.assertEqual(
+            [call.args[0] for call in console.command.call_args_list],
+            ["show running-config vpn 0 | nomore",
+             "show running-config vpn 0 | details | nomore"])
+
     def test_matching_stage_is_not_reapplied(self):
         stage = ControlStage("identity", (
             "system", "host-name vManage1", "exit"))
