@@ -926,7 +926,7 @@ def _validate_edges(context, api):
 
 
 def run_factory(client, topology, root, server_name="default", *,
-                destroy_first=False, timeout=1200):
+                destroy_first=False, timeout=3600):
     """Build the declared lab to full fabric-ready state, resuming safely."""
     if not 300 <= timeout <= 7200:
         raise ValueError("Factory timeout must be between 300 and 7200 seconds")

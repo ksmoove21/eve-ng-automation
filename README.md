@@ -50,6 +50,11 @@ The live-tested reference used C8000V `17.16.01a`. All 13 declared acceptance ch
 
 The smaller `iosxe-baseline` lab remains the regression fixture for basic topology creation, IOS XE initialization, interface validation, and bidirectional ping validation.
 
+The [Catalyst SD-WAN factory workflow](docs/platforms/catalyst-sdwan.md) is
+live-tested for Manager, Validator, and Controller 20.15.1 with C8000V
+17.16.01a. It builds a private declarative lab through controller PKI, PAYG
+onboarding, and three-edge fabric acceptance.
+
 These are proven reference combinations, not claims that every EVE-NG/C8000V release behaves identically.
 
 ## NX-OS proven reference

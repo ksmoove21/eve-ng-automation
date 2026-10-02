@@ -117,7 +117,7 @@ def main():
     sdwan_factory.add_argument(
         "--destroy-first", action="store_true",
         help="Delete the guarded disposable lab before unattended rebuild")
-    sdwan_factory.add_argument("--timeout", type=int, default=1200)
+    sdwan_factory.add_argument("--timeout", type=int, default=3600)
     for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
         command = commands.add_parser(name)
         command.add_argument("--server", default="default")
