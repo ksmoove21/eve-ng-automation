@@ -396,7 +396,19 @@ def _launch_fabric_controller(page, deadline):
     launcher = page.locator("nd-launcher")
     _wait_for(page, lambda: launcher.count() == 1 and launcher.is_visible(), deadline,
               "Nexus Dashboard application launcher")
-    page.keyboard.press("Escape")
+    # A fresh 3.2.1i login can display the optional ``Meet Nexus Dashboard``
+    # tour. Escape does not reliably close this modal, and it intercepts the
+    # documented launcher. Close only the positively identified tour rather
+    # than forcing a click through an arbitrary overlay.
+    welcome = page.locator("#modal-root .meet-nd-modal")
+    if welcome.count() == 1 and welcome.is_visible():
+        close = welcome.locator(".modal__close")
+        if close.count() != 1:
+            raise NexusDashboardBrowserError(
+                "Nexus Dashboard welcome modal did not expose its close control")
+        close.click()
+        _wait_for(page, lambda: not welcome.is_visible(), deadline,
+                  "Nexus Dashboard welcome modal dismissal")
     launcher.locator(".selected-item").click()
     item = launcher.locator(".dropdown-launcher .item").filter(has_text="Fabric Controller")
     _wait_for(page, lambda: item.count() == 1 and item.is_visible(), deadline,
@@ -407,7 +419,31 @@ def _launch_fabric_controller(page, deadline):
 def _fabric_controller_service_setup(page, deadline):
     """Perform the observed supported LAN/Advanced first-run UI only when present."""
     setup = page.locator(".gradient-card", has_text="Service Setup")
-    if setup.count() == 0:
+    admin = page.get_by_role("link", name="Admin", exact=True)
+    # The Fabric Controller application can initially render a blank shell
+    # while its UI bundle loads. Its documented first-run and post-setup
+    # states are respectively Service Setup and Admin; wait for one rather
+    # than treating the transient shell as an already-configured service.
+    _wait_for(page, lambda: (
+        (setup.count() == 1 and setup.is_visible())
+        or (admin.count() == 1 and admin.is_visible())), deadline,
+        "Fabric Controller first-run or configured UI")
+    page.wait_for_timeout(1000)
+    # NDFC 12.2.2.241 presents a first-run Prerequisites information modal
+    # over Service Setup. It is not a validation failure and has an explicit
+    # close control; leave its opt-out preference unchanged.
+    prerequisites = page.locator(
+        "#modal-root .welcome-modal", has_text="Fabric Controller")
+    if prerequisites.count() == 1 and prerequisites.is_visible():
+        close = prerequisites.locator(".info-detail-screen-close")
+        if close.count() != 1:
+            raise NexusDashboardBrowserError(
+                "Fabric Controller prerequisites modal did not expose its close control")
+        close.click()
+        _wait_for(page, lambda: not prerequisites.is_visible(), deadline,
+                  "Fabric Controller prerequisites modal dismissal")
+    if admin.count() == 1 and admin.is_visible() and not (
+            setup.count() == 1 and setup.is_visible()):
         return False
     setup.click()
     go = page.get_by_text("Go", exact=True)
@@ -441,7 +477,6 @@ def _fabric_controller_service_setup(page, deadline):
     _wait_for(page, lambda: submit.is_disabled(), deadline,
               "Fabric Controller Service Setup submission")
     return True
-
 
 def _set_fabric_controller_data(page, deadline):
     """Use Server Settings UI for the documented LAN DATA selection."""
@@ -524,9 +559,17 @@ def configure_fabric_controller(intent, username, password, timeout=1800):
                 status, body = _external_ip_response(page, "GET")  # Dashboard API remains read-only here.
                 if status != 200 or not isinstance(body, dict):
                     raise NexusDashboardBrowserError("Nexus Dashboard external-IP read validation is unavailable")
-                fabrics = page.evaluate("""async () => { const r = await fetch(
-                    '/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics');
-                    return {status:r.status, body:await r.text()}; }""")
+                fabrics = {}
+                def fabrics_api_ready():
+                    fabrics.update(page.evaluate("""async () => { const r = await fetch(
+                        '/appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics');
+                        return {status:r.status, body:await r.text()}; }"""))
+                    return fabrics.get("status") == 200
+                # The documented gateway can register after the UI has saved
+                # DATA selection. Poll the public endpoint rather than
+                # treating its pre-registration response as a configuration fault.
+                _wait_for(page, fabrics_api_ready, deadline,
+                          "Fabric Controller documented fabrics API registration")
                 if fabrics.get("status") != 200:
                     raise NexusDashboardBrowserError("Fabric Controller documented fabrics API is not ready after DATA selection")
                 try:

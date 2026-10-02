@@ -11,7 +11,8 @@ from eve_lab.initialize_nexus_dashboard import (
     NexusDashboardConsole, load_bootstrap, normalize_intent,
 )
 from eve_lab.nexus_dashboard_browser import (
-    _ensure_external_ips, _external_ips_payloads, _state,
+    _ensure_external_ips, _external_ips_payloads, _fabric_controller_service_setup,
+    _launch_fabric_controller, _state,
 )
 
 
@@ -58,6 +59,54 @@ class NexusDashboardInitTests(unittest.TestCase):
             "Nexus Dashboard Overview Cluster Bringup Cluster settings")),
             "ready-or-post-bringup")
 
+    @patch("eve_lab.nexus_dashboard_browser._wait_for")
+    def test_fabric_launcher_closes_only_the_observed_welcome_interstitial(self, wait_for):
+        page = MagicMock()
+        launcher = MagicMock()
+        welcome = MagicMock()
+        close = MagicMock()
+        selected = MagicMock()
+        launcher_menu = MagicMock()
+        item = MagicMock()
+        page.locator.side_effect = lambda selector: {
+            "nd-launcher": launcher,
+            "#modal-root .meet-nd-modal": welcome,
+        }[selector]
+        launcher.count.return_value = 1
+        launcher.is_visible.return_value = True
+        welcome.count.return_value = 1
+        welcome.is_visible.return_value = True
+        welcome.locator.return_value = close
+        close.count.return_value = 1
+        launcher.locator.side_effect = lambda selector: {
+            ".selected-item": selected,
+            ".dropdown-launcher .item": launcher_menu,
+        }[selector]
+        launcher_menu.filter.return_value = item
+        item.count.return_value = 1
+        item.is_visible.return_value = True
+
+        _launch_fabric_controller(page, deadline=1)
+
+        close.click.assert_called_once_with()
+        selected.click.assert_called_once_with()
+        item.click.assert_called_once_with()
+        self.assertEqual(wait_for.call_count, 3)
+    @patch("eve_lab.nexus_dashboard_browser._wait_for")
+    def test_fabric_service_setup_waits_for_configured_ui_after_blank_shell(self, wait_for):
+        page = MagicMock()
+        setup = MagicMock()
+        admin = MagicMock()
+        page.locator.return_value = setup
+        page.get_by_role.return_value = admin
+        setup.count.return_value = 0
+        admin.count.return_value = 1
+        admin.is_visible.return_value = True
+
+        self.assertFalse(_fabric_controller_service_setup(page, deadline=1))
+
+        wait_for.assert_called_once()
+        setup.click.assert_not_called()
     def test_intent_derives_persistent_addresses_and_preserves_data_selection(self):
         intent = normalize_intent(INTENT)
         self.assertEqual(intent["persistent_service_ips"], [
