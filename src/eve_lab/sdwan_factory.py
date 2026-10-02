@@ -920,7 +920,8 @@ def _validate_edges(context, api):
                         "bfd_up_sessions": bfd_peers}
     _validator_authorized(context, uuids)
     if not all(item["accepted"] for item in result.values()):
-        raise RuntimeError("Three-edge acceptance failed")
+        raise RuntimeError("Three-edge acceptance failed: "
+                           + json.dumps(result, sort_keys=True))
     return result
 
 
