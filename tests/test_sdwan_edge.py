@@ -85,6 +85,7 @@ class EdgeConsoleTests(unittest.TestCase):
             "config-transaction\r", "system\r", "exit\r", "commit\r",
             "end\r"])
         self.assertTrue(console.expect.call_args_list[-1].kwargs["redisplay"])
+        self.assertTrue(console.expect.call_args_list[0].kwargs["redisplay"])
 
     def test_rejection_aborts_without_commit(self):
         console = self.console([
@@ -93,6 +94,16 @@ class EdgeConsoleTests(unittest.TestCase):
             console.configure_stage(EdgeStage("transport", ("bad",)))
         sent = [call.args[0] for call in console.channel.sendall.call_args_list]
         self.assertEqual(sent, ["config-transaction\r", "bad\r", "abort\r"])
+
+    def test_prompt_timeout_names_stage_and_command_without_content(self):
+        console = self.console(["EDGE(config)#"])
+        console.expect.side_effect = [
+            ("EDGE(config)#", re.search(r"[^\n]+#", "EDGE(config)#")),
+            RuntimeError("timeout containing secret-command"),
+        ]
+        with self.assertRaisesRegex(RuntimeError, "transport command 1") as caught:
+            console.configure_stage(EdgeStage("transport", ("secret-command",)))
+        self.assertNotIn("secret-command", str(caught.exception))
 
     def test_scp_validates_host_key_and_uses_secret_channel(self):
         console = self.console([

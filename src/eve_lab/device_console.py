@@ -171,6 +171,8 @@ class Console:
         deadline = started + timeout
         next_wake = started + 10
         next_progress = started + 30
+        redisplays_remaining = 10 if redisplay else 0
+        next_redisplay = started + 2
         while time.monotonic() < deadline:
             clean = _clean_console_output(data)
             matches = list(re.finditer(pattern, clean, re.M))
@@ -179,12 +181,14 @@ class Console:
                 self.pending = clean[match.end():]
                 return clean[:match.end()], match
             now = time.monotonic()
-            if (redisplay and now >= started + 2
+            if (redisplays_remaining and now >= next_redisplay
                     and re.search(r'^[ \t]*[\w.()/:-]+#(?=[ \t]*[^ \t\n])', clean, re.M)):
-                # Async startup/interface messages can overwrite an exec prompt.
-                # Redisplay once without submitting input or repeating the command.
+                # Async startup/interface messages can repeatedly overwrite a
+                # prompt. Redisplay it without submitting input or repeating
+                # the command, with a strict bound for noisy consoles.
                 self.channel.sendall('\x12')
-                redisplay = False
+                redisplays_remaining -= 1
+                next_redisplay = now + 2
             if wake and now >= next_wake:
                 self.send('')
                 next_wake = now + 10

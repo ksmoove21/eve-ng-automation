@@ -102,11 +102,18 @@ class CedgeConsole(Console):
         if not isinstance(stage, EdgeStage):
             raise TypeError("stage must be an EdgeStage")
         self.send("config-transaction")
-        self.expect(_CONFIG_PROMPT, timeout=timeout, latest=True)
+        self.expect(_CONFIG_PROMPT, timeout=timeout, latest=True,
+                    redisplay=True)
         for index, command in enumerate(stage.commands, start=1):
             self.send(command)
-            output, _ = self.expect(
-                _CONFIG_PROMPT, timeout=timeout, latest=True, redisplay=True)
+            try:
+                output, _ = self.expect(
+                    _CONFIG_PROMPT, timeout=timeout, latest=True,
+                    redisplay=True)
+            except RuntimeError as error:
+                raise RuntimeError(
+                    "cEdge " + stage.name + " command " + str(index) +
+                    " did not return a prompt") from error
             if _REJECTED.search(output):
                 self.send("abort")
                 self.expect(_EXEC_PROMPT, timeout=timeout, latest=True)

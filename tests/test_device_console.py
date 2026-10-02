@@ -237,8 +237,10 @@ class ConsoleTests(unittest.TestCase):
                     patch('eve_lab.device_console.time.sleep'):
                 output = c.command('no shutdown')
             self.assertIn(message, output)
-            self.assertEqual([x.args[0] for x in ch.sendall.call_args_list],
-                             ['no shutdown\r', '\x12'])
+            sent = [x.args[0] for x in ch.sendall.call_args_list]
+            self.assertEqual(sent[0], 'no shutdown\r')
+            self.assertGreaterEqual(sent.count('\x12'), 1)
+            self.assertLessEqual(sent.count('\x12'), 10)
 
     def test_redisplay_keeps_command_errors_and_is_bounded(self):
         for response, redraw, error in (
@@ -249,8 +251,10 @@ class ConsoleTests(unittest.TestCase):
                     patch('eve_lab.device_console.time.sleep'), patch('sys.stderr'):
                 with self.assertRaisesRegex(RuntimeError, error):
                     c.command('no shutdown', timeout=8)
-            self.assertEqual([x.args[0] for x in ch.sendall.call_args_list],
-                             ['no shutdown\r', '\x12'])
+            sent = [x.args[0] for x in ch.sendall.call_args_list]
+            self.assertEqual(sent[0], 'no shutdown\r')
+            self.assertGreaterEqual(sent.count('\x12'), 1)
+            self.assertLessEqual(sent.count('\x12'), 10)
 
     def test_command_consumes_buffered_prompt_redraw_before_next_response(self):
         c, ch = self.console([
