@@ -22,6 +22,7 @@ from .dhcp import clear as clear_dhcp, report as report_dhcp, update_dns as upda
 from .deploy import apply, delete, lab_status, lifecycle, plan
 from .live_guard import enforce_live_guard
 from .sdwan_intent import load_and_compile as compile_sdwan
+from .sdwan_factory import preflight as preflight_sdwan_factory, run_factory
 from .sdwan_initialize import (
     ensure_manager_ca_live, initialize_control, inspect_manager_services,
     qualify_manager,
@@ -105,6 +106,18 @@ def main():
     sdwan_ca.add_argument("node")
     sdwan_ca.add_argument("--server", default="default")
     sdwan_ca.add_argument("--timeout", type=int, default=900)
+    sdwan_factory = commands.add_parser(
+        "sdwan-factory",
+        help="Build a Catalyst SD-WAN lab from factory state to acceptance")
+    sdwan_factory.add_argument("lab")
+    sdwan_factory.add_argument("--server", default="default")
+    sdwan_factory.add_argument(
+        "--check", action="store_true",
+        help="Compile and validate the workflow without live access")
+    sdwan_factory.add_argument(
+        "--destroy-first", action="store_true",
+        help="Delete the guarded disposable lab before unattended rebuild")
+    sdwan_factory.add_argument("--timeout", type=int, default=1200)
     for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
         command = commands.add_parser(name)
         command.add_argument("--server", default="default")
@@ -156,6 +169,11 @@ def main():
         if args.command == "sdwan-plan":
             topology = load_topology(args.root, args.lab)
             print(json.dumps(compile_sdwan(args.root, args.lab, topology), indent=2))
+            return
+        if args.command == "sdwan-factory" and args.check:
+            topology = load_topology(args.root, args.lab)
+            print(json.dumps(preflight_sdwan_factory(
+                args.root, args.lab, topology), indent=2))
             return
         server = load_server(args.root, args.server, auth="ssh" if args.command in ("dhcp", "securecrt", "nat") else "web")
         if args.command == "nat":
@@ -245,6 +263,11 @@ def main():
                 elif args.command == "sdwan-manager-ca":
                     result = ensure_manager_ca_live(
                         client, topology, args.root, args.server, args.node,
+                        timeout=args.timeout)
+                elif args.command == "sdwan-factory":
+                    result = run_factory(
+                        client, topology, args.root, args.server,
+                        destroy_first=args.destroy_first,
                         timeout=args.timeout)
                 elif args.command == "init":
                     if args.prepare_console:
