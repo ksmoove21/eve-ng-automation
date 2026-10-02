@@ -31,9 +31,31 @@ class ConfigTests(unittest.TestCase):
                 load_server(root, 'default', 'ssh')
 
 
-class SshTests(unittest.TestCase):
-    server = {'url': 'http://example.test', 'ssh_username': 'root', 'ssh_password': 'secret-test'}
 
+    def test_explicit_private_environment_source_wins_over_workspace_values(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {}, clear=True):
+            root = Path(directory)
+            (root / 'config').mkdir()
+            (root / 'config/servers.yaml').write_text(
+                'servers:\n  default:\n    url_env: EVE_URL\n    ssh_host_env: EVE_SSH_HOST\n'
+                '    username_env: EVE_USERNAME\n    password_env: EVE_PASSWORD\n')
+            (root / '.env').write_text(
+                'EVE_URL=https://wrong.test\nEVE_USERNAME=wrong\nEVE_PASSWORD=wrong\n')
+            source = root / 'private.env'
+            source.write_text(
+                'EVE_URL=https://private.test\nEVE_SSH_HOST=eve.private.test\n'
+                'EVE_USERNAME=selected\nEVE_PASSWORD=selected-password\n')
+            with patch.dict('os.environ', {'EVE_ENV_FILE': str(source)}):
+                server = load_server(root, 'default')
+            self.assertEqual(server['url'], 'https://private.test')
+            self.assertEqual(server['ssh_host'], 'eve.private.test')
+            self.assertEqual(server['username'], 'selected')
+            self.assertEqual(server['password'], 'selected-password')
+
+
+class SshTests(unittest.TestCase):
+
+    server = {'url': 'http://example.test', 'ssh_username': 'root', 'ssh_password': 'secret-test'}
     @patch('eve_lab.dhcp.paramiko.SSHClient')
     def test_password_transport_and_dry_run(self, factory):
         client = factory.return_value

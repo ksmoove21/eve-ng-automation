@@ -114,6 +114,28 @@ A lab may later be generated from a higher-level semantic specification, but
 that semantic layer should compile into the explicit topology rather than
 replace it.
 
+Platform workflow intent may also live beside the explicit topology when it
+describes ordered guest lifecycle, configuration, API, and desired-state
+operations that the low-level EVE topology cannot express. Such a compiler must:
+
+- remain offline and side-effect free;
+- cross-check every referenced node and interface against `topology.yaml`;
+- preserve the explicit topology rather than creating hidden topology intent;
+- emit one-shot and secret-handling metadata before those operations execute;
+- reject runtime tokens, passwords, generated identities, and other secret
+  material from Git-backed intent.
+
+For Catalyst SD-WAN labs, `eve sdwan-plan <lab>` validates
+`labs/<lab>/intent.yaml` and emits this secret-free execution plan. Live
+execution adapters consume the compiled operations; compilation itself does not
+authenticate to EVE or a Manager.
+
+Labs that require an exact live authorization boundary may add
+`labs/<lab>/live-guard.yaml`. The guard binds that lab to one EVE username and
+one exact remote `.unl` path before any lab API or console action. It is
+deliberately per-lab: labs without the file retain existing behavior, and the
+guard schema has no compatibility-alias mechanism.
+
 Topology definitions should describe:
 
 - lab identity and remote folder
@@ -127,6 +149,18 @@ A reusable disposable lab may keep alternate desired states under
 `labs/<lab>/scenarios/<name>.yaml`. `eve apply <lab> --scenario <name>` feeds
 the selected state through the same reconciler and retains the topology `name`,
 so scenarios do not create separate permanent EVE labs.
+
+Direct links are topology semantics, separate from EVE presentation and runtime
+storage. The EVE adapter may materialize an exclusive hidden bridge record when
+the platform requires a `network_id`, but that record is adapter-private: it is
+not a declared network, must have exactly the two declared endpoints, must stay
+hidden on the native EVE canvas, and must not appear as a cloud/network in the
+semantic status view. Explicitly declared networks remain user-visible topology
+objects. This follows the same topology-versus-presentation separation used by
+EVE-IaC; Git intent describes nodes, networks, and links while presentation
+metadata controls how those objects are rendered. Optional regions and labels
+belong in `labs/<lab>/presentation.yaml`; when that file exists, the reconciler
+owns the lab's EVE text objects and prunes undeclared ones.
 
 Do not derive or invent design intent merely because a device can support it.
 

@@ -18,7 +18,11 @@ FIELDS = {
     'mtu-ping': {'destination', 'packet_size', 'df', 'min_success_rate'},
 }
 FIELDS.update(validation_ipsec.FIELDS)
-FIELDS.update({"iosxe-vlan": {"vlan"}, "iosxe-switchport": {"interface", "mode", "vlans"}})
+FIELDS.update({
+    "iosxe-vlan": {"vlan"},
+    "iosxe-switchport": {"interface", "mode", "vlans"},
+    "iosxe-transparent-bridge": {"bridge_domain", "service_instance", "interfaces"},
+})
 BGP_STATES = {'idle', 'connect', 'active', 'opensent', 'openconfirm', 'established'}
 OSPF_STATES = {'down', 'attempt', 'init', '2way', 'exstart', 'exchange', 'loading', 'full'}
 
@@ -38,13 +42,28 @@ def validate_check(check):
             raise ValueError("vlan must be an integer from 1 to 4094")
         return
     if kind == "iosxe-switchport":
-        if not isinstance(check.get("interface"), str) or not re.fullmatch(r"GigabitEthernet1/0/[1-9][0-9]*", check["interface"]):
+        if (not isinstance(check.get("interface"), str)
+                or not re.fullmatch(
+                    r"GigabitEthernet\d+(?:/\d+){1,2}",
+                    check["interface"])):
             raise ValueError("Invalid switchport interface")
         if check.get("mode") not in ("access", "trunk") or not isinstance(check.get("vlans"), list) or not check["vlans"]:
             raise ValueError("Switchport requires mode and vlans")
         if any(type(v) is not int or not 1 <= v <= 4094 for v in check["vlans"]):
             raise ValueError("Invalid switchport VLAN")
         if check["mode"] == "access" and len(check["vlans"]) != 1: raise ValueError("Access port requires one VLAN")
+        return
+    if kind == "iosxe-transparent-bridge":
+        for field in ("bridge_domain", "service_instance"):
+            if type(check.get(field)) is not int or not 1 <= check[field] <= 4094:
+                raise ValueError(field + " must be an integer from 1 to 4094")
+        interfaces = check.get("interfaces")
+        if (not isinstance(interfaces, list) or not interfaces
+                or len(set(interfaces)) != len(interfaces)
+                or any(not isinstance(item, str)
+                       or not re.fullmatch(r"Ethernet\d+(?:/\d+)+", item)
+                       for item in interfaces)):
+            raise ValueError("Transparent bridge interfaces must be unique Ethernet names")
         return
     if 'vrf' in check or kind == 'vrf-ping':
         _token(check.get('vrf'), 'vrf')
@@ -272,7 +291,8 @@ def evaluate(console, check):
     if check["type"] in validation_ipsec.FIELDS:
         return validation_ipsec.evaluate(console, check)
     validate_check(check)
-    if check["type"] in ("iosxe-vlan", "iosxe-switchport"):
+    if check["type"] in (
+            "iosxe-vlan", "iosxe-switchport", "iosxe-transparent-bridge"):
         return _evaluate_l2(console, check)
     command = command_for(check)
     evidence = {'command': command, 'expected': {k: v for k, v in check.items()
@@ -337,6 +357,48 @@ def _evaluate_l2(console, c):
             if not re.search(r"VLAN\s+Name\s+Status", text): raise RuntimeError("Unrecognized VLAN table")
             active = bool(re.search(r"^\s*"+str(c["vlan"])+r"\s+\S+\s+active\b", text, re.M))
             return active, {"vlan": c["vlan"], "active": active}
+        if c["type"] == "iosxe-transparent-bridge":
+            running = _clean(console.command(
+                "show running-config | section ^interface Ethernet"))
+            summary = _clean(console.command("show ethernet service instance summary"))
+            domain = _clean(console.command(
+                "show bridge-domain " + str(c["bridge_domain"])))
+            observed = {}
+            for interface in c["interfaces"]:
+                match = re.search(
+                    r"^interface " + re.escape(interface) +
+                    r"\n(?P<body>(?: .*\n)*)", running, re.M)
+                body = match.group("body") if match else ""
+                observed[interface] = {
+                    "service_instance": bool(re.search(
+                        r"^ service instance " + str(c["service_instance"]) +
+                        r" ethernet\s*$", body, re.M)),
+                    "encapsulation": bool(re.search(
+                        r"^  encapsulation untagged\s*$", body, re.M)),
+                    "bridge_domain": bool(re.search(
+                        r"^  bridge-domain " + str(c["bridge_domain"]) +
+                        r"\s*$", body, re.M)),
+                    "admin_up": not bool(re.search(
+                        r"^ shutdown\s*$", body, re.M)),
+                    "operational_entry": bool(re.search(
+                        r"^\s*Associated interface:\s*" +
+                        re.escape(interface) + r"\s*$",
+                        summary, re.M | re.I)),
+                }
+            domain_present = bool(re.search(
+                r"\b" + str(c["bridge_domain"]) + r"\b", domain))
+            passed = domain_present and all(
+                all(item.values()) for item in observed.values())
+            evidence = {
+                "bridge_domain": c["bridge_domain"],
+                "service_instance": c["service_instance"],
+                "domain_present": domain_present,
+                "interfaces": observed,
+            }
+            if not passed:
+                evidence["reason"] = (
+                    "Observed bridge domain or interface membership does not match")
+            return passed, evidence
         text = _clean(console.command("show interfaces " + c["interface"] + " switchport"))
         admin = re.search(r"Administrative Mode: (.+)", text)
         op = re.search(r"Operational Mode: (.+)", text)

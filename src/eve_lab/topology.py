@@ -6,6 +6,8 @@ import hashlib
 
 import yaml
 
+from .presentation import validate_presentation
+
 
 def interface_key(name: str) -> str:
     key = name.lower().replace(" ", "")
@@ -73,6 +75,7 @@ def validate(topology: dict):
     for field in ("nodes", "networks", "links"):
         if not isinstance(topology.get(field), list):
             raise ValueError(f"Topology {field} must be a list")
+    validate_presentation(topology.get("presentation"))
     topology, _ = expand_links(topology)
     validate_folder(topology.get("remote_folder", "/"))
     allowed = {
@@ -128,5 +131,10 @@ def load_topology(root: Path, lab: str, scenario=None) -> dict:
     topology = yaml.safe_load((root / "labs" / lab / filename).read_text())
     if not isinstance(topology, dict) or topology.get("name") != lab:
         raise ValueError("Topology name must match its lab directory for every scenario")
+    presentation_file = root / "labs" / lab / "presentation.yaml"
+    if presentation_file.exists():
+        if "presentation" in topology:
+            raise ValueError("Keep presentation in presentation.yaml, not topology.yaml")
+        topology = {**topology, "presentation": yaml.safe_load(presentation_file.read_text())}
     validate(topology)
     return topology

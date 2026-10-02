@@ -18,6 +18,27 @@ from .config import load_server
 _PROMPT = r'^[ \t]*[\w.()/:-]+[>#](?=[ \t]*(?:$|[*%]))'
 _PRIVILEGED_PROMPT = r'^[ \t]*[\w.()/:-]+#(?=[ \t]*(?:$|[*%]))'
 _OSC_TITLE = re.compile(r'\x1b\][012];[\x20-\x7e]*(?:\x07|\x1b\\)')
+_VIPTELA_INITIAL_PASSWORD = re.compile(
+    r'(?is)Welcome to (?:Viptela|Cisco).*?'
+    r'(?:must|required to).*?(?:set|change).*?(?:initial )?admin password')
+
+
+def _prompt_label(prompt):
+    """Return a non-secret prompt class suitable for failure diagnostics."""
+    checks = (
+        (r'(?i)(?:Username:|.*login:)$', 'login'),
+        (r'(?i)Password:$', 'password'),
+        (r'(?i)(?:New|Re-enter|Confirm).*password|Enter.*new password',
+         'password-setup'),
+        (r'(?i)Select persona for vManage', 'manager-persona'),
+        (r'(?i)Are you sure', 'confirmation'),
+        (r'(?i)Select storage device to use', 'manager-storage'),
+        (r'(?i)Would you like to format', 'manager-format'),
+        (r'.*>$', 'exec-unprivileged'),
+        (r'.*#$', 'exec-privileged'),
+    )
+    return next((label for pattern, label in checks
+                 if re.match(pattern, prompt)), 'other-interactive')
 
 
 _READ_ONLY_UNSAFE = re.compile(
@@ -137,12 +158,21 @@ class Console:
     def send(self, line):
         self.channel.sendall(line + '\r')
 
+    def send_secret(self, value):
+        """Transmit one sensitive console value without exposing it in diagnostics."""
+        if not isinstance(value, str) or not value or any(
+                char in value for char in ('\r', '\n')):
+            raise ValueError('Console secret must be a nonempty single line')
+        self.channel.sendall(value + '\r')
+
     def expect(self, pattern, timeout=60, wake=False, latest=False, return_on_timeout=False, redisplay=False):
         data, self.pending = self.pending, ''
         started = time.monotonic()
         deadline = started + timeout
         next_wake = started + 10
         next_progress = started + 30
+        redisplays_remaining = 10 if redisplay else 0
+        next_redisplay = started + 2
         while time.monotonic() < deadline:
             clean = _clean_console_output(data)
             matches = list(re.finditer(pattern, clean, re.M))
@@ -151,12 +181,14 @@ class Console:
                 self.pending = clean[match.end():]
                 return clean[:match.end()], match
             now = time.monotonic()
-            if (redisplay and now >= started + 2
+            if (redisplays_remaining and now >= next_redisplay
                     and re.search(r'^[ \t]*[\w.()/:-]+#(?=[ \t]*[^ \t\n])', clean, re.M)):
-                # Async startup/interface messages can overwrite an exec prompt.
-                # Redisplay once without submitting input or repeating the command.
+                # Async startup/interface messages can repeatedly overwrite a
+                # prompt. Redisplay it without submitting input or repeating
+                # the command, with a strict bound for noisy consoles.
                 self.channel.sendall('\x12')
-                redisplay = False
+                redisplays_remaining -= 1
+                next_redisplay = now + 2
             if wake and now >= next_wake:
                 self.send('')
                 next_wake = now + 10
@@ -180,27 +212,46 @@ class Console:
         # Never include console output: it may contain passwords/configuration.
         raise RuntimeError('Timed out waiting for console prompt; inspect the EVE console for boot progress or an interactive setup prompt')
 
-    def login(self, username, password, secret, *, read_only=False):
-        if read_only:
+    def login(self, username, password, secret, *, new_password=None,
+              read_only=False, enforce_secure_password_standard=True,
+              on_password_submit=None, vmanage_first_boot=False):
+        if on_password_submit is not None and not callable(on_password_submit):
+            raise TypeError('on_password_submit must be callable')
+        if read_only or vmanage_first_boot:
             # Redisplay, never submit a pending command or a setup default.
             self.channel.sendall('\x12')
         else:
             self.send('')
         wake = not read_only
         secret_prompts = set()
-        pattern = (r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
+        password_sent = False
+        username_sent = False
+        password_setup_stages = set()
+        correlation_recorded = False
+        persona_selected = False
+        storage_selected = None
+        after_format = False
+        post_format_login = False
+        prompt_trace = []
+        pattern = (r'(?i:(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password)\s*:\s*$|' +
+                   r'(?i:Enter enable secret|Confirm enable secret)\s*:\s*$|'
                    r'Enter your selection\s*\[2\]\s*:\s*$|'
                    r'Username:\s*$|login:\s*$|Password:\s*$|Abort Power On Auto Provisioning[^\n]*[?:]|Do you want to enforce secure password standard[^\n]*[?:]|(?:Enter|Confirm) the password for [^\n]*admin[^\n]*:|Would you like to enter[^\n]*[?:]\s*$|'
+                   r'Select persona for vManage[^\n]*:\s*$|'
+                   r'Are you sure[^\n]*(?:\[[^\]]+\]\s*:?\s*|[?:]\s*)$|'
+                   r'Select storage device to use\s*:\s*$|'
+                   r'Would you like to format[^\n]*(?:\([yn/]+\)\s*:?\s*|[?:]\s*)$|'
                    r'Press RETURN to get started[^\n]*$|' + _PROMPT)
-        probe = read_only
-        for _ in range(12):
+        probe = read_only or vmanage_first_boot
+        for _ in range(20):
             if probe:
                 observed, match = self.expect(
-                    pattern, timeout=min(2, self.boot_timeout), wake=False,
+                    pattern, timeout=min(5, self.boot_timeout), wake=False,
                     latest=True, return_on_timeout=True)
                 probe = False
                 if match is None:
-                    if _READ_ONLY_UNSAFE.search(observed) or not _safe_read_only_nudge(observed):
+                    if (read_only and (_READ_ONLY_UNSAFE.search(observed)
+                                      or not _safe_read_only_nudge(observed))):
                         evidence = _read_only_nudge_diagnostic(observed)
                         raise RuntimeError(
                             'Read-only login refused Return because the console was not safely idle '
@@ -211,6 +262,7 @@ class Console:
                 observed, match = self.expect(
                     pattern, timeout=self.boot_timeout, wake=wake, latest=True)
             prompt = match.group().strip()
+            prompt_trace.append(_prompt_label(prompt))
             if read_only and _READ_ONLY_UNSAFE.search(observed):
                 raise RuntimeError('Read-only login refused interactive or configuration-mode prompt')
             if re.match(r'(Enter|Confirm) enable secret', prompt, re.I):
@@ -224,25 +276,119 @@ class Console:
                 wake = False
                 print('Answering initial enable-secret ' + ('confirmation' if stage == 'confirm' else 'prompt') +
                       ' using CISCO_ENABLE_SECRET.', file=sys.stderr, flush=True)
-                self.send(secret)
+                self.send_secret(secret)
             elif prompt.startswith('Enter your selection'):
                 wake = False
                 self.send('2')  # Save the initial secret to NVRAM and exit setup.
+            elif re.match(r'Select persona for vManage', prompt, re.I):
+                if not vmanage_first_boot or persona_selected:
+                    raise RuntimeError('Unexpected or repeated Manager persona prompt')
+                persona_selected = True
+                wake = False
+                print('Selecting Manager COMPUTE_AND_DATA persona.',
+                      file=sys.stderr, flush=True)
+                self.send('1')
+            elif re.match(r'Are you sure', prompt, re.I):
+                if not vmanage_first_boot or not persona_selected:
+                    raise RuntimeError('Unexpected Manager confirmation prompt')
+                wake = False
+                print('Confirming Manager persona selection.',
+                      file=sys.stderr, flush=True)
+                self.send('y')
+            elif re.match(r'Select storage device to use', prompt, re.I):
+                if not vmanage_first_boot or storage_selected is not None:
+                    raise RuntimeError('Unexpected or repeated Manager storage prompt')
+                choices = re.findall(
+                    r'(?m)^\s*(\d+)\)\s+([A-Za-z0-9._/-]+)\s*$', observed)
+                sizes = {}
+                for device, value, unit in re.findall(
+                        r'(?mi)^\s*([a-z][a-z0-9]*)\s+(\d+(?:\.\d+)?)\s*([tg]b)\s*$',
+                        observed):
+                    sizes[device] = float(value) * (1024 if unit.lower() == 'tb' else 1)
+                eligible = [(number, device, sizes.get(device, 0))
+                            for number, device in choices
+                            if sizes.get(device, 0) >= 100]
+                if not eligible:
+                    raise RuntimeError(
+                        'Manager first boot did not expose an eligible 100GB data disk')
+                number, storage_selected, _ = max(eligible, key=lambda item: item[2])
+                wake = False
+                print('Selecting correlated Manager data disk ' + storage_selected + '.',
+                      file=sys.stderr, flush=True)
+                self.send(number)
+            elif re.match(r'Would you like to format', prompt, re.I):
+                device = re.search(
+                    r'(?i)format\s+([A-Za-z0-9._/-]+)', prompt)
+                if (not vmanage_first_boot or storage_selected is None
+                        or device is None or device.group(1) != storage_selected
+                        or after_format):
+                    raise RuntimeError('Manager storage-format prompt was not correlated')
+                after_format = True
+                password = new_password or password
+                password_sent = False
+                username_sent = False
+                wake = False
+                print('Confirming format of correlated Manager data disk.',
+                      file=sys.stderr, flush=True)
+                self.send('y')
             elif prompt.startswith('Username:') or prompt.lower().startswith('login:'):
+                if after_format:
+                    post_format_login = True
+                if password_sent:
+                    if (new_password is not None
+                            and 'confirm' in password_setup_stages
+                            and 'relogin' not in password_setup_stages):
+                        password = new_password
+                        password_sent = False
+                        username_sent = False
+                        password_setup_stages.add('relogin')
+                    else:
+                        raise RuntimeError(
+                            'Console returned to login after one credential submission')
+                if username_sent:
+                    raise RuntimeError(
+                        'Console repeated login after one username submission')
                 self.send(username)
+                username_sent = True
+                wake = False
+            elif (re.match(r'(?:New|Re-enter|Confirm)[^\n]*password|Enter[^\n]*new password', prompt, re.I)
+                  and not re.match(r'(?:Enter|Confirm) the password for .*admin', prompt, re.I)):
+                stage = 'confirm' if re.match(r'(?:Re-enter|Confirm)', prompt, re.I) else 'new'
+                if stage in password_setup_stages:
+                    raise RuntimeError('Initial password setup was rejected or repeated')
+                if new_password is None:
+                    raise RuntimeError('Console requires post-authentication password initialization')
+                password_setup_stages.add(stage)
+                self.send_secret(new_password)
                 wake = False
             elif re.match(r'(?:Enter|Confirm) the password for .*admin', prompt, re.I):
-                self.send(password)
+                self.send_secret(new_password or password)
                 wake = False
             elif prompt.startswith('Password:'):
-                self.send(password)
-                wake = False
+                username_sent = False
+                if password_sent:
+                    if (_VIPTELA_INITIAL_PASSWORD.search(observed)
+                            and 'new' not in password_setup_stages):
+                        if new_password is None:
+                            raise RuntimeError('Console requires post-authentication password initialization')
+                        password_setup_stages.add('new')
+                        self.send_secret(new_password)
+                        wake = False
+                    else:
+                        raise RuntimeError('Console repeated a password prompt after one password submission')
+                else:
+                    if on_password_submit is not None and not correlation_recorded:
+                        on_password_submit()
+                        correlation_recorded = True
+                    self.send_secret(password)
+                    password_sent = True
+                    wake = False
             elif re.match(r'Abort Power On Auto Provisioning', prompt, re.I):
                 wake = False
                 self.send('yes')
             elif re.match(r'Do you want to enforce secure password standard', prompt, re.I):
                 wake = False
-                self.send('yes')
+                self.send('yes' if enforce_secure_password_standard else 'no')
             elif prompt.startswith('Would you like'):
                 self.send('no')
             elif prompt.startswith('Press RETURN'):
@@ -252,7 +398,7 @@ class Console:
                 self.send('enable')
                 _, enabled = self.expect(r'Password:\s*$|' + _PRIVILEGED_PROMPT)
                 if enabled.group().strip().startswith('Password:'):
-                    self.send(secret)
+                    self.send_secret(secret)
                 else:
                     if read_only and '(config' in enabled.group():
                         raise RuntimeError('Read-only login refused configuration-mode prompt')
@@ -261,9 +407,17 @@ class Console:
             elif '(config' in prompt:
                 self.send('end')
             else:
+                if after_format and not post_format_login:
+                    # Formatting returns a transient CLI prompt before the
+                    # automatic reboot. Only a subsequent login makes the
+                    # prompt authoritative for post-install configuration.
+                    wake = False
+                    continue
                 self.prompt = prompt
                 return
-        raise RuntimeError('Console login failed; check CISCO credentials')
+        raise RuntimeError(
+            'Console login failed after prompt sequence: ' +
+            ','.join(prompt_trace))
 
     def command(self, command, timeout=60):
         self.send(command)

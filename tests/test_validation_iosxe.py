@@ -304,5 +304,94 @@ class PrimitiveTests(unittest.TestCase):
         self.assertEqual(console.command.call_args.args[0], 'show ip route vrf BLUE 192.0.2.0 255.255.255.0')
 
 
+class TransparentBridgeTests(unittest.TestCase):
+    def check(self):
+        return {
+            "name": "transport-fabric",
+            "node": "internet",
+            "type": "iosxe-transparent-bridge",
+            "bridge_domain": 91,
+            "service_instance": 1,
+            "interfaces": [
+                "Ethernet0/0", "Ethernet0/1",
+                "Ethernet0/2", "Ethernet0/3",
+            ],
+        }
+
+    def responses(self):
+        running = "".join(
+            "interface Ethernet0/" + str(number) + "\n"
+            " no ip address\n"
+            " service instance 1 ethernet\n"
+            "  encapsulation untagged\n"
+            "  bridge-domain 91\n"
+            "!\n"
+            for number in range(4)
+        )
+        summary = "\n".join(
+            "Associated interface: Ethernet0/" + str(number)
+            for number in range(4)
+        )
+        return running, summary, "Bridge-domain 91 state: UP\n"
+
+    def test_schema_and_exact_operational_membership_pass(self):
+        check = self.check()
+        self.assertEqual(_checks({"validation": [check]}), [check])
+        console = MagicMock()
+        console.command.side_effect = self.responses()
+        passed, evidence = evaluate(console, check)
+        self.assertTrue(passed, evidence)
+        self.assertTrue(evidence["domain_present"])
+        self.assertEqual(set(evidence["interfaces"]), set(check["interfaces"]))
+
+    def test_missing_member_or_domain_fails(self):
+        console = MagicMock()
+        running, summary, domain = self.responses()
+        console.command.side_effect = [
+            running,
+            summary.replace("Associated interface: Ethernet0/3", ""),
+            domain,
+        ]
+        passed, evidence = evaluate(console, self.check())
+        self.assertFalse(passed)
+        self.assertFalse(
+            evidence["interfaces"]["Ethernet0/3"]["operational_entry"])
+
+    def test_schema_rejects_duplicate_interfaces_and_invalid_domain(self):
+        duplicate = self.check()
+        duplicate["interfaces"][1] = duplicate["interfaces"][0]
+        invalid = self.check()
+        invalid["bridge_domain"] = 0
+        for check in (duplicate, invalid):
+            with self.subTest(check=check), self.assertRaises(ValueError):
+                _checks({"validation": [check]})
+
+
+class SwitchportSchemaTests(unittest.TestCase):
+    def test_accepts_iosv_and_modular_gigabit_names(self):
+        for interface in ("GigabitEthernet0/0", "GigabitEthernet1/0/12"):
+            check = {
+                "name": "access-port",
+                "node": "switch",
+                "type": "iosxe-switchport",
+                "interface": interface,
+                "mode": "access",
+                "vlans": [10],
+            }
+            self.assertEqual(_checks({"validation": [check]}), [check])
+
+    def test_rejects_switchport_command_injection(self):
+        check = {
+            "name": "access-port",
+            "node": "switch",
+            "type": "iosxe-switchport",
+            "interface": "GigabitEthernet0/0\nreload",
+            "mode": "access",
+            "vlans": [10],
+        }
+        with self.assertRaises(ValueError):
+            _checks({"validation": [check]})
+
+
 if __name__ == '__main__':
     unittest.main()

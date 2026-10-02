@@ -50,6 +50,11 @@ The live-tested reference used C8000V `17.16.01a`. All 13 declared acceptance ch
 
 The smaller `iosxe-baseline` lab remains the regression fixture for basic topology creation, IOS XE initialization, interface validation, and bidirectional ping validation.
 
+The [Catalyst SD-WAN factory workflow](docs/platforms/catalyst-sdwan.md) is
+live-tested for Manager, Validator, and Controller 20.15.1 with C8000V
+17.16.01a. It builds a private declarative lab through controller PKI, PAYG
+onboarding, and three-edge fabric acceptance.
+
 These are proven reference combinations, not claims that every EVE-NG/C8000V release behaves identically.
 
 ## NX-OS proven reference
@@ -1381,6 +1386,34 @@ EVE-NG displays a direct cable. To convert an existing connection, use its bridg
 name; matching attachments are reused. A bridge with other attached interfaces
 is rejected rather than hidden. `plan` counts the direct link as one YAML link;
 its generated bridge is not included in the declared network count.
+
+### Canvas presentation
+
+Keep visual annotations separate from topology semantics in
+`labs/<lab>/presentation.yaml`. Version 1 supports declarative `regions` and
+`labels`; applying the lab reconciles these to native EVE text objects. When the
+file exists, undeclared text objects are pruned. Node coordinates and icons stay
+in `topology.yaml`, while adapter-private bridges for direct links remain hidden.
+
+```yaml
+version: 1
+regions:
+  - name: site-1
+    left: 20
+    top: 220
+    width: 520
+    height: 720
+    stroke: "#6d8790"
+    fill: "#dceff5"
+    fill_opacity: 0.55
+labels:
+  - name: site-1-label
+    left: 390
+    top: 235
+    text: "Site 1\\n10.1.0.0/24"
+```
+    font_size: 20
+    background: "#dceff5"
 
 ## Structure
 

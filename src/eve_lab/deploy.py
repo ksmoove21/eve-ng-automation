@@ -5,6 +5,7 @@ import time
 import sys
 
 from .client import EveAPIError
+from .presentation import reconcile_presentation
 from .topology import expand_links, interface_key, validate
 
 STOP_TIMEOUT = 30
@@ -31,6 +32,26 @@ def lab_path(topology):
     folder = topology.get("remote_folder", "/").rstrip("/")
     return "labs" + quote(f"{folder}/{topology['name']}.unl", safe="/")
 
+
+def ensure_folder(client, folder):
+    """Create missing remote folder components and verify each result."""
+    if folder in ("", "/"):
+        return
+    current = ""
+    for component in folder.strip("/").split("/"):
+        parent = current or "/"
+        current += "/" + component
+        endpoint = "folders" + quote(current, safe="/") + "/"
+        try:
+            client.request("GET", endpoint)
+        except EveAPIError as error:
+            if error.code != 404:
+                raise
+            client.request("POST", "folders", {"path": parent, "name": component})
+            try:
+                client.request("GET", endpoint)
+            except EveAPIError as verification:
+                raise RuntimeError(f"EVE did not create remote folder {current}") from verification
 
 def plan(topology: dict, server: dict) -> dict:
     return {
@@ -96,6 +117,8 @@ def check_link(client, path, link, nodes, networks, rewire=False):
 
 def check_direct_bridges(client, path, direct, nodes, networks):
     """Never hide a shared LAN when converting a visible bridge to a cable."""
+    node_ports = {node["name"]: interfaces(client, path, node)
+                  for node in nodes.values()}
     for name, attachments in direct:
         if name not in networks:
             continue
@@ -103,15 +126,34 @@ def check_direct_bridges(client, path, direct, nodes, networks):
         for link in attachments:
             if link["node"] in nodes:
                 node = nodes[link["node"]]
-                ident, _ = resolve(interfaces(client, path, node), link["interface"])
+                ident, _ = resolve(node_ports[node["name"]], link["interface"])
                 expected.add((node["id"], ident))
         actual = set()
         for node in nodes.values():
-            for ident, port in interfaces(client, path, node).items():
+            for ident, port in node_ports[node["name"]].items():
                 if str(port.get("network_id")) == networks[name]["id"]:
                     actual.add((node["id"], ident))
         if actual - expected:
             raise RuntimeError(f"Direct link {name} has other attached interfaces; cannot hide a shared network")
+
+
+def direct_bridge_is_exact(name, attachments, nodes, networks, node_ports):
+    """Return true only when an existing bridge backs exactly one declared cable."""
+    if name not in networks:
+        return False
+    expected = set()
+    for link in attachments:
+        if link["node"] not in nodes:
+            return False
+        node = nodes[link["node"]]
+        ident, _ = resolve(node_ports[node["name"]], link["interface"])
+        expected.add((node["id"], ident))
+    actual = set()
+    for node in nodes.values():
+        for ident, port in node_ports[node["name"]].items():
+            if str(port.get("network_id")) == networks[name]["id"]:
+                actual.add((node["id"], ident))
+    return len(expected) == 2 and actual == expected
 
 
 def prune_objects(client, path, topology, changes):
@@ -175,6 +217,8 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     if not active:
         return topology, direct, []
     ports = {name: interfaces(client, path, nodes[name]) for name in active}
+    node_ports = {name: ports.get(name) or interfaces(client, path, node)
+                  for name, node in nodes.items()}
     by_id = {network['id']: name for name, network in networks.items()}
     live_networks = {by_id[str(port['network_id'])] for name in active for port in ports[name].values()
                      if str(port.get('network_id', 0)) in by_id}
@@ -200,12 +244,17 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     result['links'] += [{'node': name, 'interface': port['name'], 'network': by_id[str(port['network_id'])]}
                         for name in sorted(active) for port in ports[name].values()
                         if str(port.get('network_id')) in by_id]
-    # Stopped endpoints may be connected immediately, but don't hide a bridge
-    # as a completed direct cable while its running endpoint is deferred.
+    # Stopped endpoints may be connected immediately. An existing exact bridge
+    # may also be hidden while its endpoints run because visibility does not
+    # alter connectivity. Any incomplete/shared/mismatched bridge stays deferred.
     ready_direct = []
     for name, links in direct:
         if name in live_networks or any(link['node'] in active for link in links):
-            deferred.append({'kind': 'direct-link', 'name': name, 'reason': 'Direct-link visibility/exclusivity check deferred until its running endpoints stop'})
+            if direct_bridge_is_exact(
+                    name, links, nodes, networks, node_ports):
+                ready_direct.append((name, links))
+            else:
+                deferred.append({'kind': 'direct-link', 'name': name, 'reason': 'Direct-link attachment repair deferred until its running endpoints stop'})
         else:
             ready_direct.append((name, links))
     return result, ready_direct, deferred
@@ -216,7 +265,13 @@ def apply(client, topology, prune=True):
     topology, direct = expand_links(topology)
     path = lab_path(topology)
     folder = topology.get("remote_folder", "/").rstrip("/")
-    client.request("GET", "folders" + quote(folder, safe="/") + "/")
+    folder_missing = False
+    try:
+        client.request("GET", "folders" + quote(folder, safe="/") + "/")
+    except EveAPIError as error:
+        if error.code != 404:
+            raise
+        folder_missing = True
     try:
         client.request("GET", path)
         exists = True
@@ -317,10 +372,14 @@ def apply(client, topology, prune=True):
                 if active_now != active_snapshot:
                     raise RuntimeError('Node running state changed during apply; rerun to recompute safe changes')
             return underlying.request(method, endpoint, payload)
+    presentation_report = {"declared": 0, "matched": 0}
     client = GuardedClient()
     changes = []
     try:
         if not exists:
+            if folder_missing:
+                ensure_folder(client, folder)
+                changes.append(f"created folder: {folder}")
             client.request("POST", "labs", {
                 "path": folder or "/", "name": topology["name"], "version": "1",
                 "author": "eve", "description": topology.get("description", ""), "body": "",
@@ -401,12 +460,25 @@ def apply(client, topology, prune=True):
                 updated = named(client, path + "/networks")
                 if name not in updated or str(updated[name].get("visibility")) != "0":
                     raise RuntimeError(f"Server did not hide direct-link bridge {name}")
+        # Direct links are topology semantics. EVE requires an exclusive bridge
+        # record as runtime backing, but every such record must remain hidden so
+        # the native canvas presents one device-to-device cable.
+        final_networks = named(client, path + "/networks")
+        visible_backing = [name for name, _ in direct
+                           if name not in final_networks
+                           or str(final_networks[name].get("visibility", 1)) != "0"]
+        if visible_backing:
+            raise RuntimeError(f"Direct-link backing networks are not hidden: {visible_backing}")
+        presentation_report = reconcile_presentation(client, path, topology.get("presentation"), changes)
     except (RuntimeError, ValueError) as error:
         raise RuntimeError(
             f"Apply did not complete: {error}. Completed: {changes}. "
             "No rollback performed; inspect the lab and rerun after resolving the error."
         ) from error
     return {"lab": topology["name"], "path": path, "changes": changes, "deferred": deferred,
+            "presentation": {"direct_links": len(direct),
+                             "backing_networks_hidden": len(direct),
+                             "objects": presentation_report},
             "message": "Applied safe changes; deferred objects left unchanged" if deferred else ("Applied; no nodes started" if changes else "Already matches; no changes")}
 
 
@@ -543,8 +615,29 @@ def stop_all(client, topology, node_name=None):
 
 def lab_status(client, topology):
     path = lab_path(topology)
-    return {"lab": topology["name"], "nodes": client.request("GET", path + "/nodes"),
-            "networks": client.request("GET", path + "/networks")}
+    nodes = client.request("GET", path + "/nodes")
+    runtime_networks = indexed(client.request("GET", path + "/networks"))
+    _, direct = expand_links(topology)
+    backing_names = {name for name, _ in direct}
+    presentation_networks = {
+        ident: network for ident, network in runtime_networks.items()
+        if network.get("name") not in backing_names
+    }
+    direct_links = [
+        {"name": name,
+         "from": {"node": attachments[0]["node"], "interface": attachments[0]["interface"]},
+         "to": {"node": attachments[1]["node"], "interface": attachments[1]["interface"]}}
+        for name, attachments in direct
+    ]
+    backing = [network for network in runtime_networks.values()
+               if network.get("name") in backing_names]
+    return {"lab": topology["name"], "nodes": nodes,
+            "networks": presentation_networks, "links": direct_links,
+            "runtime_backing": {
+                "direct_link_networks": len(backing),
+                "all_hidden": len(backing) == len(direct) and all(
+                    str(network.get("visibility", 1)) == "0" for network in backing),
+            }}
 
 
 def delete(client, topology):

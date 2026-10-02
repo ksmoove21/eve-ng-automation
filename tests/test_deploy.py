@@ -7,7 +7,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 
 from eve_lab.client import EveAPIError, EveClient
-from eve_lab.deploy import apply, delete, lab_path, lifecycle
+from eve_lab.deploy import apply, delete, ensure_folder, lab_path, lab_status, lifecycle
 from eve_lab.topology import expand_links, interface_key, load_lab_target, load_topology, validate
 
 
@@ -256,6 +256,21 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(apply(self.client, topology, prune=True)["changes"], [])
         self.assertEqual(self.client.networks["1"]["visibility"], 0)
 
+    def test_running_exact_direct_link_can_be_hidden(self):
+        topology = self.direct_topology()
+        apply(self.client, topology)
+        self.client.networks["1"]["visibility"] = 1
+        self.client.nodes["1"]["status"] = 2
+        self.client.nodes["2"]["status"] = 2
+        self.client.writes.clear()
+        result = apply(self.client, topology, prune=True)
+        self.assertEqual(self.client.networks["1"]["visibility"], 0)
+        self.assertEqual(
+            self.client.writes,
+            [("PUT", "labs/palo-lab.unl/networks/1", {"visibility": 0})])
+        self.assertFalse(any(item["kind"] == "direct-link"
+                             for item in result["deferred"]))
+
     def test_prune_running_node_is_preserved(self):
         apply(self.client, self.topology)
         self.client.nodes["1"]["status"] = 2
@@ -388,6 +403,16 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(self.client.ports["1"]["7"]["network_id"], 1)
         self.assertEqual(self.client.ports["2"]["7"]["network_id"], 1)
         self.assertEqual(apply(self.client, topology)["changes"], [])
+
+    def test_status_presents_direct_links_without_backing_clouds(self):
+        topology = self.direct_topology()
+        topology["networks"] = [{"name": "mgmt", "type": "pnet1"}]
+        apply(self.client, topology)
+        result = lab_status(self.client, topology)
+        self.assertEqual([item["name"] for item in result["networks"].values()], ["mgmt"])
+        self.assertEqual(result["links"], topology["links"])
+        self.assertEqual(result["runtime_backing"],
+                         {"direct_link_networks": 1, "all_hidden": True})
 
     def test_direct_link_reuses_visible_bridge_without_rewiring(self):
         topology = self.direct_topology()
@@ -988,3 +1013,34 @@ class DeploymentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FolderReconcilerTests(unittest.TestCase):
+    def test_missing_nested_folder_is_created_and_read_back(self):
+        class Client:
+            def __init__(self):
+                self.folders = {"/"}
+                self.posts = []
+
+            def request(self, method, path, payload=None):
+                if method == "GET" and path.startswith("folders"):
+                    folder = "/" + path.removeprefix("folders").strip("/")
+                    if folder not in self.folders:
+                        raise EveAPIError("missing", 404)
+                    return {}
+                if method == "POST" and path == "folders":
+                    self.posts.append(payload)
+                    parent = payload["path"].rstrip("/")
+                    self.folders.add((parent + "/" + payload["name"]).replace("//", "/"))
+                    return None
+                raise AssertionError((method, path, payload))
+
+        client = Client()
+        ensure_folder(client, "/sdwan/r1")
+        self.assertEqual(client.posts, [
+            {"path": "/", "name": "sdwan"},
+            {"path": "/sdwan", "name": "r1"},
+        ])
+        self.assertIn("/sdwan/r1", client.folders)
+
+

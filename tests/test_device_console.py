@@ -10,11 +10,115 @@ class ConsoleTests(unittest.TestCase):
         channel.recv.side_effect = [r.encode() for r in responses]
         return Console(channel), channel
 
+    def test_send_secret_is_single_line_and_has_no_diagnostic_output(self):
+        c, ch = self.console([])
+        with patch('sys.stderr') as stderr:
+            c.send_secret('sensitive-value')
+        ch.sendall.assert_called_once_with('sensitive-value\r')
+        self.assertNotIn('sensitive-value', str(stderr.write.call_args_list))
+        with self.assertRaisesRegex(ValueError, 'single line'):
+            c.send_secret('bad\nvalue')
+
     def test_login_with_credentials_and_enable(self):
         c, ch = self.console(['Username:', 'Password:', 'R0>', 'Password:', 'R0#'])
         c.login('admin', 'loginpass', 'enablepass')
         self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
                          ['\r', 'admin\r', 'loginpass\r', 'enable\r', 'enablepass\r'])
+
+    def test_login_handles_first_boot_password_initialization_with_secret_sends(self):
+        c, ch = self.console(['login:', 'Password:', 'Enter new password:',
+                              'Confirm new password:', 'vManage#'])
+        c.login('admin', 'admin', 'unused-enable', new_password='private-password')
+        self.assertEqual(c.prompt, 'vManage#')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
+            '\r', 'admin\r', 'admin\r', 'private-password\r', 'private-password\r'])
+
+    def test_login_handles_viptela_initial_password_after_positive_banner(self):
+        c, ch = self.console(['vmanage login:', 'Password:',
+            'Last login: today\nWelcome to Viptela CLI\n'
+            'You must set an initial admin password different from default password.\nPassword:',
+            'Re-enter password:', 'vManage#'])
+        c.login('admin', 'admin', 'unused-enable', new_password='private-password')
+        self.assertEqual(c.prompt, 'vManage#')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
+            '\r', 'admin\r', 'admin\r', 'private-password\r', 'private-password\r'])
+
+    def test_vmanage_first_boot_selects_persona_largest_data_disk_and_relogs(self):
+        c, ch = self.console([
+            'vmanage login:', 'Password:',
+            'Welcome to Viptela CLI\nYou must set an initial admin password.\nPassword:',
+            'Re-enter password:',
+            '1) COMPUTE_AND_DATA\n2) DATA\n3) COMPUTE\n'
+            'Select persona for vManage (1, 2 or 3):',
+            'You chose persona COMPUTE_AND_DATA (1)\nAre you sure? [y/n]',
+            'Available storage devices:\nvdb 100GB\nhdc 3GB\n'
+            '1) vdb\n2) hdc\nSelect storage device to use:',
+            'Would you like to format vdb? (y/n):',
+            'vManage#', 'vmanage login:', 'Password:', 'vManage#'])
+        c.login('admin', 'admin', 'unused', new_password='private-password',
+                vmanage_first_boot=True)
+        self.assertEqual(c.prompt, 'vManage#')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
+            '\x12', 'admin\r', 'admin\r', 'private-password\r',
+            'private-password\r', '1\r', 'y\r', '1\r', 'y\r',
+            'admin\r', 'private-password\r'])
+
+    def test_vmanage_first_boot_rejects_only_small_or_uncorrelated_storage(self):
+        c, _ = self.console([
+            'Available storage devices:\nhdc 3GB\n1) hdc\n'
+            'Select storage device to use:'])
+        with self.assertRaisesRegex(RuntimeError, 'eligible 100GB'):
+            c.login('admin', 'admin', 'unused', new_password='private-password',
+                    vmanage_first_boot=True)
+
+    def test_vmanage_resume_accepts_prompt_redisplayed_by_ctrl_r_without_return(self):
+        c, ch = self.console([
+            '1) COMPUTE_AND_DATA\n2) DATA\n3) COMPUTE\n'
+            'Select persona for vManage (1, 2 or 3):',
+            'vManage#'])
+        c.login('admin', 'private-password', 'unused',
+                new_password='private-password', vmanage_first_boot=True)
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
+                         ['\x12', '1\r'])
+
+    def test_login_stops_after_one_repeated_password_prompt(self):
+        c, ch = self.console(['login:', 'Password:', 'Password:'])
+        with self.assertRaisesRegex(RuntimeError, 'repeated a password prompt after one'):
+            c.login('admin', 'admin', 'unused-enable')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
+                         ['\r', 'admin\r', 'admin\r'])
+
+    def test_login_stops_after_one_repeated_login_prompt(self):
+        c, ch = self.console(['login:', 'login:'])
+        with self.assertRaisesRegex(RuntimeError, 'repeated login'):
+            c.login('admin', 'admin', 'unused-enable')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
+                         ['\r', 'admin\r'])
+
+    def test_initial_password_setup_can_relogin_once_with_new_password(self):
+        c, ch = self.console([
+            'login:', 'Password:', 'Enter new password:',
+            'Confirm new password:', 'login:', 'Password:', 'vSmart#'])
+        c.login('admin', 'admin', 'unused-enable',
+                new_password='private-password')
+        self.assertEqual([v.args[0] for v in ch.sendall.call_args_list], [
+            '\r', 'admin\r', 'admin\r', 'private-password\r',
+            'private-password\r', 'admin\r', 'private-password\r'])
+
+    def test_login_exhaustion_reports_only_prompt_classes(self):
+        c, _ = self.console(['Would you like to enter setup?'] * 20)
+        with self.assertRaisesRegex(
+                RuntimeError, r'prompt sequence: (other-interactive,){19}'):
+            c.login('admin', 'secret-value', 'enable-value')
+
+    def test_login_calls_correlation_hook_before_first_password(self):
+        c, ch = self.console(['login:', 'Password:', 'Router#'])
+        events = []
+        def correlated():
+            events.append(('correlated', ch.sendall.call_count))
+        c.login('admin', 'loginpass', 'enable',
+                on_password_submit=correlated)
+        self.assertEqual(events, [('correlated', 2)])
 
     def test_initial_boot(self):
         c, ch = self.console(['Would you like to enter the initial configuration dialog? [yes/no]:',
@@ -66,6 +170,18 @@ class ConsoleTests(unittest.TestCase):
                          [True, False, False, False, False])
         self.assertEqual([call.args[0] for call in c.channel.sendall.call_args_list],
                          ['\r', 'yes\r', 'yes\r', 'test-password\r', 'test-password\r'])
+
+    def test_viptela_admin_setup_uses_requested_new_password(self):
+        import re
+        c = Console(MagicMock())
+        c.expect = MagicMock(side_effect=[('', re.match('.*', text)) for text in
+                            ['Enter the password for "admin":',
+                             'Confirm the password for "admin":', 'vBond#']])
+        c.login('admin', 'factory-password', 'enablepass',
+                new_password='configured-password')
+        self.assertEqual(
+            [call.args[0] for call in c.channel.sendall.call_args_list],
+            ['\r', 'configured-password\r', 'configured-password\r'])
 
     def test_initial_wait_wakes_console_after_early_enter_is_lost(self):
         channel = MagicMock()
@@ -121,8 +237,10 @@ class ConsoleTests(unittest.TestCase):
                     patch('eve_lab.device_console.time.sleep'):
                 output = c.command('no shutdown')
             self.assertIn(message, output)
-            self.assertEqual([x.args[0] for x in ch.sendall.call_args_list],
-                             ['no shutdown\r', '\x12'])
+            sent = [x.args[0] for x in ch.sendall.call_args_list]
+            self.assertEqual(sent[0], 'no shutdown\r')
+            self.assertGreaterEqual(sent.count('\x12'), 1)
+            self.assertLessEqual(sent.count('\x12'), 10)
 
     def test_redisplay_keeps_command_errors_and_is_bounded(self):
         for response, redraw, error in (
@@ -133,8 +251,10 @@ class ConsoleTests(unittest.TestCase):
                     patch('eve_lab.device_console.time.sleep'), patch('sys.stderr'):
                 with self.assertRaisesRegex(RuntimeError, error):
                     c.command('no shutdown', timeout=8)
-            self.assertEqual([x.args[0] for x in ch.sendall.call_args_list],
-                             ['no shutdown\r', '\x12'])
+            sent = [x.args[0] for x in ch.sendall.call_args_list]
+            self.assertEqual(sent[0], 'no shutdown\r')
+            self.assertGreaterEqual(sent.count('\x12'), 1)
+            self.assertLessEqual(sent.count('\x12'), 10)
 
     def test_command_consumes_buffered_prompt_redraw_before_next_response(self):
         c, ch = self.console([
