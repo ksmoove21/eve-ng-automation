@@ -341,7 +341,7 @@ class Console:
                 self.send_secret(new_password)
                 wake = False
             elif re.match(r'(?:Enter|Confirm) the password for .*admin', prompt, re.I):
-                self.send_secret(password)
+                self.send_secret(new_password or password)
                 wake = False
             elif prompt.startswith('Password:'):
                 if password_sent:

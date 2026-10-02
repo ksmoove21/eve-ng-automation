@@ -154,6 +154,18 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in c.channel.sendall.call_args_list],
                          ['\r', 'yes\r', 'yes\r', 'test-password\r', 'test-password\r'])
 
+    def test_viptela_admin_setup_uses_requested_new_password(self):
+        import re
+        c = Console(MagicMock())
+        c.expect = MagicMock(side_effect=[('', re.match('.*', text)) for text in
+                            ['Enter the password for "admin":',
+                             'Confirm the password for "admin":', 'vBond#']])
+        c.login('admin', 'factory-password', 'enablepass',
+                new_password='configured-password')
+        self.assertEqual(
+            [call.args[0] for call in c.channel.sendall.call_args_list],
+            ['\r', 'configured-password\r', 'configured-password\r'])
+
     def test_initial_wait_wakes_console_after_early_enter_is_lost(self):
         channel = MagicMock()
         channel.closed = False
