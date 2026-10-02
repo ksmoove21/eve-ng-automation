@@ -93,6 +93,19 @@ class DesiredStateTests(unittest.TestCase):
             "system\n organization-name nwl-lab-sdwan\n")
         self.assertEqual(verify_stage(console, stage)["missing"], 0)
 
+    def test_identity_combines_normal_and_explicit_default_views(self):
+        stage = ControlStage("identity", (
+            "system", "vbond 10.1.0.2", "clock timezone UTC", "exit"))
+        console = MagicMock()
+        console.command.side_effect = [
+            "system\n vbond 10.1.0.2\n",
+            "system\n clock timezone UTC\n"]
+        self.assertEqual(verify_stage(console, stage)["missing"], 0)
+        self.assertEqual(
+            [call.args[0] for call in console.command.call_args_list],
+            ["show running-config system | nomore",
+             "show running-config system | details | nomore"])
+
     def test_matching_stage_is_not_reapplied(self):
         stage = ControlStage("identity", (
             "system", "host-name vManage1", "exit"))
@@ -108,7 +121,7 @@ class DesiredStateTests(unittest.TestCase):
             "system", "host-name vManage1", "exit"))
         console = MagicMock()
         console.command.side_effect = [
-            "system\n", "system\n host-name vManage1\n"]
+            "system\n", "system\n", "system\n host-name vManage1\n"]
         on_apply = MagicMock()
         result, changed = ensure_stage(
             console, stage, timeout=123, on_apply=on_apply)
@@ -116,7 +129,7 @@ class DesiredStateTests(unittest.TestCase):
         self.assertEqual(result["missing"], 0)
         self.assertEqual(
             [call.kwargs["timeout"] for call in console.command.call_args_list],
-            [123, 123])
+            [123, 123, 123])
         on_apply.assert_called_once_with()
         console.configure_stage.assert_called_once_with(stage, timeout=123)
 
@@ -128,7 +141,7 @@ class DesiredStateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "console timed out"):
             ensure_stage(console, stage, timeout=234)
         console.command.assert_called_once_with(
-            "show running-config system | details | nomore", timeout=234)
+            "show running-config system | nomore", timeout=234)
         console.configure_stage.assert_not_called()
 
 
