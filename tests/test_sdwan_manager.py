@@ -4,11 +4,16 @@ from unittest.mock import MagicMock
 
 from eve_lab.sdwan_manager import (
     certificate_is_installed, control_component_record,
-    ensure_fabric_settings,
+    control_component_record_by_uuid, ensure_fabric_settings,
+    wait_for_control_component_csr,
 )
 
 
 ROOT = "-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n"
+CSR_1 = ("-----BEGIN CERTIFICATE REQUEST-----\n"
+         "QUJD\n-----END CERTIFICATE REQUEST-----\n")
+CSR_2 = ("-----BEGIN CERTIFICATE REQUEST-----\n"
+         "REVG\n-----END CERTIFICATE REQUEST-----\n")
 
 
 class ManagerFabricTests(unittest.TestCase):
@@ -68,6 +73,53 @@ class ManagerFabricTests(unittest.TestCase):
         api.inventory.return_value = (expected,)
         self.assertIs(control_component_record(
             api, device_ip="10.1.0.2", personality="vbond"), expected)
+
+    def test_control_record_can_follow_stable_uuid_after_ip_transition(self):
+        api = MagicMock()
+        expected = {
+            "uuid": "fb318e2b-de3d-4987-8307-954bbc9807ec",
+            "deviceIP": "172.16.1.103", "deviceType": "vsmart",
+        }
+        api.inventory.return_value = (expected,)
+        self.assertIs(control_component_record_by_uuid(
+            api, record_uuid=expected["uuid"], personality="vsmart"), expected)
+
+    def test_csr_wait_requires_completed_lifecycle_and_stable_final_hash(self):
+        api = MagicMock()
+        base = {
+            "uuid": "fb318e2b-de3d-4987-8307-954bbc9807ec",
+            "deviceType": "vsmart",
+        }
+        api.inventory.side_effect = [
+            ({**base, "lifeCycleRequired": True, "deviceCSR": CSR_1},),
+            ({**base, "lifeCycleRequired": False, "deviceCSR": CSR_2},),
+            ({**base, "lifeCycleRequired": False, "CSRDetail": CSR_2},),
+        ]
+        result = wait_for_control_component_csr(
+            api, record_uuid=base["uuid"], personality="vsmart",
+            timeout=30, poll_seconds=1, _sleep=lambda _: None,
+            _clock=lambda: 0)
+        self.assertEqual(result.csr, CSR_2)
+        self.assertEqual(len(result.sha256), 64)
+        self.assertEqual(api.inventory.call_count, 3)
+
+    def test_csr_wait_restarts_stability_when_csr_changes(self):
+        api = MagicMock()
+        base = {
+            "uuid": "fb318e2b-de3d-4987-8307-954bbc9807ec",
+            "deviceType": "vsmart", "lifeCycleRequired": False,
+        }
+        api.inventory.side_effect = [
+            ({**base, "deviceCSR": CSR_1},),
+            ({**base, "deviceCSR": CSR_2},),
+            ({**base, "deviceCSR": CSR_2},),
+        ]
+        result = wait_for_control_component_csr(
+            api, record_uuid=base["uuid"], personality="vsmart",
+            timeout=30, poll_seconds=1, _sleep=lambda _: None,
+            _clock=lambda: 0)
+        self.assertEqual(result.csr, CSR_2)
+        self.assertEqual(api.inventory.call_count, 3)
 
     def test_certificate_acceptance_requires_status_and_real_serial(self):
         self.assertTrue(certificate_is_installed({

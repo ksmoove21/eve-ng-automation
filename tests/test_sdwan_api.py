@@ -101,6 +101,24 @@ class ManagerApiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             api.activity_status("bad/id")
 
+    def test_activity_done_with_cancelled_device_is_not_successful(self):
+        api = FixtureApi([(200, json.dumps({
+            "summary": {"status": "done"},
+            "data": [{"status": "Cancelled"}],
+        }).encode(), {})])
+        activity = api.activity_status("task-1")
+        self.assertTrue(activity.completed)
+        self.assertFalse(activity.successful)
+
+    def test_activity_done_with_successful_device_is_successful(self):
+        api = FixtureApi([(200, json.dumps({
+            "summary": {"status": "done"},
+            "data": [{"status": "Success"}],
+        }).encode(), {})])
+        activity = api.activity_status("task-1")
+        self.assertTrue(activity.completed)
+        self.assertTrue(activity.successful)
+
 
 if __name__ == "__main__":
     unittest.main()

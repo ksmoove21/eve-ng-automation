@@ -25,6 +25,7 @@ class ActivityStatus:
     activity_id: str
     status: str
     completed: bool
+    successful: bool
 
 
 class _NamedTLSConnection(HTTPSConnection):
@@ -285,7 +286,18 @@ class ManagerApi:
         state = summary.get("status") if isinstance(summary, dict) else None
         if not isinstance(state, str) or not state:
             raise ManagerApiError("Activity status returned an unexpected body")
-        return ActivityStatus(
-            activity_id, state,
-            state.strip().lower() in {
-                "success", "completed", "done", "failure", "failed", "error"})
+        normalized = state.strip().lower()
+        terminal = normalized in {
+            "success", "completed", "done", "failure", "failed", "error",
+            "cancelled", "canceled"}
+        details = self._decode(payload, "Activity status").get("data")
+        detail_states = [str(item.get("status", "")).strip().lower()
+                         for item in details or [] if isinstance(item, dict)
+                         and str(item.get("status", "")).strip()]
+        failures = {"failure", "failed", "error", "cancelled", "canceled"}
+        successes = {"success", "completed", "done"}
+        successful = terminal and not any(
+            item in failures for item in detail_states) and (
+                all(item in successes for item in detail_states)
+                if detail_states else normalized in successes)
+        return ActivityStatus(activity_id, state, terminal, successful)
