@@ -185,8 +185,15 @@ class FactoryContext:
             self.control_plan(name)["desired"]["vpn512_address"]).ip)
 
 
+def _reauth(context):
+    """Renew the native-console EVE session at long-running phase boundaries."""
+    server = load_server(context.root, context.server_name)
+    context.client.login(server["username"], server["password"], html5=False)
+
+
 @contextmanager
 def _eve_console(context, name, console_type=Console, boot_timeout=300):
+    _reauth(context)
     node = context.refresh_nodes().get(name)
     if node is None or str(node.get("status")) != "2":
         raise RuntimeError(name + " must be running")
@@ -491,6 +498,7 @@ def _manager_root(context):
 
 def _ensure_underlay(context, timeout):
     for name in _UNDERLAY:
+        _reauth(context)
         lifecycle(context.client, context.topology, "start", node_name=name)
         result = initialize(context.client, context.topology, context.root,
                             context.server_name, name, False, timeout, None)
@@ -547,12 +555,15 @@ def _validate_control_plane(context, api):
 
 def _ensure_control_plane(context, timeout):
     for name in _CONTROL:
+        _reauth(context)
         lifecycle(context.client, context.topology, "start", node_name=name)
         _initialize_control_until_ready(context, name, timeout)
+    _reauth(context)
     qualify_manager(context.client, context.topology, context.root,
                     context.server_name, "MANAGER1",
                     timeout=max(timeout, 3600), minimum_uptime=900,
                     poll_seconds=15, restart_disabled=True)
+    _reauth(context)
     ensure_manager_ca_live(context.client, context.topology, context.root,
                            context.server_name, "MANAGER1", timeout=timeout)
     root = _manager_root(context)
@@ -917,6 +928,7 @@ def run_factory(client, topology, root, server_name="default", *,
     api = _ensure_control_plane(context, timeout)
     for name in _EDGES:
         edge, _ = _ensure_payg(context, api, name)
+        _reauth(context)
         lifecycle(client, declared, "start", node_name=name)
         _transition_edge(context, name, edge, timeout)
         _configure_edge(context, name, edge, timeout)
