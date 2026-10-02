@@ -205,6 +205,22 @@ def _edge_commands(edge, organization, vbond):
     return identity, transport
 
 
+def _bridge_commands(fabric):
+    commands = ["hostname " + fabric["name"]]
+    for interface in fabric["member_interfaces"]:
+        commands += [
+            "interface " + interface,
+            "no ip address",
+            "no shutdown",
+            "service instance 1 ethernet",
+            "encapsulation untagged",
+            "bridge-domain " + str(fabric["bridge_domain"]),
+            "exit",
+            "exit",
+        ]
+    return commands
+
+
 def compile_intent(intent, topology):
     """Return a deterministic secret-free execution plan."""
     _mapping(intent, "intent", _TOP_LEVEL)
@@ -261,9 +277,11 @@ def compile_intent(intent, topology):
     fabrics = _sequence(intent.get("transport_fabrics"), "transport_fabrics")
     fabric_by_color = {}
     fabric_by_name = {}
+    bridge_domains = set()
     for fabric in fabrics:
         _mapping(fabric, "transport fabric",
-                 {"name", "color", "subnet", "mode", "gateway", "member_interfaces"})
+                 {"name", "color", "subnet", "mode", "bridge_domain",
+                  "gateway", "member_interfaces"})
         name = _token(fabric.get("name"), "fabric.name")
         color = _token(fabric.get("color"), "fabric.color")
         if name in fabric_by_name or color in fabric_by_color:
@@ -275,6 +293,12 @@ def compile_intent(intent, topology):
             raise ValueError(name + " must preserve its declared /24")
         if fabric.get("mode") != "transparent_bridge":
             raise ValueError(name + " must use transparent_bridge mode")
+        bridge_domain = fabric.get("bridge_domain")
+        if type(bridge_domain) is not int or not 1 <= bridge_domain <= 4094:
+            raise ValueError(name + " bridge_domain must be an integer from 1 to 4094")
+        if bridge_domain in bridge_domains:
+            raise ValueError("Transport bridge_domain values must be unique")
+        bridge_domains.add(bridge_domain)
         gateway = _mapping(fabric.get("gateway"), name + ".gateway",
                            {"node", "interface", "address"})
         if gateway.get("node") != aggregate_name:
@@ -448,12 +472,18 @@ def compile_intent(intent, topology):
     for fabric in fabric_by_name.values():
         node_operations[fabric["name"]] = {
             "adapter": "ios-transparent-bridge",
-            "commands": [],
+            "commands": _bridge_commands(fabric),
             "capability_gate": {
-                "classification": "FIELD_TEST_REQUIRED",
+                "classification": "FIELD_PROVEN",
                 "image": nodes[fabric["name"]]["image"],
                 "member_interfaces": fabric["member_interfaces"],
                 "desired_state": "one unnumbered transparent broadcast domain",
+            },
+            "validation": {
+                "type": "iosxe-transparent-bridge",
+                "bridge_domain": fabric["bridge_domain"],
+                "service_instance": 1,
+                "interfaces": fabric["member_interfaces"],
             },
         }
     node_operations.update(switch_plans)

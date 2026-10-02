@@ -91,12 +91,12 @@ def intent():
         },
         "transport_fabrics": [
             {"name": "WAN-A", "color": "biz-internet", "subnet": "198.51.100.0/24",
-             "mode": "transparent_bridge",
+             "mode": "transparent_bridge", "bridge_domain": 101,
              "gateway": {"node": "AGG", "interface": "GigabitEthernet1/0",
                          "address": "198.51.100.100/24"},
              "member_interfaces": ["Ethernet0/0", "Ethernet0/1"]},
             {"name": "WAN-B", "color": "public-internet", "subnet": "203.0.113.0/24",
-             "mode": "transparent_bridge",
+             "mode": "transparent_bridge", "bridge_domain": 102,
              "gateway": {"node": "AGG", "interface": "GigabitEthernet1/1",
                          "address": "203.0.113.100/24"},
              "member_interfaces": ["Ethernet0/0", "Ethernet0/1"]},
@@ -158,10 +158,14 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("ip route 192.0.2.0 255.255.255.0 198.51.100.100",
                       transport["commands"])
         self.assertNotIn("write memory", transport["commands"])
-        self.assertEqual(result["node_operations"]["WAN-A"]["commands"], [])
+        self.assertIn("bridge-domain 101",
+                      result["node_operations"]["WAN-A"]["commands"])
         self.assertEqual(
             result["node_operations"]["WAN-A"]["capability_gate"]["classification"],
-            "FIELD_TEST_REQUIRED")
+            "FIELD_PROVEN")
+        self.assertEqual(
+            result["node_operations"]["WAN-A"]["validation"]["bridge_domain"],
+            101)
 
     def test_compiles_service_lan_and_switch_desired_state(self):
         result = compile_intent(intent(), topology())
@@ -186,6 +190,9 @@ class CompilerTests(unittest.TestCase):
         wrong_route = intent()
         wrong_route["edges"][0]["controller_routes"][0]["next_hop"] = "198.51.100.99"
         cases.append(wrong_route)
+        duplicate_bridge = intent()
+        duplicate_bridge["transport_fabrics"][1]["bridge_domain"] = 101
+        cases.append(duplicate_bridge)
         for item in cases:
             with self.subTest(item=item), self.assertRaises(ValueError):
                 compile_intent(item, topology())
