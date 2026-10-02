@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from eve_lab.sdwan_readiness import (
-    ApplicationReadiness, parse_application_status,
+    ApplicationReadiness, parse_all_nms_status, parse_application_status,
     wait_for_application_server,
 )
 from eve_lab.sdwan_initialize import (
@@ -21,6 +21,21 @@ def cli_status(state="running", enabled=True, pid=42, uptime=899):
 
 
 class ReadinessTests(unittest.TestCase):
+    def test_parse_all_service_statuses(self):
+        output = (
+            "NMS application server\n"
+            "    Enabled: false\n"
+            "    Status: not running\n"
+            "NMS configuration database\n"
+            "    Enabled: true\n"
+            "    Status: running PID:25778 for 10601s\n")
+        services = parse_all_nms_status(output)
+        self.assertEqual(
+            [(item.name, item.enabled, item.state, item.pid)
+             for item in services],
+            [("NMS application server", False, "not running", None),
+             ("NMS configuration database", True, "running", 25778)])
+
     def test_parse_and_qualify_at_900_seconds(self):
         parsed = parse_application_status(cli_status(uptime=7313))
         self.assertTrue(parsed.enabled and parsed.running)

@@ -22,7 +22,9 @@ from .dhcp import clear as clear_dhcp, report as report_dhcp, update_dns as upda
 from .deploy import apply, delete, lab_status, lifecycle, plan
 from .live_guard import enforce_live_guard
 from .sdwan_intent import load_and_compile as compile_sdwan
-from .sdwan_initialize import initialize_control, qualify_manager
+from .sdwan_initialize import (
+    initialize_control, inspect_manager_services, qualify_manager,
+)
 from .topology import load_lab_target, load_topology
 from .validation import validate_lab
 
@@ -88,6 +90,13 @@ def main():
     sdwan_ready.add_argument(
         "--restart-disabled", action="store_true",
         help="Restart all NMS services once when application status is disabled")
+    sdwan_services = commands.add_parser(
+        "sdwan-manager-services",
+        help="Read and classify all declared Manager NMS services")
+    sdwan_services.add_argument("lab")
+    sdwan_services.add_argument("node")
+    sdwan_services.add_argument("--server", default="default")
+    sdwan_services.add_argument("--timeout", type=int, default=900)
     for name in ("plan", "status", "templates", "template", "apply", "start", "stop", "delete", "backup", "restore", "init", "bootstrap", "validate"):
         command = commands.add_parser(name)
         command.add_argument("--server", default="default")
@@ -187,7 +196,8 @@ def main():
             print(json.dumps(result, indent=2))
             return
         if args.command in ("stop", "backup", "restore", "init", "bootstrap",
-                            "sdwan-control-init", "sdwan-manager-ready") or (args.command == "start" and args.node):
+                            "sdwan-control-init", "sdwan-manager-ready",
+                            "sdwan-manager-services") or (args.command == "start" and args.node):
             topology = load_lab_target(args.root, args.lab, getattr(args, "remote_folder", None))
         else:
             topology = (load_topology(args.root, args.lab, getattr(args, "scenario", None))
@@ -199,7 +209,8 @@ def main():
         else:
             client = EveClient(server["url"], server.get("timeout", 15))
             if args.command in ("init", "backup", "restore", "validate",
-                                "sdwan-control-init", "sdwan-manager-ready"):
+                                "sdwan-control-init", "sdwan-manager-ready",
+                                "sdwan-manager-services"):
                 client.login(server["username"], server["password"], html5=False)
             else:
                 client.login(server["username"], server["password"])
@@ -217,6 +228,10 @@ def main():
                         minimum_uptime=args.minimum_uptime,
                         poll_seconds=args.poll,
                         restart_disabled=args.restart_disabled)
+                elif args.command == "sdwan-manager-services":
+                    result = inspect_manager_services(
+                        client, topology, args.root, args.server, args.node,
+                        timeout=args.timeout)
                 elif args.command == "init":
                     if args.prepare_console:
                         if args.management_ip:

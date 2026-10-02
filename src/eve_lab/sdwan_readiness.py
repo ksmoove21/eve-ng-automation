@@ -21,6 +21,38 @@ class ReadinessObservation:
     uptime_seconds: int | None
 
 
+@dataclass(frozen=True)
+class NmsServiceStatus:
+    name: str
+    enabled: bool
+    state: str
+    pid: int | None
+    uptime_seconds: int | None
+
+
+def parse_all_nms_status(output):
+    """Parse only non-secret service state from request nms all status."""
+    pattern = re.compile(
+        r"(?m)^(?P<name>[A-Za-z][^\r\n]+)\r?\n"
+        r"[ \t]+Enabled:\s*(?P<enabled>true|false)\s*\r?\n"
+        r"(?:[ \t]+Message:[^\r\n]*\r?\n)?"
+        r"[ \t]+Status:\s*(?P<state>not running|running|waiting|stopped)"
+        r"(?:\s+PID:\s*(?P<pid>\d+)\s+for\s+"
+        r"(?P<uptime>\d+)s)?\s*$",
+        re.I)
+    result = []
+    for match in pattern.finditer(output):
+        result.append(NmsServiceStatus(
+            match.group("name").strip(),
+            match.group("enabled").lower() == "true",
+            match.group("state").lower(),
+            int(match.group("pid")) if match.group("pid") else None,
+            int(match.group("uptime")) if match.group("uptime") else None))
+    if not result:
+        raise ValueError("No NMS service status sections found")
+    return tuple(result)
+
+
 def parse_application_status(output):
     section = re.search(r"(?im)^\s*NMS application server\s*$", output)
     if not section:

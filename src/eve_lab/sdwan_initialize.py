@@ -17,7 +17,10 @@ from .initialize import _open_telnet_console, telnet_console_url
 from .live_guard import enforce_live_guard
 from .sdwan_control import ViptelaConsole, stages_from_plan
 from .sdwan_intent import load_and_compile
-from .sdwan_readiness import parse_application_status, wait_for_application_server
+from .sdwan_readiness import (
+    parse_all_nms_status, parse_application_status,
+    wait_for_application_server,
+)
 from .topology import load_lab_target, load_topology
 
 
@@ -338,6 +341,51 @@ def qualify_manager(client, topology, root, server_name, node_name, *,
                 "pid": observation.pid,
                 "uptime_seconds": observation.uptime_seconds,
                 "minimum_uptime_seconds": minimum_uptime}
+    finally:
+        if channel is not None:
+            channel.close()
+        ssh.close()
+
+
+def inspect_manager_services(client, topology, root, server_name, node_name,
+                             *, timeout=900):
+    """Return a secret-free read-only classification of Manager NMS services."""
+    declared = load_topology(Path(root), topology["name"])
+    plan = load_and_compile(Path(root), topology["name"], declared)[
+        "node_operations"].get(node_name)
+    if (not isinstance(plan, dict)
+            or plan.get("adapter") != "viptela-control"
+            or plan.get("personality") != "manager"):
+        raise ValueError(node_name + " is not the declared Manager")
+    nodes = named(client, lab_path(topology) + "/nodes")
+    if node_name not in nodes or str(nodes[node_name].get("status")) != "2":
+        raise RuntimeError("Manager must be running for service inspection")
+    url = telnet_console_url(nodes[node_name])
+    if url is None:
+        raise RuntimeError("Manager lacks a native Telnet console")
+    login = credentials(Path(root))
+    server = load_server(Path(root), server_name, auth="ssh")
+    ssh = paramiko.SSHClient()
+    channel = None
+    try:
+        ssh.load_system_host_keys()
+        ssh.connect(server.get("ssh_host") or urlsplit(server["url"]).hostname,
+                    username=server["ssh_username"], password=server["ssh_password"],
+                    timeout=10, auth_timeout=10, banner_timeout=10,
+                    allow_agent=False, look_for_keys=False)
+        channel = _open_telnet_console(ssh, url.port)
+        console = ViptelaConsole(channel, boot_timeout=timeout)
+        console.login(login[0], login[1], login[2])
+        services = parse_all_nms_status(console.command(
+            "request nms all status | nomore", timeout=min(timeout, 300)))
+        return {
+            "lab": topology["name"], "node": node_name,
+            "services": [
+                {"name": item.name, "enabled": item.enabled,
+                 "state": item.state, "pid": item.pid,
+                 "uptime_seconds": item.uptime_seconds}
+                for item in services],
+        }
     finally:
         if channel is not None:
             channel.close()
