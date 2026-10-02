@@ -48,6 +48,7 @@ class ManagerApi:
         "/dataservice/certificate/device/list",
         "/dataservice/certificate/device/details",
         "/dataservice/certificate/csr/details",
+        "/dataservice/system/device/vedges",
     }
 
     def __init__(self, address: str, *, certificate: Path, server_name: str,
@@ -236,6 +237,29 @@ class ManagerApi:
             "/dataservice/system/device", request,
             "Manager control-component enrollment")
 
+    def generate_payg(self, *, count, validity, organization):
+        """Generate PAYG identities with the live 20.15.1 UI JSON contract."""
+        if not isinstance(count, int) or isinstance(count, bool) \
+                or not 1 <= count <= 25:
+            raise ValueError("PAYG count must be an integer from 1 through 25")
+        if validity not in {"valid", "invalid"}:
+            raise ValueError("PAYG validity must be valid or invalid")
+        if (not isinstance(organization, str) or not organization.strip()
+                or len(organization) > 128):
+            raise ValueError("PAYG organization must be a nonempty string")
+        request = {
+            "numPaygDevices": count,
+            "validity": validity,
+            "organization": organization,
+        }
+        status, payload, _ = self._request(
+            "POST", "/dataservice/system/device/generate-payg",
+            body=json.dumps(request, separators=(",", ":")).encode(),
+            content_type="application/json", xsrf=True)
+        if status != 200:
+            raise ManagerApiError("PAYG generation failed: HTTP " + str(status))
+        return self._decode(payload, "PAYG generation") if payload.strip() else {}
+
     def generate_csr(self, device_ip):
         parsed = ipaddress.ip_address(device_ip)
         response = self._json_post(
@@ -282,7 +306,8 @@ class ManagerApi:
             xsrf=True)
         if status != 200:
             raise ManagerApiError("Activity status failed: HTTP " + str(status))
-        summary = self._decode(payload, "Activity status").get("summary")
+        decoded = self._decode(payload, "Activity status")
+        summary = decoded.get("summary")
         state = summary.get("status") if isinstance(summary, dict) else None
         if not isinstance(state, str) or not state:
             raise ManagerApiError("Activity status returned an unexpected body")
@@ -290,7 +315,7 @@ class ManagerApi:
         terminal = normalized in {
             "success", "completed", "done", "failure", "failed", "error",
             "cancelled", "canceled"}
-        details = self._decode(payload, "Activity status").get("data")
+        details = decoded.get("data")
         detail_states = [str(item.get("status", "")).strip().lower()
                          for item in details or [] if isinstance(item, dict)
                          and str(item.get("status", "")).strip()]

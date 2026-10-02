@@ -87,6 +87,32 @@ class ManagerApiTests(unittest.TestCase):
         self.assertEqual(request["protocol"], "DTLS")
         self.assertEqual(request["port"], "")
 
+    def test_payg_generation_matches_live_2015_ui_json_contract(self):
+        api = FixtureApi([(200, b'{"id":"task-1"}', {})])
+        response = api.generate_payg(
+            count=1, validity="valid", organization="nwl-lab-sdwan")
+        self.assertEqual(response["id"], "task-1")
+        self.assertEqual(api.calls[0][0:2], (
+            "POST", "/dataservice/system/device/generate-payg"))
+        self.assertEqual(json.loads(api.calls[0][2]["body"]), {
+            "numPaygDevices": 1,
+            "validity": "valid",
+            "organization": "nwl-lab-sdwan",
+        })
+        self.assertEqual(api.calls[0][2]["content_type"], "application/json")
+        self.assertTrue(api.calls[0][2]["xsrf"])
+
+    def test_payg_generation_rejects_unsafe_fields_before_request(self):
+        api = FixtureApi([])
+        for kwargs in (
+                {"count": 0, "validity": "valid", "organization": "org"},
+                {"count": True, "validity": "valid", "organization": "org"},
+                {"count": 1, "validity": "pending", "organization": "org"},
+                {"count": 1, "validity": "valid", "organization": ""}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                api.generate_payg(**kwargs)
+        self.assertEqual(api.calls, [])
+
     def test_signed_install_preserves_2015_raw_pem_json_content_type(self):
         api = FixtureApi([(200, b'{"id":"task-1"}', {})])
         activity = api.install_signed_certificate(
