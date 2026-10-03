@@ -152,3 +152,25 @@ def test_tor_host_ports_follow_declared_endpoint_links():
     intent["tenants"]["dc1"][1]["endpoints"][0]["attachment"] = "ToR-1"
     with pytest.raises(ValueError, match="share a ToR host port"):
         compile_tor_ports(intent, topology)
+
+
+def test_network_attachment_readback_uses_get_fields_and_exact_tor_ports(monkeypatch):
+    from eve_lab import ndfc_tenant_api as api
+    from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
+
+    body = [{"networkName": "BLUE-NET", "lanAttachList": [
+        {"switchSerialNo": "SERIAL-1", "vlanId": 110,
+         "isLanAttached": True, "lanAttachState": "IN-SYNC",
+         "portNames": "ToR-1(Ethernet1/3)"},
+    ]}]
+    monkeypatch.setattr(api, "_api", lambda *_: (200, body))
+    payload = [{"networkName": "BLUE-NET", "lanAttachList": [
+        {"serialNumber": "SERIAL-1", "vlan": 110, "deployment": True,
+         "torPorts": "ToR-1(Ethernet1/3)"}]}]
+    result = api._ensure_attachment(None, "/networks/attachments", "networkName",
+                                    payload, {"SERIAL-1"}, 110, {"ToR-1", "ToR-2"})
+    assert result["status"] == "already-attached"
+    body[0]["lanAttachList"][0]["portNames"] += " ToR-2(Ethernet1/4)"
+    with pytest.raises(NexusDashboardBrowserError, match="undeclared ToR"):
+        api._ensure_attachment(None, "/networks/attachments", "networkName",
+                               payload, {"SERIAL-1"}, 110, {"ToR-1", "ToR-2"})

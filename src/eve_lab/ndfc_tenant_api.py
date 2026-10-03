@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -171,19 +172,25 @@ def _attachment_records(body, name_key):
             if not isinstance(child, dict):
                 raise NexusDashboardBrowserError("NDFC attachment readback has invalid child")
             name = child.get(name_key) or row.get(name_key)
-            serial = child.get("serialNumber")
+            serial = child.get("serialNumber") or child.get("switchSerialNo")
             if not name or not serial:
                 raise NexusDashboardBrowserError(
                     "NDFC attachment readback lacks name or serial")
+            if child.get("isLanAttached") is False:
+                continue
             key = name, serial
             if key in records:
                 raise NexusDashboardBrowserError(
                     "NDFC attachment readback duplicates a switch serial")
-            records[key] = child
+            normalized = dict(child)
+            normalized["serialNumber"] = serial
+            normalized["vlan"] = child.get("vlan", child.get("vlanId"))
+            records[key] = normalized
     return records
 
 
-def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan):
+def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan,
+                       tor_switch_names=()):
     name = payload[0][name_key]
     expected_tor_ports = payload[0]["lanAttachList"][0].get("torPorts", "")
     def current():
@@ -203,9 +210,15 @@ def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan
                 raise NexusDashboardBrowserError(
                     "NDFC " + name + " attachment VLAN or state conflicts")
             actual_tor_ports = row.get("torPorts") or ""
+            if not actual_tor_ports and row.get("portNames"):
+                tor_names = set(tor_switch_names)
+                actual_tor_ports = " ".join(
+                    entry for entry in re.findall(r"\S+\([^)]*\)", row["portNames"])
+                    if entry.split("(", 1)[0] in tor_names)
             if actual_tor_ports and actual_tor_ports != expected_tor_ports:
                 raise NexusDashboardBrowserError(
                     "NDFC " + name + " has undeclared ToR port attachments")
+            row["torPorts"] = actual_tor_ports
         return selected
 
     attached = current()
@@ -278,7 +291,9 @@ def attach_tenants(intent, topology, username, password):
             networks = [_ensure_attachment(
                 page, root + "/networks/attachments", "networkName",
                 network_attach_payload(fabric, item, serials, tor_ports[item["name"]]),
-                {serials[name] for name in item["switches"]}, item["vlan"])
+                {serials[name] for name in item["switches"]}, item["vlan"],
+                set(next(profile["tor_pair"]["nodes"] for profile in
+                         intent["ndfc_fabrics"] if profile["site"] == "DC1")))
                 for item in compiled["networks"]]
             return {"fabric": fabric, "vrfs": vrfs, "networks": networks,
                     "deployment": "not-requested"}
