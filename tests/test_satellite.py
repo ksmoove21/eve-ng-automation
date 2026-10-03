@@ -23,6 +23,39 @@ class SatelliteImageTests(unittest.TestCase):
         self.assertEqual(evidence["status"], "READY")
         self.assertEqual(evidence["snapshots"][0]["files"][0]["format"], "qcow2")
 
+    def test_named_layout_accepts_stable_extra_source_image(self):
+        files = (("virtioa.qcow2", 1024, 10), ("virtiob.qcow2", 2048, 10),
+                 ("source.qcow2", 4096, 10))
+        scans = [snapshot(files=files), snapshot(files=files)]
+        self.assertEqual(assess_image_snapshots("nd", 2, scans)["status"], "MISSING")
+        evidence = assess_image_snapshots(
+            "nd", 2, scans, ("virtioa.qcow2", "virtiob.qcow2"))
+        self.assertEqual(evidence["status"], "READY")
+        self.assertEqual(evidence["required_qcow2_names"],
+                         ["virtioa.qcow2", "virtiob.qcow2"])
+
+    def test_named_layout_requires_both_stable_valid_disks(self):
+        names = ("virtioa.qcow2", "virtiob.qcow2")
+        missing = snapshot(files=(("virtioa.qcow2", 1024, 10),
+                                  ("source.qcow2", 4096, 10)))
+        self.assertEqual(
+            assess_image_snapshots("nd", 2, [missing, missing], names)["status"],
+            "MISSING")
+        complete = snapshot(files=(("virtioa.qcow2", 1024, 10),
+                                   ("virtiob.qcow2", 2048, 10),
+                                   ("source.qcow2", 4096, 10)))
+        changed = snapshot(files=(("virtioa.qcow2", 1024, 10),
+                                  ("virtiob.qcow2", 4096, 11),
+                                  ("source.qcow2", 4096, 10)))
+        self.assertEqual(
+            assess_image_snapshots("nd", 2, [complete, changed], names)["status"],
+            "COPYING/UNSTABLE")
+        invalid = snapshot(files=(("virtioa.qcow2", 1024, 10),
+                                  ("virtiob.qcow2", 2048, 10)), qemu_format="raw")
+        self.assertEqual(
+            assess_image_snapshots("nd", 2, [invalid, invalid], names)["status"],
+            "INVALID")
+
     def test_size_or_mtime_change_is_copying_unstable(self):
         evidence = assess_image_snapshots("image", 1, [snapshot(), snapshot(files=(("boot.qcow2", 2048, 11),))])
         self.assertEqual(evidence["status"], "COPYING/UNSTABLE")

@@ -17,6 +17,10 @@ running discovery appliance and continue from this state.
   65536 MiB RAM, two NICs, `cpulimit=0`, and image `nd-9.3.2.1c`.
 - **LIVE-TESTED:** stable readable `virtioa.qcow2` (45 GiB virtual) and
   `virtiob.qcow2` (500 GiB virtual) satisfy the required boot/data disk layout.
+- For satellite preflight, declare `required_image_disk_names:
+  [virtioa.qcow2, virtiob.qcow2]` for the ND image. The named layout accepts
+  an additional stable source QCOW2 while still requiring both boot/data disks
+  to be present, readable, and stable.
 
 ## EVE identity
 

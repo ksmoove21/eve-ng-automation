@@ -265,14 +265,14 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
     validate(topology)
     topology, direct = expand_links(topology)
     placement_requirements = {
-        node['name']: {key: node[key] for key in ('satellite', 'required_storage_gib', 'required_image_disks') if key in node}
+        node['name']: {key: node[key] for key in ('satellite', 'required_storage_gib', 'required_image_disks', 'required_image_disk_names') if key in node}
         for node in topology['nodes'] if 'satellite' in node
     }
     # Placement policy is controller-side metadata. EVE persists the selected
     # satellite as ``sat`` and has no storage-reservation field.
     topology = {**topology, 'nodes': [
         {**{key: value for key, value in node.items()
-            if key not in ('satellite', 'required_storage_gib', 'required_image_disks')},
+            if key not in ('satellite', 'required_storage_gib', 'required_image_disks', 'required_image_disk_names')},
          **({'sat': node['satellite']} if 'satellite' in node else {})}
         for node in topology['nodes']
     ]}
@@ -348,11 +348,15 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
             }
             if root is None:
                 raise RuntimeError('Satellite placement requires a workspace root so configured EVE SSH can preflight its image')
-            expected_disks = requirement.get('required_image_disks', 1)
-            image_key = (satellite.get('name'), node['image'], expected_disks)
+            required_names = requirement.get('required_image_disk_names')
+            expected_disks = requirement.get('required_image_disks', len(required_names) if required_names else 1)
+            image_key = (satellite.get('name'), node['image'], expected_disks,
+                         tuple(required_names) if required_names else None)
             if image_key not in inspected_images:
                 inspected_images[image_key] = image_inspector(
-                    root, server_name, satellite.get('name'), node['image'], expected_disks, satellite_key=satellite.get('pubkey'))
+                    root, server_name, satellite.get('name'), node['image'], expected_disks,
+                    satellite_key=satellite.get('pubkey'), **({'required_names': required_names}
+                    if required_names else {}))
             readiness = inspected_images[image_key]
             placements[node['name']]['image_readiness'] = readiness
             if readiness.get('status') != 'READY':

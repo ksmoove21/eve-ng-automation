@@ -185,7 +185,7 @@ def _signature(snapshot):
                   entry.get("format"), entry.get("virtual_size")) for entry in snapshot["files"])
 
 
-def assess_image_snapshots(image, expected_disks, snapshots):
+def assess_image_snapshots(image, expected_disks, snapshots, required_names=None):
     """Classify a bounded set of image snapshots without using checksums."""
     if not snapshots:
         raise ValueError("At least one satellite image snapshot is required")
@@ -195,9 +195,15 @@ def assess_image_snapshots(image, expected_disks, snapshots):
         return {**evidence, "status": "MISSING", "reason": "Image directory is absent on the selected satellite"}
     if any(snapshot["errors"] for snapshot in snapshots):
         return {**evidence, "status": "INVALID", "reason": "Image files are unreadable or qemu-img did not recognize them"}
-    counts = {len(snapshot["files"]) for snapshot in snapshots}
-    if counts != {expected_disks}:
-        return {**evidence, "status": "MISSING", "reason": "Expected QCOW2 disk layout is not present"}
+    if required_names is None:
+        counts = {len(snapshot["files"]) for snapshot in snapshots}
+        if counts != {expected_disks}:
+            return {**evidence, "status": "MISSING", "reason": "Expected QCOW2 disk layout is not present"}
+    else:
+        evidence["required_qcow2_names"] = list(required_names)
+        if any(not set(required_names).issubset(
+                {entry["name"] for entry in snapshot["files"]}) for snapshot in snapshots):
+            return {**evidence, "status": "MISSING", "reason": "Required QCOW2 disks are not present"}
     if any(entry.get("format") != "qcow2" for snapshot in snapshots for entry in snapshot["files"]):
         return {**evidence, "status": "INVALID", "reason": "A .qcow2 file is not recognized as QCOW2"}
     if any(snapshot["writer"] for snapshot in snapshots):
@@ -218,7 +224,8 @@ def _connect(server):
 
 
 def inspect_image(root: Path, server_name: str, satellite: str, image: str,
-                  expected_disks=1, samples=3, interval=5, satellite_key=None):
+                  expected_disks=1, samples=3, interval=5, satellite_key=None,
+                  required_names=None):
     """Inspect an image over configured manager SSH and return structured evidence.
 
     The manager SSH session asks its cluster-known satellite by name to perform the
@@ -229,6 +236,13 @@ def inspect_image(root: Path, server_name: str, satellite: str, image: str,
     _valid_name(image, "Image")
     if type(expected_disks) is not int or expected_disks < 1:
         raise ValueError("Expected QCOW2 disk count must be a positive integer")
+    if required_names is not None:
+        if (not isinstance(required_names, (list, tuple)) or not required_names
+                or any(not isinstance(name, str) or not _NAME.fullmatch(name)
+                       or not name.endswith(".qcow2") for name in required_names)
+                or len(set(required_names)) != len(required_names)
+                or len(required_names) != expected_disks):
+            raise ValueError("Required QCOW2 disk names must be unique safe basenames matching disk count")
     if type(samples) is not int or not 2 <= samples <= 5:
         raise ValueError("Satellite image polls must be between 2 and 5")
     if type(interval) not in (int, float) or not 1 <= interval <= 30:
@@ -271,5 +285,6 @@ def inspect_image(root: Path, server_name: str, satellite: str, image: str,
                 "reason": "Configured SSH transport could not inspect selected satellite: " + str(error)[:240]}
     finally:
         client.close()
-    return {**assess_image_snapshots(image, expected_disks, snapshots), "satellite": satellite,
+    return {**assess_image_snapshots(image, expected_disks, snapshots, required_names),
+            "satellite": satellite,
             "target_resolution": resolution}

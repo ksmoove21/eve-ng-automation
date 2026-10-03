@@ -157,6 +157,41 @@ class DeploymentTests(unittest.TestCase):
         apply(self.client, topology, root=Path('.'), image_inspector=image_inspector)
         self.assertEqual(self.client.nodes['1']['sat'], 1)
 
+    def test_satellite_named_disks_are_preflight_only(self):
+        topology = copy.deepcopy(self.topology)
+        names = ["virtioa.qcow2", "virtiob.qcow2"]
+        topology["nodes"][0].update(
+            satellite=1, required_image_disk_names=names)
+        inspected = []
+        def image_inspector(root, server_name, satellite, image, disks,
+                            satellite_key=None, required_names=None):
+            inspected.append((disks, required_names))
+            return {"status": "READY", "reason": "stable"}
+        apply(self.client, topology, root=Path("."), image_inspector=image_inspector)
+        self.assertEqual(inspected, [(2, names)])
+        self.assertNotIn("required_image_disk_names", self.client.nodes["1"])
+        self.assertNotIn("required_image_disks", self.client.nodes["1"])
+
+    def test_satellite_disk_names_reject_unsafe_or_inconsistent_intent(self):
+        for names in ([], ["virtioa.qcow2", "virtioa.qcow2"],
+                      ["../virtioa.qcow2"], ["virtioa.img"], [1]):
+            with self.subTest(names=names):
+                topology = copy.deepcopy(self.topology)
+                topology["nodes"][0].update(
+                    satellite=1, required_image_disk_names=names)
+                with self.assertRaisesRegex(ValueError, "required_image_disk_names"):
+                    validate(topology)
+        topology = copy.deepcopy(self.topology)
+        topology["nodes"][0]["required_image_disk_names"] = ["virtioa.qcow2"]
+        with self.assertRaisesRegex(ValueError, "requires satellite placement"):
+            validate(topology)
+        topology = copy.deepcopy(self.topology)
+        topology["nodes"][0].update(
+            satellite=1, required_image_disks=1,
+            required_image_disk_names=["virtioa.qcow2", "virtiob.qcow2"])
+        with self.assertRaisesRegex(ValueError, "must match"):
+            validate(topology)
+
     def test_satellite_image_not_ready_prevents_writes(self):
         topology = copy.deepcopy(self.topology)
         topology['nodes'][0].update(satellite=1, required_storage_gib=50)

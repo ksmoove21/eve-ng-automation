@@ -84,7 +84,7 @@ def validate(topology: dict):
     validate_folder(topology.get("remote_folder", "/"))
     allowed = {
         "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top", "icon",
-                  "satellite", "required_storage_gib", "required_image_disks"},
+                  "satellite", "required_storage_gib", "required_image_disks", "required_image_disk_names"},
         "networks": {"name", "type", "left", "top"},
         "links": {"node", "interface", "network"},
     }
@@ -123,6 +123,19 @@ def validate(topology: dict):
         if "required_image_disks" in node and (
                 type(node["required_image_disks"]) is not int or node["required_image_disks"] < 1):
             raise ValueError(f"{node['name']}: required_image_disks must be a positive integer")
+        if "required_image_disk_names" in node:
+            if "satellite" not in node:
+                raise ValueError(f"{node['name']}: required_image_disk_names requires satellite placement")
+            disk_names = node["required_image_disk_names"]
+            if (not isinstance(disk_names, list) or not disk_names
+                    or any(not isinstance(name, str)
+                           or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*\.qcow2", name)
+                           for name in disk_names)
+                    or len(set(disk_names)) != len(disk_names)):
+                raise ValueError(f"{node['name']}: required_image_disk_names must be unique QCOW2 basenames")
+            if ("required_image_disks" in node
+                    and node["required_image_disks"] != len(disk_names)):
+                raise ValueError(f"{node['name']}: required_image_disks must match required_image_disk_names")
     endpoints = set()
     for link in topology["links"]:
         if any(not isinstance(link.get(field), str) or not link[field] for field in allowed["links"]):

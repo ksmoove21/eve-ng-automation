@@ -178,7 +178,10 @@ requested image is unavailable rather than silently selecting a different image.
 A QEMU node assigned to a satellite declares its positive `satellite` ID.
 `required_storage_gib` declares the required free satellite storage and
 `required_image_disks` declares the exact expected QCOW2 disk count (default
-one when omitted). Before any deployment writes, the reconciler checks EVE
+one when omitted). Optional `required_image_disk_names` declares the required
+QCOW2 basenames; when set, stable extra QCOW2 files are permitted, and the
+required count must equal the name-list length if both fields are present.
+Before any deployment writes, the reconciler checks EVE
 cluster capacity and uses the configured manager SSH transport for a read-only
 inspection of that selected satellite's image directory. It returns structured
 `READY`, `COPYING/UNSTABLE`, `MISSING`, or `INVALID` evidence from bounded file
