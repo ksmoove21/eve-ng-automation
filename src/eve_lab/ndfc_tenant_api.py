@@ -344,7 +344,7 @@ def _deployment_states(page, root, compiled, serials, tor_ports, tor_names, kind
                     raise NexusDashboardBrowserError(
                         "NDFC " + item["name"] + " deployment ToR ports differ from intent")
             state = row.get("lanAttachState")
-            if state not in ("PENDING", "OUT-OF-SYNC", "IN-SYNC", "DEPLOYED"):
+            if state not in ("PENDING", "OUT-OF-SYNC", "IN PROGRESS", "IN-SYNC", "DEPLOYED"):
                 raise NexusDashboardBrowserError(
                     "NDFC " + item["name"] + " has invalid deployment state: " +
                     str(state))

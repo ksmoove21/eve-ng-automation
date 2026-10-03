@@ -213,6 +213,13 @@ def test_deploy_preflight_scopes_serials_and_requires_exact_tor_ports(monkeypatc
          "GREEN-NET": "ToR-2(Ethernet1/4)"},
         {"ToR-1", "ToR-2"}, "Network")
     assert len(states) == 4 and set(states.values()) == {"PENDING"}
+    body[0]["lanAttachList"][0]["lanAttachState"] = "IN PROGRESS"
+    states = api._deployment_states(
+        None, "/fabrics/LAB", compiled, serials,
+        {"BLUE-NET": "ToR-1(Ethernet1/3)",
+         "GREEN-NET": "ToR-2(Ethernet1/4)"},
+        {"ToR-1", "ToR-2"}, "Network")
+    assert states["BLUE-NET", "SERIAL-1"] == "IN PROGRESS"
 
 
 def test_attachment_does_not_claim_tor_ports_when_controller_ignores_them(monkeypatch):
