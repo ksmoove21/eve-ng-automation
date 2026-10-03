@@ -23,39 +23,60 @@ _TEMPLATE = _BASE + "/configtemplate/rest/config/templates/Easy_Fabric"
 
 def compile_fabric(intent, site="DC1"):
     """Map declared site intent to the live Easy_Fabric 12.2.3 NV schema."""
+    if site not in ("DC1", "DC2"):
+        raise ValueError("NDFC fabric site must be DC1 or DC2")
     profiles = [item for item in intent["ndfc_fabrics"] if item["site"] == site]
-    if len(profiles) != 1 or site != "DC1":
-        raise ValueError("Exactly one active DC1 fabric is required")
+    if len(profiles) != 1:
+        raise ValueError("Exactly one declared " + site + " fabric is required")
     fabric = profiles[0]
+    required = ("switch_import", "network_vlan_range",
+                "vpc_peer_keepalive_option", "leaf_pre_interfaces_freeform")
+    missing = [field for field in required if field not in fabric]
+    if missing:
+        raise ValueError(site + " fabric lacks declared " + ", ".join(missing))
+    if site.lower() not in intent["tenants"]:
+        raise ValueError(site + " tenant list is absent")
     if fabric["mode"] != "Data Center VXLAN EVPN":
-        raise ValueError("DC1 must use the Data Center VXLAN EVPN template")
+        raise ValueError(site + " must use the Data Center VXLAN EVPN template")
     if fabric["replication"] != "ingress" or fabric["multicast_replication"] != "disabled":
-        raise ValueError("DC1 requires ingress replication without multicast")
+        raise ValueError(site + " requires ingress replication without multicast")
     pools = fabric["infrastructure_pools"]
     for name in ("underlay_links", "loopbacks", "anycast_vtep", "vpc_peer_keepalive"):
         if ip_network(pools[name]).prefixlen != 24:
-            raise ValueError("DC1 infrastructure pool " + name + " must be /24")
+            raise ValueError(site + " infrastructure pool " + name + " must be /24")
     if len({str(ip_network(value)) for value in pools.values()}) != len(pools):
-        raise ValueError("DC1 infrastructure pools overlap")
+        raise ValueError(site + " infrastructure pools overlap")
     if fabric["vpc_peer_keepalive_option"] != "management":
         raise ValueError("NDFC 12.2.3 management vPC keepalive mapping is required")
     if fabric["leaf_pre_interfaces_freeform"] != "feature dhcp\nservice dhcp":
-        raise ValueError("DC1 leaf pre-interface DHCP feature intent is required")
+        raise ValueError(site + " leaf pre-interface DHCP feature intent is required")
     vnis = intent["tenants"]["vni_policy"]
     if vnis["l2_range"] != "20000-29999" or vnis["l3_range"] != "30000-39999":
-        raise ValueError("DC1 VNI ranges do not match owner intent")
-    for tenant in intent["tenants"]["dc1"]:
+        raise ValueError(site + " VNI ranges do not match owner intent")
+    for tenant in intent["tenants"][site.lower()]:
         if not 30000 <= tenant["vrf_vni"] <= 39999:
-            raise ValueError("DC1 VRF VNI is outside the declared range")
+            raise ValueError(site + " VRF VNI is outside the declared range")
         for network in tenant["networks"]:
             if not 20000 <= network["vni"] <= 29999:
-                raise ValueError("DC1 network VNI is outside the declared range")
+                raise ValueError(site + " network VNI is outside the declared range")
     low, high = map(int, fabric["network_vlan_range"].split("-"))
+    if not 1 <= low <= high <= 4094:
+        raise ValueError(site + " network VLAN range is invalid")
+    vrf_vlan_range = fabric.get("vrf_vlan_range")
+    if vrf_vlan_range is not None:
+        vrf_low, vrf_high = map(int, vrf_vlan_range.split("-"))
+        if not (vrf_high < low or vrf_low > high):
+            raise ValueError(site + " VRF and Network VLAN ranges overlap")
+        if (not 1 <= vrf_low <= vrf_high <= 4094 or any(
+                "vrf_vlan" not in tenant or
+                not vrf_low <= tenant["vrf_vlan"] <= vrf_high
+                for tenant in intent["tenants"][site.lower()])):
+            raise ValueError(site + " tenant VRF VLAN is outside declared VRF VLAN range")
     if any(not low <= network["vlan"] <= high
-           for tenant in intent["tenants"]["dc1"] for network in tenant["networks"]):
-        raise ValueError("DC1 tenant VLAN is outside the declared network VLAN range")
+           for tenant in intent["tenants"][site.lower()] for network in tenant["networks"]):
+        raise ValueError(site + " tenant VLAN is outside the declared network VLAN range")
     if fabric["switch_import"] != {"greenfield": True, "preserve_config": False}:
-        raise ValueError("DC1 switch import must be greenfield without preserve config")
+        raise ValueError(site + " switch import must be greenfield without preserve config")
     name = fabric["name"]
     nv = {
         "FABRIC_NAME": name,
@@ -76,6 +97,8 @@ def compile_fabric(intent, site="DC1"):
         "SPINE_COUNT": "2",
         "RR_COUNT": "2",
     }
+    if vrf_vlan_range is not None:
+        nv["VRF_VLAN_RANGE"] = vrf_vlan_range
     return name, nv
 
 
@@ -120,9 +143,9 @@ def _verify_fabric(item, desired):
             "NDFC fabric conflicts with declared NV pairs: " + ", ".join(mismatched))
 
 
-def ensure_fabric(intent, username, password, timeout=300):
-    """Create DC1 only when absent, then verify every declared NV pair."""
-    name, desired = compile_fabric(intent)
+def ensure_fabric(intent, username, password, timeout=300, site="DC1"):
+    """Create the selected site only when absent, then verify every declared NV pair."""
+    name, desired = compile_fabric(intent, site)
     from playwright.sync_api import sync_playwright
     address = intent["management"]["nd"]["address"].split("/")[0]
     deadline = time.monotonic() + timeout
@@ -157,7 +180,7 @@ def ensure_fabric(intent, username, password, timeout=300):
                     return {"status": "already-configured", "fabric": name}
                 # This is the owner-approved R4 migration of the sole DHCP
                 # pre-interface field. Do not silently rewrite other fabric intent.
-                if (differing != {"preInterfaceConfigLeaf"}
+                if (site != "DC1" or differing != {"preInterfaceConfigLeaf"}
                         or str(actual.get("preInterfaceConfigLeaf", "")).strip()
                         != "feature dhcp"):
                     raise NexusDashboardBrowserError(
@@ -188,18 +211,18 @@ def ensure_fabric(intent, username, password, timeout=300):
             def ready():
                 observed["fabric"] = _find_fabric(page, name)
                 return observed["fabric"] is not None
-            _wait_for(page, ready, deadline, "NDFC DC1 fabric readback")
+            _wait_for(page, ready, deadline, "NDFC " + site + " fabric readback")
             _verify_fabric(observed["fabric"], desired)
             return {"status": "created", "fabric": name}
         finally:
             browser.close()
 
 
-def recalculate_and_deploy(intent, username, password, timeout=300):
+def recalculate_and_deploy(intent, username, password, timeout=300, site="DC1"):
     """Submit Cisco fabric config-save/deploy; verify switch convergence separately."""
     from playwright.sync_api import sync_playwright
 
-    name, desired = compile_fabric(intent)
+    name, desired = compile_fabric(intent, site)
     address = intent["management"]["nd"]["address"].split("/")[0]
     endpoint = _FABRICS + "/" + quote(name, safe="")
     with sync_playwright() as playwright:
@@ -213,7 +236,7 @@ def recalculate_and_deploy(intent, username, password, timeout=300):
             _login(page, username, password, timeout)
             current = _find_fabric(page, name)
             if current is None:
-                raise NexusDashboardBrowserError("DC1 fabric is absent before deployment")
+                raise NexusDashboardBrowserError(site + " fabric is absent before deployment")
             _verify_fabric(current, desired)
             for action in ("config-save", "config-deploy"):
                 status, response = _api(page, "POST", endpoint + "/" + action)
@@ -230,6 +253,7 @@ def recalculate_and_deploy(intent, username, password, timeout=300):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
+    parser.add_argument("--site", choices=("DC1", "DC2"), default="DC1")
     parser.add_argument("--check", action="store_true", help="Compile without live access")
     parser.add_argument("--deploy", action="store_true",
                         help="Recalculate and deploy after reconciling fabric settings")
@@ -237,17 +261,17 @@ def main():
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
     if args.check:
-        name, nv = compile_fabric(intent)
+        name, nv = compile_fabric(intent, args.site)
         print(json.dumps({"fabric": name, "template": "Easy_Fabric", "nvPairs": nv}, indent=2))
         return
     env = _environment(Path.cwd())
     username, password = env.get("CISCO_USERNAME"), env.get("CISCO_PASSWORD")
     if not username or not password:
         raise ValueError("Set CISCO_USERNAME and CISCO_PASSWORD in EVE_ENV_FILE or environment")
-    result = ensure_fabric(intent, username, password, args.timeout)
+    result = ensure_fabric(intent, username, password, args.timeout, args.site)
     if args.deploy:
         result["deployment"] = recalculate_and_deploy(
-            intent, username, password, args.timeout)
+            intent, username, password, args.timeout, args.site)
     print(json.dumps(result))
 
 

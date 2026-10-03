@@ -40,6 +40,7 @@ class NdfcFabricTests(unittest.TestCase):
         self.assertEqual(nv["L2_SEGMENT_ID_RANGE"], "20000-29999")
         self.assertEqual(nv["L3_PARTITION_ID_RANGE"], "30000-39999")
         self.assertEqual(nv["preInterfaceConfigLeaf"], "feature dhcp\nservice dhcp")
+        self.assertNotIn("VRF_VLAN_RANGE", nv)
 
     def test_rejects_tenant_vni_outside_owner_range(self):
         intent = deepcopy(INTENT)

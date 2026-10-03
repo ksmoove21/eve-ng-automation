@@ -1,4 +1,4 @@
-"""Stage declared NDFC VRFs and Networks using Cisco LAN top-down APIs."""
+"""Stage selected-site NDFC VRFs and Networks using Cisco LAN top-down APIs."""
 
 import argparse
 import json
@@ -13,8 +13,8 @@ from .config import _environment
 from .ndfc_fabric import _BASE, _FABRICS, _api
 from .ndfc_tenants import (
     compile_tenants, compile_tor_access_ports, compile_tor_ports, network_attach_payload,
-    network_create_payload, preflight_inventory, vrf_attach_payload,
-    vrf_create_payload,
+    network_create_payload, preflight_inventory, validate_network_dhcp,
+    vrf_attach_payload, vrf_create_payload,
 )
 from .ndfc_tor_access import (
     deploy_access_ports, reconcile_access_ports, verify_access_ports,
@@ -139,11 +139,13 @@ def _stage_collection(page, endpoint, kind, desired):
     return results
 
 
-def stage_tenants(intent, username, password):
-    """Create DC1 overlay objects only; do not attach or deploy fabric policy."""
+def stage_tenants(intent, username, password, site="DC1"):
+    """Create selected-site overlays only; do not attach or deploy fabric policy."""
     from playwright.sync_api import sync_playwright
 
-    compiled = compile_tenants(intent)
+    compiled = compile_tenants(intent, site)
+    dhcp_status = {network["name"]: validate_network_dhcp(network)
+                   for network in compiled["networks"]}
     fabric = compiled["fabric"]
     root = _TOP_DOWN + quote(fabric, safe="")
     address = intent["management"]["nd"]["address"].split("/")[0]
@@ -160,13 +162,13 @@ def stage_tenants(intent, username, password):
             if status != 200 or not isinstance(fabric_list, list) or not any(
                     item.get("fabricName") == fabric for item in fabric_list):
                 raise NexusDashboardBrowserError(
-                    "NDFC exact DC1 fabric is absent before tenant staging")
+                    "NDFC exact " + site + " fabric is absent before tenant staging")
             inventory = _collection(
                 page, _FABRICS + "/" + quote(fabric, safe="") +
                 "/inventory/switchesByFabric", "switch inventory")
             serials = preflight_inventory(
                 intent, inventory,
-                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"))
+                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"), site=site)
             vrf_payloads = [vrf_create_payload(fabric, item) for item in compiled["vrfs"]]
             network_payloads = [network_create_payload(fabric, item)
                                 for item in compiled["networks"]]
@@ -182,7 +184,7 @@ def stage_tenants(intent, username, password):
                 network_payloads)
             return {"fabric": fabric, "switch_serials": serials,
                     "vrfs": vrfs, "networks": networks,
-                    "deployment": "not-requested"}
+                    "dhcp_status": dhcp_status, "deployment": "not-requested"}
         finally:
             browser.close()
 
@@ -276,16 +278,18 @@ def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan
             "switches": len(expected_serials)}
 
 
-def attach_tenants(intent, topology, username, password):
+def attach_tenants(intent, topology, username, password, site="DC1"):
     """Attach staged tenant objects and exact ToR host ports without deployment."""
     from playwright.sync_api import sync_playwright
 
-    compiled = compile_tenants(intent)
-    tor_ports = compile_tor_ports(intent, topology)
-    access_ports = compile_tor_access_ports(intent, topology)
+    compiled = compile_tenants(intent, site)
+    dhcp_status = {network["name"]: validate_network_dhcp(network)
+                   for network in compiled["networks"]}
+    tor_ports = compile_tor_ports(intent, topology, site)
+    access_ports = compile_tor_access_ports(intent, topology, site)
     for network in compiled["networks"]:
         if network["name"] not in tor_ports:
-            raise ValueError("DC1 network lacks declared endpoint ToR ports")
+            raise ValueError(site + " network lacks declared endpoint ToR ports")
     fabric = compiled["fabric"]
     root = _TOP_DOWN + quote(fabric, safe="")
     address = intent["management"]["nd"]["address"].split("/")[0]
@@ -303,7 +307,7 @@ def attach_tenants(intent, topology, username, password):
                 "/inventory/switchesByFabric", "switch inventory")
             serials = preflight_inventory(
                 intent, inventory,
-                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"))
+                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"), site=site)
             for kind, leaf, desired in (
                     ("VRF", "vrfs", compiled["vrfs"]),
                     ("Network", "networks", compiled["networks"])):
@@ -330,11 +334,12 @@ def attach_tenants(intent, topology, username, password):
                 network_attach_payload(fabric, item, serials, tor_ports[item["name"]]),
                 {serials[name] for name in item["switches"]}, item["vlan"],
                 set(next(profile["tor_pair"]["nodes"] for profile in
-                         intent["ndfc_fabrics"] if profile["site"] == "DC1")))
+                         intent["ndfc_fabrics"] if profile["site"] == site)))
                 for item in compiled["networks"]]
             host_ports = reconcile_access_ports(page, access_ports, serials)
             return {"fabric": fabric, "vrfs": vrfs, "networks": networks,
-                    "host_ports": host_ports, "deployment": "not-requested"}
+                    "host_ports": host_ports, "dhcp_status": dhcp_status,
+                    "deployment": "not-requested"}
         finally:
             browser.close()
 
@@ -384,15 +389,17 @@ def _deployment_states(page, root, compiled, serials, tor_ports, tor_names, kind
     return states
 
 
-def deploy_tenants(intent, topology, username, password):
+def deploy_tenants(intent, topology, username, password, site="DC1"):
     """Deploy only declared tenant resources after exact attachment preflight."""
     from playwright.sync_api import sync_playwright
 
-    compiled = compile_tenants(intent)
-    tor_ports = compile_tor_ports(intent, topology)
-    access_ports = compile_tor_access_ports(intent, topology)
+    compiled = compile_tenants(intent, site)
+    dhcp_status = {network["name"]: validate_network_dhcp(network)
+                   for network in compiled["networks"]}
+    tor_ports = compile_tor_ports(intent, topology, site)
+    access_ports = compile_tor_access_ports(intent, topology, site)
     tor_names = set(next(profile["tor_pair"]["nodes"] for profile in
-                         intent["ndfc_fabrics"] if profile["site"] == "DC1"))
+                         intent["ndfc_fabrics"] if profile["site"] == site))
     fabric = compiled["fabric"]
     root = _TOP_DOWN + quote(fabric, safe="")
     address = intent["management"]["nd"]["address"].split("/")[0]
@@ -410,7 +417,7 @@ def deploy_tenants(intent, topology, username, password):
                 "/inventory/switchesByFabric", "switch inventory")
             serials = preflight_inventory(
                 intent, inventory,
-                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"))
+                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"), site=site)
             before = {kind: _deployment_states(
                 page, root, compiled, serials, tor_ports, tor_names, kind)
                 for kind in ("VRF", "Network")}
@@ -447,7 +454,7 @@ def deploy_tenants(intent, topology, username, password):
             host_ports = deploy_access_ports(
                 page, fabric, access_ports, serials, username)
             return {"fabric": fabric, **result, "host_ports": host_ports,
-                    "deployment": "in-sync"}
+                    "dhcp_status": dhcp_status, "deployment": "in-sync"}
         finally:
             browser.close()
 
@@ -455,6 +462,7 @@ def deploy_tenants(intent, topology, username, password):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
+    parser.add_argument("--site", choices=("DC1", "DC2"), default="DC1")
     parser.add_argument("--check", action="store_true",
                         help="Compile without NDFC access")
     parser.add_argument("--attach", action="store_true",
@@ -464,7 +472,11 @@ def main():
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
     if args.check:
-        print(json.dumps(compile_tenants(intent), indent=2))
+        compiled = compile_tenants(intent, args.site)
+        compiled["dhcp_status"] = {
+            network["name"]: validate_network_dhcp(network)
+            for network in compiled["networks"]}
+        print(json.dumps(compiled, indent=2))
         return
     env = _environment(Path.cwd())
     username = env.get("NDFC_RUNNER_USERNAME")
@@ -476,9 +488,10 @@ def main():
         parser.error("Select only one of --attach or --deploy")
     topology = (yaml.safe_load(args.intent.with_name("topology.yaml").read_text())
                 if args.attach or args.deploy else None)
-    result = (deploy_tenants(intent, topology, username, password) if args.deploy
-              else attach_tenants(intent, topology, username, password) if args.attach
-              else stage_tenants(intent, username, password))
+    result = (deploy_tenants(intent, topology, username, password, args.site)
+              if args.deploy else attach_tenants(
+                  intent, topology, username, password, args.site) if args.attach
+              else stage_tenants(intent, username, password, args.site))
     result.pop("switch_serials", None)
     print(json.dumps(result, indent=2))
 

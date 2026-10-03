@@ -60,7 +60,7 @@ def test_live_inventory_preflight_rejects_wrong_role_or_serial(monkeypatch):
         {"name": "Border-1", "ip": "192.0.2.11", "role": "border"},
     ]
     monkeypatch.setattr(ndfc_switches, "compile_switches",
-                        lambda _: ("LAB", declared))
+                        lambda _, site="DC1": ("LAB", declared))
     inventory = [
         {"logicalName": "Leaf-1", "ipAddress": "192.0.2.10",
          "switchRole": "leaf", "serialNumber": "SERIAL-1", "ccStatus": "In-Sync"},

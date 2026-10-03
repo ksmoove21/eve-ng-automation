@@ -1,4 +1,4 @@
-"""Read-only NDFC switch discovery preflight for a declared DC1 fabric."""
+"""Read-only NDFC switch discovery preflight for a selected fabric."""
 
 import argparse
 import json
@@ -12,14 +12,19 @@ from .ndfc_fabric import _FABRICS, _api, compile_fabric
 from .nexus_dashboard_browser import NexusDashboardBrowserError, _login, _spki_pin
 
 
-def compile_switches(intent):
-    """Pair active DC1 switch names, management IPs, and declared NDFC roles."""
-    name, _ = compile_fabric(intent)
-    fabric = next(item for item in intent["ndfc_fabrics"] if item["site"] == "DC1")
-    active = set(intent["scope"]["activation_set"])
+def compile_switches(intent, site="DC1"):
+    """Pair selected-site switch names, management IPs, and declared roles."""
+    name, _ = compile_fabric(intent, site)
+    fabric = next(item for item in intent["ndfc_fabrics"] if item["site"] == site)
+    activation_key = "activation_set" if site == "DC1" else "r7_activation_set"
+    active = set(intent["scope"][activation_key])
+    spines = (fabric["spine_pair"]["nodes"] if "spine_pair" in fabric else
+              ["N9K-Spine-1", "N9K-Spine-2"] if site == "DC1" else None)
+    if spines is None:
+        raise ValueError(site + " fabric requires explicit spine_pair.nodes")
     assignments = intent["management"]["fabric_edge"]["assignments"]
     groups = [
-        ("spine", ["N9K-Spine-1", "N9K-Spine-2"]),
+        ("spine", spines),
         ("leaf", fabric["regular_leaf_pair"]["nodes"]),
         ("border", fabric["border_leaf_pair"]["nodes"]),
         ("tor", fabric["tor_pair"]["nodes"]),
@@ -27,27 +32,27 @@ def compile_switches(intent):
     switches = []
     for role, nodes in groups:
         if len(nodes) != 2:
-            raise ValueError("DC1 " + role + " requires exactly two declared switches")
+            raise ValueError(site + " " + role + " requires exactly two declared switches")
         for node in nodes:
             if node not in active:
-                raise ValueError("Inactive switch in DC1 fabric: " + node)
+                raise ValueError("Inactive switch in " + site + " fabric: " + node)
             switches.append({
                 "name": node,
                 "ip": assignments[node].split("/")[0],
                 "role": role,
             })
     if len({item["name"] for item in switches}) != 8:
-        raise ValueError("DC1 switch roles must cover eight unique devices")
+        raise ValueError(site + " switch roles must cover eight unique devices")
     if len({item["ip"] for item in switches}) != 8:
-        raise ValueError("DC1 management IPs must be unique")
+        raise ValueError(site + " management IPs must be unique")
     return name, switches
 
 
-def check_switch_reachability(intent, username, password):
+def check_switch_reachability(intent, username, password, site="DC1"):
     """Use Cisco's test-reachability endpoint; this never imports switches."""
     from playwright.sync_api import sync_playwright
 
-    fabric_name, switches = compile_switches(intent)
+    fabric_name, switches = compile_switches(intent, site)
     address = intent["management"]["nd"]["address"].split("/")[0]
     endpoint = (_FABRICS + "/" + quote(fabric_name, safe="") +
                 "/inventory/test-reachability")
@@ -102,19 +107,20 @@ def check_switch_reachability(intent, username, password):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
+    parser.add_argument("--site", choices=("DC1", "DC2"), default="DC1")
     parser.add_argument("--check", action="store_true",
                         help="Compile switch targets without NDFC access")
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
     if args.check:
-        name, switches = compile_switches(intent)
+        name, switches = compile_switches(intent, args.site)
         print(json.dumps({"fabric": name, "switches": switches}, indent=2))
         return
     env = _environment(Path.cwd())
     username, password = env.get("CISCO_USERNAME"), env.get("CISCO_PASSWORD")
     if not username or not password:
         raise ValueError("Set CISCO_USERNAME and CISCO_PASSWORD in EVE_ENV_FILE")
-    print(json.dumps(check_switch_reachability(intent, username, password), indent=2))
+    print(json.dumps(check_switch_reachability(intent, username, password, args.site), indent=2))
 
 
 if __name__ == "__main__":
