@@ -142,9 +142,21 @@ Spend context on evidence that changes implementation decisions.
 
 This branch is testing bounded Codex subagents as parallel execution runners. It is an experiment for the active Nexus Dashboard/NDFC DC1 sprint, not yet a durable project-wide convention.
 
-The primary/root agent owns the sprint, critical path, integration decisions, acceptance criteria, and the troubleshooting context of the problem it is actively working. Use the project-scoped `runner` agent for substantial independent work lanes that would otherwise make Root leave that critical path. Start with one runner. A second runner may be added only when a distinct ready lane exists. The branch configuration caps concurrent spawned threads at two, excluding Root.
+The primary/root agent owns the sprint, critical path, integration decisions, acceptance criteria, and the troubleshooting context of the problem it is actively working. Use the project-scoped `runner` agent for substantial independent work lanes that would otherwise make Root leave that critical path. Start with one runner. Additional agents may be added only when a distinct ready lane exists. The branch configuration caps concurrent spawned threads at three, excluding Root.
 
 Root should normally diagnose failures arising directly from its own active lane. Do not offload an active failure merely to free Root from troubleshooting context. Runners are for independent progress, not for duplicating Root.
+
+### Cost-first model policy
+
+Prefer the least expensive model that can reliably complete the bounded role. Escalate model capability only when observed ambiguity, repeated failure, cross-system reasoning, or material engineering judgment justifies it.
+
+For this trial:
+- Coordinator: GPT-5.6 Luna / Low for status, messaging, storyboard, and bookkeeping.
+- Hygiene: GPT-5.6 Terra / Medium for repository cleanup and maintenance.
+- Runner: GPT-5.6 Sol / Medium for substantial live infrastructure lanes unless field evidence shows Terra can perform the lane reliably.
+- Root: parent-selected stronger model as needed for the sprint critical path.
+
+Do not keep a heavier model on a task solely because it was previously used there. If a cheaper role proves sufficient, prefer it on future spawns. If a cheaper role stalls, misclassifies risk, repeats failed work, or encounters material ambiguity, return the problem to Root or respawn/escalate with a stronger model rather than burning retries.
 
 Spawn the project-scoped `coordinator` agent when beginning the multi-agent trial.
 The coordinator is GPT-5.6 Luna / Low and acts only as control tower/scribe. It
