@@ -4,3 +4,11 @@ max_concurrent_threads_per_session = 3
 default_subagent_model = "gpt-5.6-sol"
 default_subagent_reasoning_effort = "medium"
 interrupt_message = true
+
+[agents.runner]
+description = "Bounded execution runner for independent infrastructure or repository work while Root owns the sprint critical path."
+config_file = "agents/runner.toml"
+
+[agents.coordinator]
+description = "Low-cost sprint control tower and scribe for storyboard, handoffs, ownership, and Git-visible checkpoints."
+config_file = "agents/coordinator.toml"
