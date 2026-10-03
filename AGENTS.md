@@ -138,6 +138,14 @@ Spend context on evidence that changes implementation decisions.
 - Keep sprint prompts task-specific. Standing architecture, repository, safety, and autonomy rules belong in checked-in guidance rather than being repeated verbatim in every prompt.
 - If the client supports context compaction or summarization, use it only after current state and important evidence are durable in the repository or sprint artifacts.
 
+## Direct-link topology invariant
+
+When lab intent declares a point-to-point cable between two node interfaces, encode it as a direct `from`/`to` link and preserve that same point-to-point semantic in EVE.
+
+Do not model a point-to-point cable by attaching multiple nodes to a declared shared bridge/network. Declared EVE network objects are reserved for intentional shared/multiaccess or infrastructure networks such as Cloud0/pnet and other explicitly shared segments.
+
+If EVE requires a backing bridge for a direct cable, it is adapter-private: exactly one direct link, exactly two endpoints, hidden from the native canvas/status network list, and never shared with another cable.
+
 ## EVE integration toolbox
 
 For EVE-NG topology, lifecycle, placement, and runtime operations, treat the
