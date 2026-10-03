@@ -30,4 +30,7 @@ MUTATED RESOURCES
 ROOT DECISION REQUIRED
 
 Keep the report compact. Do not return raw logs unless Root asks for them.
+
+If this role becomes materially difficult, do not silently switch model class or burn repeated retries. Return evidence to Root and recommend increasing reasoning effort on the current model first. Recommend a more expensive model tier only when the evidence indicates a capability ceiling rather than merely a need for deeper reasoning.
+
 """
