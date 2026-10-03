@@ -174,3 +174,36 @@ def test_network_attachment_readback_uses_get_fields_and_exact_tor_ports(monkeyp
     with pytest.raises(NexusDashboardBrowserError, match="undeclared ToR"):
         api._ensure_attachment(None, "/networks/attachments", "networkName",
                                payload, {"SERIAL-1"}, 110, {"ToR-1", "ToR-2"})
+
+
+def test_deploy_preflight_scopes_serials_and_requires_exact_tor_ports(monkeypatch):
+    from eve_lab import ndfc_tenant_api as api
+    from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
+
+    intent = _intent()
+    compiled = compile_tenants(intent)
+    serials = {"Leaf-1": "SERIAL-1", "Leaf-2": "SERIAL-2",
+               "Border-1": "SERIAL-3", "Border-2": "SERIAL-4"}
+    assert api._deployment_map(compiled, serials, "Network") == {
+        "SERIAL-1": "BLUE-NET,GREEN-NET",
+        "SERIAL-2": "BLUE-NET,GREEN-NET",
+    }
+    body = [{"networkName": "BLUE-NET", "lanAttachList": [
+        {"switchSerialNo": serial, "vlanId": 110, "isLanAttached": True,
+         "lanAttachState": "PENDING", "portNames": "ToR-1(Ethernet1/3)"}
+        for serial in ("SERIAL-1", "SERIAL-2")]}]
+    monkeypatch.setattr(api, "_api", lambda *_: (200, body))
+    with pytest.raises(NexusDashboardBrowserError, match="attachments differ"):
+        api._deployment_states(None, "/fabrics/LAB", compiled, serials,
+                               {"BLUE-NET": "ToR-1(Ethernet1/3)"},
+                               {"ToR-1"}, "Network")
+    body.append({"networkName": "GREEN-NET", "lanAttachList": [
+        {"switchSerialNo": serial, "vlanId": 120, "isLanAttached": True,
+         "lanAttachState": "PENDING", "portNames": "ToR-2(Ethernet1/4)"}
+        for serial in ("SERIAL-1", "SERIAL-2")]})
+    states = api._deployment_states(
+        None, "/fabrics/LAB", compiled, serials,
+        {"BLUE-NET": "ToR-1(Ethernet1/3)",
+         "GREEN-NET": "ToR-2(Ethernet1/4)"},
+        {"ToR-1", "ToR-2"}, "Network")
+    assert len(states) == 4 and set(states.values()) == {"PENDING"}

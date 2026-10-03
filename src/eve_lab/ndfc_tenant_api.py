@@ -20,7 +20,8 @@ from .nexus_dashboard_browser import (
     NexusDashboardBrowserError, _login, _spki_pin, _wait_for,
 )
 
-_TOP_DOWN = _BASE + "/lan-fabric/rest/top-down/fabrics/"
+_TOP_DOWN_ROOT = _BASE + "/lan-fabric/rest/top-down"
+_TOP_DOWN = _TOP_DOWN_ROOT + "/fabrics/"
 
 
 def _collection(page, endpoint, kind):
@@ -300,6 +301,112 @@ def attach_tenants(intent, topology, username, password):
         finally:
             browser.close()
 
+
+def _deployment_map(compiled, serials, kind):
+    """Build the 12.2.3 resource deploy map from declared switch identities."""
+    resources = compiled["vrfs" if kind == "VRF" else "networks"]
+    by_serial = {}
+    for item in resources:
+        for switch in item["switches"]:
+            by_serial.setdefault(serials[switch], []).append(item["name"])
+    return {serial: ",".join(names) for serial, names in sorted(by_serial.items())}
+
+
+def _deployment_states(page, root, compiled, serials, tor_ports, tor_names, kind):
+    leaf = "vrfs" if kind == "VRF" else "networks"
+    key = "vrfName" if kind == "VRF" else "networkName"
+    rows = _attachment_records(
+        _collection(page, root + "/" + leaf + "/attachments", kind + " attachments"),
+        key)
+    states = {}
+    for item in compiled[leaf]:
+        expected_serials = {serials[name] for name in item["switches"]}
+        selected = {serial: row for (name, serial), row in rows.items()
+                    if name == item["name"]}
+        if set(selected) != expected_serials:
+            raise NexusDashboardBrowserError(
+                "NDFC " + item["name"] + " deployment attachments differ from intent")
+        for serial, row in selected.items():
+            if str(row["vlan"]) != str(item["vlan"]):
+                raise NexusDashboardBrowserError(
+                    "NDFC " + item["name"] + " deployment VLAN differs from intent")
+            if kind == "Network":
+                observed = row.get("torPorts") or " ".join(
+                    token for token in re.findall(r"\S+\([^)]*\)",
+                                                  row.get("portNames") or "")
+                    if token.split("(", 1)[0] in tor_names)
+                if observed != tor_ports[item["name"]]:
+                    raise NexusDashboardBrowserError(
+                        "NDFC " + item["name"] + " deployment ToR ports differ from intent")
+            state = row.get("lanAttachState")
+            if state not in ("PENDING", "OUT-OF-SYNC", "IN-SYNC", "DEPLOYED"):
+                raise NexusDashboardBrowserError(
+                    "NDFC " + item["name"] + " has invalid deployment state: " +
+                    str(state))
+            states[item["name"], serial] = state
+    return states
+
+
+def deploy_tenants(intent, topology, username, password):
+    """Deploy only declared tenant resources after exact attachment preflight."""
+    from playwright.sync_api import sync_playwright
+
+    compiled = compile_tenants(intent)
+    tor_ports = compile_tor_ports(intent, topology)
+    tor_names = set(next(profile["tor_pair"]["nodes"] for profile in
+                         intent["ndfc_fabrics"] if profile["site"] == "DC1"))
+    fabric = compiled["fabric"]
+    root = _TOP_DOWN + quote(fabric, safe="")
+    address = intent["management"]["nd"]["address"].split("/")[0]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=["--ignore-certificate-errors-spki-list=" + _spki_pin(address)])
+        try:
+            page = browser.new_page()
+            page.goto("https://" + address + "/", wait_until="domcontentloaded",
+                      timeout=30000)
+            _login(page, username, password, 90)
+            inventory = _collection(
+                page, _FABRICS + "/" + quote(fabric, safe="") +
+                "/inventory/switchesByFabric", "switch inventory")
+            serials = preflight_inventory(intent, inventory)
+            before = {kind: _deployment_states(
+                page, root, compiled, serials, tor_ports, tor_names, kind)
+                for kind in ("VRF", "Network")}
+            result = {}
+            for kind, endpoint in (("VRF", _TOP_DOWN_ROOT + "/vrfs/deploy"),
+                                   ("Network", _TOP_DOWN_ROOT + "/networks/deploy")):
+                pending = {key for key, state in before[kind].items()
+                           if state not in ("IN-SYNC", "DEPLOYED")}
+                if pending:
+                    mapping = _deployment_map(compiled, serials, kind)
+                    selected = {}
+                    for serial, names in mapping.items():
+                        needed = [name for name in names.split(",")
+                                  if (name, serial) in pending]
+                        if needed:
+                            selected[serial] = ",".join(needed)
+                    status, body = _api(page, "POST", endpoint, selected)
+                    if status != 200 or (isinstance(body, dict) and body.get("failureList")):
+                        raise NexusDashboardBrowserError(
+                            "NDFC " + kind + " deploy failed with HTTP " +
+                            str(status) + ": " + str(body)[:250])
+                    deadline = time.monotonic() + 300
+                    _wait_for(page, lambda: all(
+                        state in ("IN-SYNC", "DEPLOYED") for state in
+                        _deployment_states(page, root, compiled, serials,
+                                           tor_ports, tor_names, kind).values()),
+                        deadline, "NDFC " + kind + " attachment deployment")
+                result[kind.lower() + "s"] = {
+                    "resources": len(compiled["vrfs" if kind == "VRF" else "networks"]),
+                    "attachments_deployed": len(pending),
+                }
+            return {"fabric": fabric, **result, "deployment": "in-sync"}
+        finally:
+            browser.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
@@ -307,6 +414,8 @@ def main():
                         help="Compile without NDFC access")
     parser.add_argument("--attach", action="store_true",
                         help="Attach staged overlays without deploying")
+    parser.add_argument("--deploy", action="store_true",
+                        help="Deploy only declared attached tenant resources")
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
     if args.check:
@@ -318,11 +427,14 @@ def main():
     if not username or not password:
         raise ValueError(
             "Set NDFC_RUNNER_USERNAME and NDFC_RUNNER_PASSWORD in EVE_ENV_FILE")
-    result = (attach_tenants(
-        intent, yaml.safe_load(args.intent.with_name("topology.yaml").read_text()),
-        username, password) if args.attach
-        else stage_tenants(intent, username, password))
-    result.pop("switch_serials")
+    if args.attach and args.deploy:
+        parser.error("Select only one of --attach or --deploy")
+    topology = (yaml.safe_load(args.intent.with_name("topology.yaml").read_text())
+                if args.attach or args.deploy else None)
+    result = (deploy_tenants(intent, topology, username, password) if args.deploy
+              else attach_tenants(intent, topology, username, password) if args.attach
+              else stage_tenants(intent, username, password))
+    result.pop("switch_serials", None)
     print(json.dumps(result, indent=2))
 
 
