@@ -145,10 +145,40 @@ def ensure_fabric(intent, username, password, timeout=300):
                 raise NexusDashboardBrowserError(
                     "Live NDFC template lacks declared NV fields: " + ", ".join(sorted(missing)))
             current = _find_fabric(page, name)
-            if current:
-                _verify_fabric(current, desired)
-                return {"status": "already-configured", "fabric": name}
             endpoint = _FABRICS + "/" + quote(name, safe="") + "/Easy_Fabric"
+            if current:
+                actual = current.get("nvPairs")
+                if current.get("templateName") != "Easy_Fabric" or not isinstance(actual, dict):
+                    raise NexusDashboardBrowserError(
+                        "Existing NDFC fabric template or NV readback is unavailable")
+                differing = {key for key, value in desired.items()
+                             if str(actual.get(key, "")).strip() != str(value).strip()}
+                if not differing:
+                    return {"status": "already-configured", "fabric": name}
+                # This is the owner-approved R4 migration of the sole DHCP
+                # pre-interface field. Do not silently rewrite other fabric intent.
+                if (differing != {"preInterfaceConfigLeaf"}
+                        or str(actual.get("preInterfaceConfigLeaf", "")).strip()
+                        != "feature dhcp"):
+                    raise NexusDashboardBrowserError(
+                        "NDFC fabric conflicts with declared NV pairs: " +
+                        ", ".join(sorted(differing)))
+                status, response = _api(page, "PUT", endpoint, {
+                    "preInterfaceConfigLeaf": desired["preInterfaceConfigLeaf"]})
+                if status != 200:
+                    raise NexusDashboardBrowserError(
+                        "NDFC fabric leaf freeform update failed with HTTP " +
+                        str(status) + ": " + str(response)[:300])
+                observed = {}
+                def updated():
+                    observed["fabric"] = _find_fabric(page, name)
+                    return (observed["fabric"] is not None and
+                            observed["fabric"].get("nvPairs", {}).get(
+                                "preInterfaceConfigLeaf", "").strip() ==
+                            desired["preInterfaceConfigLeaf"])
+                _wait_for(page, updated, deadline, "NDFC leaf freeform readback")
+                _verify_fabric(observed["fabric"], desired)
+                return {"status": "updated", "fabric": name}
             status, response = _api(page, "POST", endpoint, desired)
             if status != 200:
                 raise NexusDashboardBrowserError(
@@ -165,10 +195,43 @@ def ensure_fabric(intent, username, password, timeout=300):
             browser.close()
 
 
+def recalculate_and_deploy(intent, username, password, timeout=300):
+    """Run Cisco's documented fabric config-save then config-deploy actions."""
+    from playwright.sync_api import sync_playwright
+
+    name, desired = compile_fabric(intent)
+    address = intent["management"]["nd"]["address"].split("/")[0]
+    endpoint = _FABRICS + "/" + quote(name, safe="")
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=True, args=["--ignore-certificate-errors-spki-list=" +
+                                 _spki_pin(address)])
+        try:
+            page = browser.new_page()
+            page.goto("https://" + address + "/", wait_until="domcontentloaded",
+                      timeout=min(30000, int(timeout * 1000)))
+            _login(page, username, password, timeout)
+            current = _find_fabric(page, name)
+            if current is None:
+                raise NexusDashboardBrowserError("DC1 fabric is absent before deployment")
+            _verify_fabric(current, desired)
+            for action in ("config-save", "config-deploy"):
+                status, response = _api(page, "POST", endpoint + "/" + action)
+                if status != 200:
+                    raise NexusDashboardBrowserError(
+                        "NDFC fabric " + action + " failed with HTTP " +
+                        str(status) + ": " + str(response)[:300])
+            return {"status": "recalculated-and-deployed", "fabric": name}
+        finally:
+            browser.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
     parser.add_argument("--check", action="store_true", help="Compile without live access")
+    parser.add_argument("--deploy", action="store_true",
+                        help="Recalculate and deploy after reconciling fabric settings")
     parser.add_argument("--timeout", type=int, default=300)
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
@@ -180,7 +243,11 @@ def main():
     username, password = env.get("CISCO_USERNAME"), env.get("CISCO_PASSWORD")
     if not username or not password:
         raise ValueError("Set CISCO_USERNAME and CISCO_PASSWORD in EVE_ENV_FILE or environment")
-    print(json.dumps(ensure_fabric(intent, username, password, args.timeout)))
+    result = ensure_fabric(intent, username, password, args.timeout)
+    if args.deploy:
+        result["deployment"] = recalculate_and_deploy(
+            intent, username, password, args.timeout)
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":
