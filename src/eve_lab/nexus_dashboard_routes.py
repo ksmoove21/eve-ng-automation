@@ -18,11 +18,32 @@ def declared_management_routes(intent):
     return routes
 
 
+def _platform_management_routes(page):
+    """Read Cisco's documented platform route collection on this ND version."""
+    result = page.evaluate("""async () => {
+        const response = await fetch('/nexus/infra/api/platform/v1/routes');
+        return {status: response.status, body: await response.json()};
+    }""")
+    if result["status"] != 200 or not isinstance(result["body"], dict):
+        raise NexusDashboardBrowserError(
+            "ND documented routes GET failed with HTTP " + str(result["status"]))
+    items = result["body"].get("items")
+    if not isinstance(items, list):
+        raise NexusDashboardBrowserError("ND documented routes GET has no items")
+    return [item.get("spec", {}).get("destination") for item in items
+            if item.get("spec", {}).get("targetNetwork") == "Management"]
+
+
 def ensure_management_routes(page, intent, deadline):
-    """Add missing ND management routes and verify them in the Routes tile."""
+    """Add missing ND management routes and verify documented API readback."""
     routes = declared_management_routes(intent)
     if not routes:
         return {"status": "already-configured", "routes": []}
+    current = _platform_management_routes(page)
+    if any(current.count(route) > 1 for route in routes):
+        raise NexusDashboardBrowserError("ND has duplicate declared management routes")
+    if all(route in current for route in routes):
+        return {"status": "already-configured", "routes": routes}
     welcome = page.locator("#modal-root .meet-nd-modal")
     if welcome.count() == 1 and welcome.is_visible():
         close = welcome.locator(".modal__close")
@@ -38,8 +59,7 @@ def ensure_management_routes(page, intent, deadline):
     _wait_for(page, lambda: card.count() == 1, deadline, "ND Routes tile")
     _wait_for(page, lambda: "Loading..." not in card.inner_text(), deadline,
               "ND Routes tile data")
-    missing = [route for route in routes
-               if card.get_by_text(route, exact=True).count() == 0]
+    missing = [route for route in routes if route not in current]
     if not missing:
         return {"status": "already-configured", "routes": routes}
     card.get_by_text("Edit", exact=True).click()
@@ -61,6 +81,6 @@ def ensure_management_routes(page, intent, deadline):
         raise NexusDashboardBrowserError("ND management route Save is disabled")
     save.click()
     _wait_for(page, lambda: all(
-        card.get_by_text(route, exact=True).count() == 1 for route in routes),
-        deadline, "ND management route readback")
+        _platform_management_routes(page).count(route) == 1 for route in routes),
+        deadline, "ND management route API readback")
     return {"status": "updated", "routes": routes}
