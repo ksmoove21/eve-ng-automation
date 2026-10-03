@@ -13,8 +13,11 @@ def _token(value, field, pattern=_TOKEN):
 
 def bootstrap_commands(data):
     """Render explicit NX-OS management bootstrap intent; no private defaults."""
-    if not isinstance(data, dict) or set(data) != {'hostname', 'management_interface', 'management_address', 'management_prefix_length', 'management_gateway', 'boot_image'}:
-        raise ValueError('NX-OS bootstrap requires exactly hostname, management_interface, management_address, management_prefix_length, management_gateway, and boot_image')
+    required = {'hostname', 'management_interface', 'management_address', 'management_prefix_length', 'management_gateway', 'boot_image'}
+    if not isinstance(data, dict) or not required <= set(data) or set(data) - required - {'enable_lacp'}:
+        raise ValueError('NX-OS bootstrap requires management and boot fields, with optional enable_lacp')
+    if type(data.get('enable_lacp', False)) is not bool:
+        raise ValueError('enable_lacp must be a boolean')
     _token(data['hostname'], 'hostname')
     _token(data['management_interface'], 'management_interface', re.compile(r'(?:mgmt\d+|Management\d+)\Z'))
     _token(data['boot_image'], 'boot_image', _IMAGE)
@@ -25,7 +28,7 @@ def bootstrap_commands(data):
         gateway = IPv4Address(data['management_gateway'])
     except ValueError:
         raise ValueError('management_address and management_gateway must be IPv4 addresses') from None
-    return [
+    commands = [
         'hostname ' + data['hostname'],
         'interface ' + data['management_interface'],
         'ip address ' + str(address) + '/' + str(data['management_prefix_length']),
@@ -34,6 +37,9 @@ def bootstrap_commands(data):
         'vrf context management',
         'ip route 0.0.0.0/0 ' + str(gateway), 'exit',
     ]
+    if data.get('enable_lacp'):
+        commands.append('feature lacp')
+    return commands
 
 def load_bootstrap(path):
     try:
