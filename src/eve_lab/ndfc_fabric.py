@@ -196,7 +196,7 @@ def ensure_fabric(intent, username, password, timeout=300):
 
 
 def recalculate_and_deploy(intent, username, password, timeout=300):
-    """Run Cisco's documented fabric config-save then config-deploy actions."""
+    """Submit Cisco fabric config-save/deploy; verify switch convergence separately."""
     from playwright.sync_api import sync_playwright
 
     name, desired = compile_fabric(intent)
@@ -221,7 +221,8 @@ def recalculate_and_deploy(intent, username, password, timeout=300):
                     raise NexusDashboardBrowserError(
                         "NDFC fabric " + action + " failed with HTTP " +
                         str(status) + ": " + str(response)[:300])
-            return {"status": "recalculated-and-deployed", "fabric": name}
+            return {"status": "fabric-deploy-request-accepted", "fabric": name,
+                    "verification": "run ndfc_switch_deploy for per-switch convergence"}
         finally:
             browser.close()
 
