@@ -1,5 +1,3 @@
-name = "coordinator"
-description = "Low-cost control-tower agent that maintains sprint state, relays worker handoffs, and keeps Git-visible checkpoints current without performing network engineering."
 model = "gpt-5.6-luna"
 model_reasoning_effort = "low"
 
