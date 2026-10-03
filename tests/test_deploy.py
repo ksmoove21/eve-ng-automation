@@ -222,6 +222,7 @@ class DeploymentTests(unittest.TestCase):
 
     def test_interface_keys_normalize_iol_and_ios_abbreviations(self):
         self.assertEqual(interface_key('Ethernet0/0'), interface_key('e0/0'))
+        self.assertEqual(interface_key('eth0'), interface_key('e0'))
         self.assertEqual(interface_key('FastEthernet0/1'), interface_key('Fa0/1'))
         self.assertEqual(interface_key('GigabitEthernet1'), interface_key('Gi1'))
 

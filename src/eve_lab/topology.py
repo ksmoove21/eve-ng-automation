@@ -14,7 +14,7 @@ def interface_key(name: str) -> str:
     aliases = (
         (r"^(gigabitethernet|gi|g)(?=\d)", "gi"),
         (r"^(fastethernet|fa|f)(?=\d)", "fa"),
-        (r"^(ethernet|et|e)(?=\d)", "e"),
+        (r"^(ethernet|eth|et|e)(?=\d)", "e"),
     )
     for pattern, replacement in aliases:
         key = re.sub(pattern, replacement, key)
