@@ -20,7 +20,7 @@ INTENT = {
         "switch_import": {"greenfield": True, "preserve_config": False},
         "network_vlan_range": "100-199",
         "vpc_peer_keepalive_option": "management",
-        "leaf_pre_interfaces_freeform": "feature dhcp",
+        "leaf_pre_interfaces_freeform": "feature dhcp\nservice dhcp",
     }],
     "tenants": {
         "vni_policy": {"l2_range": "20000-29999", "l3_range": "30000-39999"},
@@ -39,7 +39,7 @@ class NdfcFabricTests(unittest.TestCase):
         self.assertEqual(nv["LOOPBACK1_IP_RANGE"], "10.240.103.0/24")
         self.assertEqual(nv["L2_SEGMENT_ID_RANGE"], "20000-29999")
         self.assertEqual(nv["L3_PARTITION_ID_RANGE"], "30000-39999")
-        self.assertEqual(nv["preInterfaceConfigLeaf"], "feature dhcp")
+        self.assertEqual(nv["preInterfaceConfigLeaf"], "feature dhcp\nservice dhcp")
 
     def test_rejects_tenant_vni_outside_owner_range(self):
         intent = deepcopy(INTENT)
