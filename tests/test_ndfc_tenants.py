@@ -74,6 +74,10 @@ def test_live_inventory_preflight_rejects_wrong_role_or_serial(monkeypatch):
         preflight_inventory({}, inventory)
     assert preflight_inventory({}, inventory,
                                allowed_cc_status=("In-Sync", "Pending"))["Border-1"] == "SERIAL-2"
+    inventory[1]["ccStatus"] = "Out-of-Sync"
+    assert preflight_inventory(
+        {}, inventory, allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync")
+    )["Border-1"] == "SERIAL-2"
     inventory[1]["ccStatus"] = "In-Sync"
     inventory[1]["switchRole"] = "leaf"
     with pytest.raises(ValueError):

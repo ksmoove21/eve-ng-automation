@@ -272,7 +272,9 @@ def attach_tenants(intent, topology, username, password):
             inventory = _collection(
                 page, _FABRICS + "/" + quote(fabric, safe="") +
                 "/inventory/switchesByFabric", "switch inventory")
-            serials = preflight_inventory(intent, inventory)
+            serials = preflight_inventory(
+                intent, inventory,
+                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"))
             for kind, leaf, desired in (
                     ("VRF", "vrfs", compiled["vrfs"]),
                     ("Network", "networks", compiled["networks"])):
@@ -376,7 +378,8 @@ def deploy_tenants(intent, topology, username, password):
                 page, _FABRICS + "/" + quote(fabric, safe="") +
                 "/inventory/switchesByFabric", "switch inventory")
             serials = preflight_inventory(
-                intent, inventory, allowed_cc_status=("In-Sync", "Pending"))
+                intent, inventory,
+                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"))
             before = {kind: _deployment_states(
                 page, root, compiled, serials, tor_ports, tor_names, kind)
                 for kind in ("VRF", "Network")}
