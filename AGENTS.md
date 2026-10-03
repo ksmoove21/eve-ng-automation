@@ -146,6 +146,16 @@ The primary/root agent owns the sprint, critical path, integration decisions, ac
 
 Root should normally diagnose failures arising directly from its own active lane. Do not offload an active failure merely to free Root from troubleshooting context. Runners are for independent progress, not for duplicating Root.
 
+Spawn the project-scoped `coordinator` agent when beginning the multi-agent trial.
+The coordinator is GPT-5.6 Luna / Low and acts only as control tower/scribe. It
+maintains the private sprint storyboard, tracks worker/resource/EVE ownership,
+records Git-visible checkpoints, and relays dependency-changing handoffs between
+Root and runners. It does not perform network engineering, use EVE, or operate
+device consoles. Prefer event-driven worker updates; while the sprint is
+actively running, the coordinator may do a lightweight reconciliation at about
+15-minute intervals if kept active for that purpose. Silence is preferred when
+nothing changed.
+
 Examples for the current sprint:
 
 - Root: Nexus Dashboard, Cluster Bringup, Fabric Controller/NDFC lifecycle, fabric creation, and integration gates.
