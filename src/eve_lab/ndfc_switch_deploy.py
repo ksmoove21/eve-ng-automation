@@ -26,10 +26,15 @@ def _inventory(page, endpoint):
 
 def _preview(page, endpoint, serial):
     status, body = _api(page, "GET", endpoint + "/config-preview/" + quote(serial, safe=""))
-    if status != 200 or not isinstance(body, list) or len(body) != 1:
+    if status != 200 or not isinstance(body, list):
         raise NexusDashboardBrowserError(
             "NDFC switch config-preview failed with HTTP " + str(status))
-    return body[0]
+    matching = [item for item in body if isinstance(item, dict)
+                and item.get("switchId") == serial]
+    if len(matching) != 1:
+        raise NexusDashboardBrowserError(
+            "NDFC switch config-preview did not identify exactly one requested serial")
+    return matching[0]
 
 
 def deploy_switches(intent, username, password, names=None, timeout=300):
