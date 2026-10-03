@@ -225,6 +225,7 @@ def _node_details(page, intent):
 def _deployment_mode(page, intent):
     """Enable only the declared platform service through its labeled card."""
     fabric_label = page.get_by_text("Fabric Controller", exact=True)
+    fabric_label.wait_for(timeout=30000)
     if fabric_label.count() != 1:
         raise NexusDashboardBrowserError("Nexus Dashboard Deployment Mode did not expose Fabric Controller")
     card = fabric_label.locator("xpath=ancestor::section[1]")
