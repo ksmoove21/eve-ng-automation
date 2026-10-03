@@ -478,8 +478,8 @@ def _fabric_controller_service_setup(page, deadline):
               "Fabric Controller Service Setup submission")
     return True
 
-def _set_fabric_controller_data(page, deadline):
-    """Use Server Settings UI for the documented LAN DATA selection."""
+def _set_fabric_controller_connectivity(page, deadline, connectivity):
+    """Reconcile LAN device-management connectivity through Server Settings."""
     admin = page.get_by_role("link", name="Admin", exact=True)
     _wait_for(page, lambda: admin.count() == 1 and admin.is_visible(), deadline,
               "Fabric Controller Admin UI")
@@ -503,34 +503,38 @@ def _set_fabric_controller_data(page, deadline):
     mode = page.locator('[id="serverProperties.global.oob_network_mode"]')
     _wait_for(page, lambda: mode.count() == 1 and mode.is_visible(), deadline,
               "LAN Device Management Connectivity")
-    if mode.input_value().lower() == "data":
-        return "already-configured"
-    if mode.input_value().lower() != "management":
+    observed = mode.input_value().lower()
+    if observed not in ("data", "management"):
         raise NexusDashboardBrowserError("Fabric Controller exposed an unexpected device-management value")
+    if observed == connectivity:
+        return "already-configured"
     mode.click()
-    data = page.get_by_text("Data", exact=True)
-    _wait_for(page, lambda: data.count() == 1 and data.is_visible(), deadline,
-              "LAN DATA device-management option")
-    data.click()
-    if mode.input_value().lower() != "data":
-        raise NexusDashboardBrowserError("Fabric Controller did not retain DATA device-management selection")
+    option = page.get_by_text(connectivity.title(), exact=True)
+    _wait_for(page, lambda: option.count() == 1 and option.is_visible(), deadline,
+              "LAN " + connectivity.upper() + " device-management option")
+    option.click()
+    if mode.input_value().lower() != connectivity:
+        raise NexusDashboardBrowserError(
+            "Fabric Controller did not retain " + connectivity.upper() +
+            " device-management selection")
     save = page.get_by_role("button", name="Save")
     if save.count() != 1 or save.is_disabled():
         raise NexusDashboardBrowserError("Fabric Controller Server Settings did not enable Save")
     save.click(no_wait_after=True)
     _wait_for(page, lambda: "Saving server properties is in progress" not in
               page.locator("body").inner_text(), deadline,
-              "Fabric Controller DATA device-management save")
-    if mode.input_value().lower() != "data":
-        raise NexusDashboardBrowserError("Fabric Controller did not persist DATA device-management")
+              "Fabric Controller " + connectivity.upper() + " device-management save")
+    if mode.input_value().lower() != connectivity:
+        raise NexusDashboardBrowserError(
+            "Fabric Controller did not persist " + connectivity.upper() + " device-management")
     return "configured"
 
 
 def configure_fabric_controller(intent, username, password, timeout=1800):
-    """Run the owner-confirmed lifecycle: launcher, LAN/Advanced, then DATA.
+    """Run the Fabric Controller setup and reconcile declared connectivity.
 
     The documented fabrics API is called only after the UI lifecycle has reached
-    Server Settings and its DATA selection has settled. No fabric is created.
+    Server Settings and the desired selection has settled. No fabric is created.
     """
     if not intent["fabric_controller"]["enabled"]:
         return {"status": "disabled"}
@@ -555,7 +559,8 @@ def configure_fabric_controller(intent, username, password, timeout=1800):
                           timeout=min(30000, max(1000, int((deadline - time.monotonic()) * 1000))))
                 _launch_fabric_controller(page, deadline)
                 submitted = _fabric_controller_service_setup(page, deadline)
-                result = _set_fabric_controller_data(page, deadline)
+                result = _set_fabric_controller_connectivity(
+                    page, deadline, intent["fabric_controller"]["device_management_connectivity"])
                 status, body = _external_ip_response(page, "GET")  # Dashboard API remains read-only here.
                 if status != 200 or not isinstance(body, dict):
                     raise NexusDashboardBrowserError("Nexus Dashboard external-IP read validation is unavailable")
@@ -566,12 +571,12 @@ def configure_fabric_controller(intent, username, password, timeout=1800):
                         return {status:r.status, body:await r.text()}; }"""))
                     return fabrics.get("status") == 200
                 # The documented gateway can register after the UI has saved
-                # DATA selection. Poll the public endpoint rather than
+                # desired selection. Poll the public endpoint rather than
                 # treating its pre-registration response as a configuration fault.
                 _wait_for(page, fabrics_api_ready, deadline,
                           "Fabric Controller documented fabrics API registration")
                 if fabrics.get("status") != 200:
-                    raise NexusDashboardBrowserError("Fabric Controller documented fabrics API is not ready after DATA selection")
+                    raise NexusDashboardBrowserError("Fabric Controller documented fabrics API is not ready after connectivity selection")
                 try:
                     listing = json.loads(fabrics.get("body", ""))
                 except json.JSONDecodeError as error:

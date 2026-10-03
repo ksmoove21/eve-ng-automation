@@ -12,7 +12,8 @@ from eve_lab.initialize_nexus_dashboard import (
 )
 from eve_lab.nexus_dashboard_browser import (
     _ensure_external_ips, _external_ips_payloads, _fabric_controller_service_setup,
-    _launch_fabric_controller, _state,
+    _launch_fabric_controller, _set_fabric_controller_connectivity,
+    configure_fabric_controller, _state,
 )
 
 
@@ -107,6 +108,117 @@ class NexusDashboardInitTests(unittest.TestCase):
 
         wait_for.assert_called_once()
         setup.click.assert_not_called()
+    def _connectivity_page(self, initial):
+        page = MagicMock()
+        mode = MagicMock()
+        state = {"value": initial}
+        mode.input_value.side_effect = lambda: state["value"]
+        mode.count.return_value = 1
+        mode.is_visible.return_value = True
+        option = MagicMock()
+        option.count.return_value = 1
+        option.is_visible.return_value = True
+        option.click.side_effect = lambda: state.update(
+            value=page.get_by_text.call_args.args[0].lower())
+        admin = MagicMock()
+        admin.count.return_value = 1
+        admin.is_visible.return_value = True
+        cancel = MagicMock()
+        cancel.count.return_value = 0
+        system = MagicMock()
+        system.count.return_value = 1
+        system.is_visible.return_value = True
+        save = MagicMock()
+        save.count.return_value = 1
+        save.is_disabled.return_value = False
+        form = MagicMock()
+        category = form.get_by_text.return_value
+        category.count.return_value = 1
+        category.is_visible.return_value = True
+        body = MagicMock()
+        body.inner_text.return_value = ""
+        page.locator.side_effect = lambda selector: {
+            "body": body,
+            "form": form,
+            '[id="serverProperties.global.oob_network_mode"]': mode,
+        }[selector]
+        page.get_by_role.side_effect = lambda role, name, **kwargs: {
+            "Admin": admin,
+            "Cancel": cancel,
+            "System Settings": system,
+            "Save": save,
+        }[name]
+        page.get_by_text.return_value = option
+        return page, mode, save, state
+
+    @patch("eve_lab.nexus_dashboard_browser._wait_for")
+    def test_fabric_connectivity_reconciles_both_directions(self, wait_for):
+        wait_for.side_effect = lambda page, predicate, deadline, description: (
+            self.assertTrue(predicate(), description))
+        for initial, desired in (("Management", "data"), ("Data", "management")):
+            with self.subTest(initial=initial, desired=desired):
+                page, mode, save, state = self._connectivity_page(initial)
+                self.assertEqual(
+                    _set_fabric_controller_connectivity(page, 1, desired),
+                    "configured")
+                self.assertEqual(state["value"], desired)
+                mode.click.assert_called_once_with()
+                page.get_by_text.assert_called_once_with(desired.title(), exact=True)
+                save.click.assert_called_once_with(no_wait_after=True)
+
+    @patch("eve_lab.nexus_dashboard_browser._wait_for")
+    def test_fabric_management_default_is_verified_without_save(self, wait_for):
+        wait_for.side_effect = lambda page, predicate, deadline, description: (
+            self.assertTrue(predicate(), description))
+        for observed in ("Management", "Data"):
+            with self.subTest(observed=observed):
+                page, mode, save, _ = self._connectivity_page(observed)
+                self.assertEqual(
+                    _set_fabric_controller_connectivity(page, 1, observed.lower()),
+                    "already-configured")
+                mode.click.assert_not_called()
+                page.get_by_text.assert_not_called()
+                save.click.assert_not_called()
+
+    @patch("eve_lab.nexus_dashboard_browser._wait_for")
+    def test_fabric_connectivity_rejects_unrecognized_observed_value(self, wait_for):
+        wait_for.side_effect = lambda page, predicate, deadline, description: (
+            self.assertTrue(predicate(), description))
+        page, mode, save, _ = self._connectivity_page("unknown")
+        from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
+        with self.assertRaisesRegex(NexusDashboardBrowserError, "unexpected device-management"):
+            _set_fabric_controller_connectivity(page, 1, "management")
+        mode.click.assert_not_called()
+        save.click.assert_not_called()
+
+    @patch("eve_lab.nexus_dashboard_browser._spki_pin", return_value="test-pin")
+    @patch("eve_lab.nexus_dashboard_browser._login")
+    @patch("eve_lab.nexus_dashboard_browser._launch_fabric_controller")
+    @patch("eve_lab.nexus_dashboard_browser._fabric_controller_service_setup",
+           return_value=True)
+    @patch("eve_lab.nexus_dashboard_browser._set_fabric_controller_connectivity",
+           return_value="already-configured")
+    @patch("eve_lab.nexus_dashboard_browser._external_ip_response",
+           return_value=(200, {}))
+    @patch("eve_lab.nexus_dashboard_browser._wait_for")
+    @patch("playwright.sync_api.sync_playwright")
+    def test_fabric_controller_passes_declared_management_connectivity(
+            self, playwright, wait_for, external_ips, set_connectivity,
+            service_setup, launcher, login, pin):
+        launch = playwright.return_value.__enter__.return_value.chromium.launch
+        page = launch.return_value.new_page.return_value
+        page.evaluate.return_value = {"status": 200, "body": "[]"}
+        wait_for.side_effect = lambda page, predicate, deadline, description: (
+            self.assertTrue(predicate(), description))
+        intent = {**INTENT, "fabric_controller": {
+            "enabled": True, "device_management_connectivity": "management"}}
+        result = configure_fabric_controller(intent, "admin", "secret")
+        self.assertEqual(result["status"], "already-configured")
+        self.assertTrue(result["service_setup_submitted"])
+        set_connectivity.assert_called_once()
+        self.assertIs(set_connectivity.call_args.args[0], page)
+        self.assertEqual(set_connectivity.call_args.args[2], "management")
+
     def test_intent_derives_persistent_addresses_and_preserves_data_selection(self):
         intent = normalize_intent(INTENT)
         self.assertEqual(intent["persistent_service_ips"], [

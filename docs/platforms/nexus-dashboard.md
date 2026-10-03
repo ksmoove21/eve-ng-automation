@@ -192,6 +192,11 @@ GUI label is evaluated only with its documented state, transition, and
 prerequisites. It applies to the installed 3.2.1i/12.2.2.241 combination, not
 to a future 3.2.2m image.
 
+The browser workflow reads the declared LAN device-management connectivity in
+Server Settings. When it already matches management or data, it verifies the
+setting without saving; otherwise it selects the declared value and saves it.
+The DATA transition below records the observed live run.
+
 | State | Next transition and prerequisite | Evidence / classification |
 | --- | --- | --- |
 | ND Active | Start Fabric Controller and choose its feature set. Before a feature set is chosen, NDFC permits only Backup and Restore. | **DOCUMENTED:** the 12.2.2 LAN initial-setup guide calls this Feature Management and specifies Fabric Discovery, Fabric Controller, or SAN Controller personas. |
