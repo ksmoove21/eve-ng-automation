@@ -259,6 +259,9 @@ For Cisco IOS XE:
 - the engine owns entering/exiting configuration mode
 - the engine owns credential/VTY bootstrap where currently implemented
 - the engine owns configuration save verification
+- an adapter may require each submitted command's own console echo before
+  accepting the next prompt when delayed prompt redraws can mask a missed
+  command; verify required running/operational state after the save
 - do not require init files to contain interactive commands such as
   `configure terminal`, `write memory`, or `copy run start`
 
