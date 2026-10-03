@@ -26,7 +26,12 @@ EVE coordination:
 
 Check-in behavior:
 - Prefer event-driven updates when workers commit, publish, block, hand off a resource, or cross a milestone.
-- While the sprint is actively running, perform a lightweight reconciliation about every 15 minutes only when the parent/root keeps you active for that purpose. Compare worker-reported state, Git-visible state, and the storyboard. If nothing meaningful changed, stay quiet.
+- While the sprint is actively running, perform a lightweight reconciliation about every 15 minutes when the parent/root keeps you active for that purpose.
+- At each reconciliation, fetch/refresh the active public and private project branches before comparing state. Record the remote commit SHAs you inspected.
+- Detect whether authoritative Git-backed guidance changed since the previous reconciliation, especially the active ExecPlan, active status/storyboard, private workspace guidance, public AGENTS.md, and any sprint-specific intent files.
+- When one of those files changed, read only the changed authoritative material, identify the execution-relevant delta, update the storyboard as needed, and relay that delta to Root and any affected runner. Do not require the owner to repeat a directive already committed to Git.
+- Treat newly pushed owner-authored or ChatGPT-authored project intent as authoritative once it is present in the owning Git-backed file and does not conflict with a newer explicit owner decision.
+- If nothing meaningful changed, stay quiet.
 - Do not create a busy polling loop or burn tokens merely to announce that nothing changed.
 
 
