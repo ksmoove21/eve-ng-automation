@@ -138,6 +138,77 @@ Spend context on evidence that changes implementation decisions.
 - Keep sprint prompts task-specific. Standing architecture, repository, safety, and autonomy rules belong in checked-in guidance rather than being repeated verbatim in every prompt.
 - If the client supports context compaction or summarization, use it only after current state and important evidence are durable in the repository or sprint artifacts.
 
+## Nexus Dashboard subagent runner trial
+
+This branch is testing bounded Codex subagents as parallel execution runners. It is an experiment for the active Nexus Dashboard/NDFC DC1 sprint, not yet a durable project-wide convention.
+
+The primary/root agent owns the sprint, critical path, integration decisions, acceptance criteria, and the troubleshooting context of the problem it is actively working. Use the project-scoped `runner` agent for substantial independent work lanes that would otherwise make Root leave that critical path. Start with one runner. A second runner may be added only when a distinct ready lane exists. The branch configuration caps concurrent spawned threads at two, excluding Root.
+
+Root should normally diagnose failures arising directly from its own active lane. Do not offload an active failure merely to free Root from troubleshooting context. Runners are for independent progress, not for duplicating Root.
+
+Spawn the project-scoped `coordinator` agent when beginning the multi-agent trial.
+The coordinator is GPT-5.6 Luna / Low and acts only as control tower/scribe. It
+maintains the private sprint storyboard, tracks worker/resource/EVE ownership,
+records Git-visible checkpoints, and relays dependency-changing handoffs between
+Root and runners. It does not perform network engineering, use EVE, or operate
+device consoles. Prefer event-driven worker updates; while the sprint is
+actively running, the coordinator may do a lightweight reconciliation at about
+15-minute intervals if kept active for that purpose. Silence is preferred when
+nothing changed.
+
+Examples for the current sprint:
+
+- Root: Nexus Dashboard, Cluster Bringup, Fabric Controller/NDFC lifecycle, fabric creation, and integration gates.
+- Runner lane: PA-FW-1/PA-FW-2 bootstrap, management readiness, HA, interfaces/zones, then WAN/ISP prerequisites as dependencies permit.
+- Optional second runner lane: DC1 Nexus switch bootstrap, exact-image/port validation, management readiness, and preparation for NDFC discovery.
+
+### EVE multi-user and console coordination
+
+EVE Web/API authentication is session-sensitive per user. EVE documents that the
+same user can log in from only one location; a second login invalidates the first.
+Never share one EVE username across concurrent agents.
+
+For this trial, Root and the active runner should use distinct EVE identities.
+Root retains its assigned EVE user; the runner uses the separate runner EVE user.
+The coordinator never authenticates to EVE.
+
+EVE Pro documents shared labs/projects and parallel Telnet/VNC consoles across
+users. Treat that as DOCUMENTED but FIELD-TEST REQUIRED for this automation
+because the non-owner API/lifecycle path must be proven against the current EVE
+7.2.0-4 environment.
+
+Until the shared-lab API/lifecycle field test passes:
+
+- Root is the EVE lifecycle broker and performs plan/apply/start/stop plus
+  console-endpoint discovery.
+- A runner that needs a node started, stopped, or rediscovered sends the request
+  to Root rather than opening a competing EVE API session.
+- Root records or returns the direct console endpoint needed by the runner.
+
+After the field test proves the second user can operate the same shared lab
+through the supported EVE interface without session or ownership problems:
+
+- Root may keep its own EVE session under its dedicated user.
+- The runner may keep a separate EVE session under its dedicated user.
+- Concurrent control-plane use is allowed only on separately owned resources;
+  do not issue competing lifecycle mutations against the same node or topology
+  object.
+- The coordinator/storyboard records EVE identity assignment, node ownership,
+  and any lifecycle handoff that changes who may mutate a resource.
+
+The EVE control plane does not globally serialize guest work. EVE documents
+parallel Telnet and VNC console access across users. Different agents may work
+concurrently on different guest devices through serial/Telnet, VNC, SSH, or the
+guest's supported API.
+
+Maintain one active command writer per guest device or console unless Root
+explicitly coordinates otherwise. Multiple observers are acceptable when the
+access method supports it, but do not allow independent writers to interleave
+input. RDP remains single-user per node.
+
+
+When a runner finishes or blocks, Root either assigns the next ready task in that lane, transfers ownership, or closes the runner. Do not keep idle runners alive merely because the concurrency cap permits them.
+
 ## EVE CPU Limit runtime policy
 
 QEMU nodes created or reconciled by this automation must have EVE-NG CPU Limit
