@@ -151,12 +151,22 @@ the selected state through the same reconciler and retains the topology `name`,
 so scenarios do not create separate permanent EVE labs.
 
 Direct links are topology semantics, separate from EVE presentation and runtime
-storage. The EVE adapter may materialize an exclusive hidden bridge record when
-the platform requires a `network_id`, but that record is adapter-private: it is
-not a declared network, must have exactly the two declared endpoints, must stay
-hidden on the native EVE canvas, and must not appear as a cloud/network in the
-semantic status view. Explicitly declared networks remain user-visible topology
-objects. This follows the same topology-versus-presentation separation used by
+storage. A point-to-point cable between two node interfaces **must** be declared
+with direct `from`/`to` link syntax and must remain semantically point-to-point
+in EVE. Do not replace or coalesce direct cables into a declared shared bridge
+merely because EVE internally connects interfaces through network records.
+
+The EVE adapter may materialize an exclusive hidden bridge record when the
+platform requires a `network_id`, but that record is adapter-private: it belongs
+to exactly one declared direct link, must have exactly the two declared
+endpoints, must stay hidden on the native EVE canvas, must not be reused by
+another cable, and must not appear as a cloud/network in the semantic status
+view.
+
+Explicitly declared networks represent intentional shared/multiaccess or
+infrastructure semantics such as Cloud0/pnet, an explicitly shared LAN segment,
+or another human-declared common medium. They must not be used as an
+implementation shortcut for point-to-point node links. This follows the same topology-versus-presentation separation used by
 EVE-IaC; Git intent describes nodes, networks, and links while presentation
 metadata controls how those objects are rendered. Optional regions and labels
 belong in `labs/<lab>/presentation.yaml`; when that file exists, the reconciler
