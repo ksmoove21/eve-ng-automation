@@ -138,6 +138,24 @@ Spend context on evidence that changes implementation decisions.
 - Keep sprint prompts task-specific. Standing architecture, repository, safety, and autonomy rules belong in checked-in guidance rather than being repeated verbatim in every prompt.
 - If the client supports context compaction or summarization, use it only after current state and important evidence are durable in the repository or sprint artifacts.
 
+## EVE integration toolbox
+
+For EVE-NG topology, lifecycle, placement, and runtime operations, treat the
+available integrations as a toolbox rather than a fixed precedence chain.
+
+Before adding custom EVE-specific Python, check whether the operation is already
+handled cleanly by the native EVE API, EVE-IAC, or a suitable SDK/library.
+Compose those integrations when useful. Use EVE-host SSH only for host-level
+operations, image/runtime handling, or diagnostics that genuinely require host
+access.
+
+Python remains the orchestration, policy, reconciliation, normalization, and
+validation layer. Do not reimplement EVE platform behavior without evidence that
+the existing integration surfaces leave a real capability gap.
+
+The durable engineering details live in
+[STRUCTURE.md](docs/architecture/STRUCTURE.md).
+
 ## EVE CPU Limit runtime policy
 
 QEMU nodes created or reconciled by this automation must have EVE-NG CPU Limit
