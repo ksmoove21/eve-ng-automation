@@ -302,7 +302,7 @@ Use your actual lab and node names:
 | --- | --- | --- |
 | `eve plan <lab>` | Validate the local YAML and summarize object counts. | No |
 | `eve apply <lab> [--no-prune]` | Apply the topology; prune undeclared nodes, networks, and stale links by default. | Yes |
-| `eve start <lab> [--node <name>]` | Start YAML-declared nodes, or only the named remote node; skip nodes already running. | Yes |
+| `eve start <lab> [--node <name> ...]` | Start YAML-declared nodes, or only the named remote nodes; skip nodes already running. | Yes |
 | `eve stop <lab> [--node <name>]` | Stop every remote node, or only the named node; skip nodes already stopped. | Yes |
 | `eve delete <lab>` | Stop all remote nodes and permanently delete the entire remote lab. | Yes |
 | `eve status [lab]` | Read server statistics, or a lab's nodes and networks when a lab is provided. | Yes |
@@ -419,7 +419,13 @@ eve stop palo-lab
 eve stop palo-lab --remote-folder /
 eve stop palo-lab --node pa-a  # Stop only the firewall; routers keep running
 eve start palo-lab --node pa-a # Start only the firewall
+eve start palo-lab --node pa-a --node R1 # Start only the selected set
 ```
+
+Selected startup checks every requested remote name and state before issuing a
+start request. Duplicate or missing names fail the whole selection before any node
+starts. Repeat `--node` for a declared activation set while leaving other sites
+stopped. With no `--node`, `start` starts every YAML-declared node.
 
 `stop` reads the remote node list and stops every active node, including nodes
 removed or renamed in YAML and nodes added manually. It ignores local node,
@@ -1391,7 +1397,9 @@ its generated bridge is not included in the declared network count.
 
 Keep visual annotations separate from topology semantics in
 `labs/<lab>/presentation.yaml`. Version 1 supports declarative `regions` and
-`labels`; applying the lab reconciles these to native EVE text objects. When the
+`labels` and `hidden_networks`; applying the lab reconciles annotations to
+native EVE text objects and hides the named declared networks on the canvas.
+Hidden networks retain their attachments and remain in semantic status. When the
 file exists, undeclared text objects are pruned. Node coordinates and icons stay
 in `topology.yaml`, while adapter-private bridges for direct links remain hidden.
 

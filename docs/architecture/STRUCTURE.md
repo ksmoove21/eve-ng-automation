@@ -155,12 +155,20 @@ storage. The EVE adapter may materialize an exclusive hidden bridge record when
 the platform requires a `network_id`, but that record is adapter-private: it is
 not a declared network, must have exactly the two declared endpoints, must stay
 hidden on the native EVE canvas, and must not appear as a cloud/network in the
-semantic status view. Explicitly declared networks remain user-visible topology
-objects. This follows the same topology-versus-presentation separation used by
+semantic status view. Explicitly declared networks remain topology objects. The optional
+`hidden_networks` list in `presentation.yaml` may hide named declared
+networks on the native canvas without changing their attachments or semantic
+status. This follows the same topology-versus-presentation separation used by
 EVE-IaC; Git intent describes nodes, networks, and links while presentation
 metadata controls how those objects are rendered. Optional regions and labels
 belong in `labs/<lab>/presentation.yaml`; when that file exists, the reconciler
 owns the lab's EVE text objects and prunes undeclared ones.
+
+A site activation set is a selection of declared nodes, separate from topology
+construction. The selected-start path must validate the entire set against live
+remote names and node states before starting any member; omitted nodes stay
+stopped. Repeated `eve start <lab> --node NAME` options express the set through
+the reusable CLI.
 
 Do not derive or invent design intent merely because a device can support it.
 

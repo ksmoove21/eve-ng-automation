@@ -75,7 +75,11 @@ def validate(topology: dict):
     for field in ("nodes", "networks", "links"):
         if not isinstance(topology.get(field), list):
             raise ValueError(f"Topology {field} must be a list")
-    validate_presentation(topology.get("presentation"))
+    validate_presentation(
+        topology.get("presentation"),
+        network_names=[network.get("name") for network in topology["networks"]
+                       if isinstance(network, dict)],
+    )
     topology, _ = expand_links(topology)
     validate_folder(topology.get("remote_folder", "/"))
     allowed = {
