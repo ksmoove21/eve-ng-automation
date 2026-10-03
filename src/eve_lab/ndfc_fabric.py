@@ -39,7 +39,7 @@ def compile_fabric(intent, site="DC1"):
         raise ValueError("DC1 infrastructure pools overlap")
     if fabric["vpc_peer_keepalive_option"] != "management":
         raise ValueError("NDFC 12.2.3 management vPC keepalive mapping is required")
-    if fabric["leaf_pre_interfaces_freeform"] != "feature dhcp":
+    if fabric["leaf_pre_interfaces_freeform"] != "feature dhcp\nservice dhcp":
         raise ValueError("DC1 leaf pre-interface DHCP feature intent is required")
     vnis = intent["tenants"]["vni_policy"]
     if vnis["l2_range"] != "20000-29999" or vnis["l3_range"] != "30000-39999":
