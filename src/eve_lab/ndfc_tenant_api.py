@@ -69,7 +69,7 @@ def _verify_object(observed, wanted, kind):
     else:
         identity = ("networkName", "networkId", "vrf", "networkTemplate")
         config = ("networkName", "vrfName", "segmentId", "vlanId",
-                  "gatewayIpAddress", "isLayer2Only")
+                  "gatewayIpAddress", "tag", "isLayer2Only")
         key = "networkTemplateConfig"
     mismatched = [name for name in identity
                   if str(observed.get(name)) != str(wanted[name])]
@@ -108,6 +108,29 @@ def _stage_collection(page, endpoint, kind, desired):
             result = "created"
         else:
             result = "already-configured"
+            if kind == "Network":
+                current_config = _decode_config(
+                    by_name[name], "networkTemplateConfig", kind)
+                if "tag" not in current_config:
+                    updated = dict(by_name[name])
+                    updated_config = {**current_config, "tag": ""}
+                    updated["networkTemplateConfig"] = json.dumps(
+                        updated_config, separators=(",", ":"))
+                    _verify_object(updated, payload, kind)
+                    status, body = _api(
+                        page, "PUT", endpoint + "/" + quote(name, safe=""), updated)
+                    if status != 200:
+                        raise NexusDashboardBrowserError(
+                            "NDFC Network tag correction failed for " + name +
+                            " with HTTP " + str(status) + ": " + str(body)[:250])
+                    current = _collection(page, endpoint, kind)
+                    matches = [item for item in current
+                               if item.get(name_key) == name]
+                    if len(matches) != 1:
+                        raise NexusDashboardBrowserError(
+                            "NDFC Network tag correction lacks exact readback")
+                    by_name[name] = matches[0]
+                    result = "updated"
         _verify_object(by_name[name], payload, kind)
         results.append({"name": name, "status": result})
     return results
@@ -138,7 +161,9 @@ def stage_tenants(intent, username, password):
             inventory = _collection(
                 page, _FABRICS + "/" + quote(fabric, safe="") +
                 "/inventory/switchesByFabric", "switch inventory")
-            serials = preflight_inventory(intent, inventory)
+            serials = preflight_inventory(
+                intent, inventory,
+                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"))
             vrf_payloads = [vrf_create_payload(fabric, item) for item in compiled["vrfs"]]
             network_payloads = [network_create_payload(fabric, item)
                                 for item in compiled["networks"]]

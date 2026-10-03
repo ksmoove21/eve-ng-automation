@@ -188,6 +188,7 @@ def network_create_payload(fabric, network):
         "segmentId": network["vni"],
         "vlanId": network["vlan"],
         "gatewayIpAddress": gateway,
+        "tag": "",
         "nveId": "1",
         "isLayer2Only": False,
     }

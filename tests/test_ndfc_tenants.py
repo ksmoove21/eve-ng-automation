@@ -101,7 +101,43 @@ def test_payloads_preserve_declared_overlay_without_extension_fields():
     assert "configureStaticDefaultRouteFlag" not in vrf_cfg
     assert (network["networkId"], net_cfg["vlanId"]) == (20001, 110)
     assert net_cfg["gatewayIpAddress"] == "192.0.2.1/24"
+    assert net_cfg["tag"] == ""
     assert "enableIR" not in net_cfg
+
+
+def test_stage_corrects_only_missing_network_routing_tag(monkeypatch):
+    import json
+    from eve_lab import ndfc_tenant_api as api
+    from eve_lab.ndfc_tenants import network_create_payload
+    from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
+
+    wanted = network_create_payload("LAB", compile_tenants(_intent())["networks"][0])
+    current = dict(wanted)
+    config = json.loads(current["networkTemplateConfig"])
+    del config["tag"]
+    current["networkTemplateConfig"] = json.dumps(config)
+    calls = []
+
+    def fake_api(_, method, endpoint, payload=None):
+        calls.append((method, endpoint))
+        if method == "PUT":
+            assert endpoint.endswith("/" + wanted["networkName"])
+            assert json.loads(payload["networkTemplateConfig"])["tag"] == ""
+            current.update(payload)
+            return 200, {}
+        return 200, [dict(current)]
+
+    monkeypatch.setattr(api, "_api", fake_api)
+    result = api._stage_collection(None, "/networks", "Network", [wanted])
+    assert result == [{"name": wanted["networkName"], "status": "updated"}]
+    assert [method for method, _ in calls].count("PUT") == 1
+
+    config["tag"] = "12345"
+    current["networkTemplateConfig"] = json.dumps(config)
+    calls.clear()
+    with pytest.raises(NexusDashboardBrowserError, match="conflicts"):
+        api._stage_collection(None, "/networks", "Network", [wanted])
+    assert all(method == "GET" for method, _ in calls)
 
 
 def test_attachment_payloads_target_only_declared_switches():
