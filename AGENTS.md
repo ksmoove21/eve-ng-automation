@@ -91,6 +91,20 @@ documentation, upstream project source/docs, release notes or bug documentation,
 then reputable community evidence. Validate researched conclusions against the
 actual disposable lab.
 
+A bounded syntax, command-prerequisite, API-shape, or exact-version question is
+normal implementation work, not an owner decision by itself. Resolve it through
+focused research and, when useful, delegate the read-only research question to
+the Coordinator/scribe while the implementation worker continues its owned lane.
+Escalate only when the evidence exposes a real architectural choice, requires
+authority outside the active scope, or no supported path remains after reasonable
+research and field validation.
+
+When research changes or sharpens a durable platform fact, reconcile the result
+into the owning checked-in platform/architecture documentation with the exact
+version and evidence classification. Do not leave current vendor behavior only
+in chat, a worker message, or the sprint storyboard; the reusable engine should
+carry forward the latest validated knowledge.
+
 Use these execution zones:
 
 - **Repository/offline work:** autonomous.
