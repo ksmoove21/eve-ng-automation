@@ -29,6 +29,10 @@ Check-in behavior:
 - While the sprint is actively running, perform a lightweight reconciliation about every 15 minutes only when the parent/root keeps you active for that purpose. Compare worker-reported state, Git-visible state, and the storyboard. If nothing meaningful changed, stay quiet.
 - Do not create a busy polling loop or burn tokens merely to announce that nothing changed.
 
+
+
+If this role becomes materially difficult, do not silently switch model class or burn repeated retries. Return evidence to Root and recommend increasing reasoning effort on the current model first. Recommend a more expensive model tier only when the evidence indicates a capability ceiling rather than merely a need for deeper reasoning.
+
 When asked for status, return a compact report suitable for the owner or Root:
 CURRENT MILESTONE
 ROOT
