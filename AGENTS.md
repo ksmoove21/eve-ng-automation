@@ -146,17 +146,25 @@ The primary/root agent owns the sprint, critical path, integration decisions, ac
 
 Root should normally diagnose failures arising directly from its own active lane. Do not offload an active failure merely to free Root from troubleshooting context. Runners are for independent progress, not for duplicating Root.
 
-### Cost-first model policy
+### Cost-first model and reasoning policy
 
-Prefer the least expensive model that can reliably complete the bounded role. Escalate model capability only when observed ambiguity, repeated failure, cross-system reasoning, or material engineering judgment justifies it.
+Prefer the least expensive model that can reliably complete the bounded role. When a task becomes difficult, prefer increasing reasoning effort on the current model before moving to a more expensive model tier when that remains cost-effective.
+
+Use this escalation order by default:
+
+1. keep the current model and increase reasoning effort;
+2. increase reasoning effort again when the model is still making sound progress and the additional depth is justified;
+3. escalate the model tier only when evidence indicates a capability ceiling rather than merely a difficult problem.
+
+A capability ceiling includes repeated misclassification of risk, failure to integrate required cross-system evidence, circular retries despite increased reasoning, inability to make a material engineering judgment safely, or another demonstrated limitation that more reasoning depth on the same model is unlikely to fix.
 
 For this trial:
-- Coordinator: GPT-5.6 Luna / Low for status, messaging, storyboard, and bookkeeping.
-- Hygiene: GPT-5.6 Terra / Medium for repository cleanup and maintenance.
-- Runner: GPT-5.6 Sol / Medium for substantial live infrastructure lanes unless field evidence shows Terra can perform the lane reliably.
-- Root: parent-selected stronger model as needed for the sprint critical path.
+- Coordinator: GPT-5.6 Luna / Low for status, messaging, storyboard, and bookkeeping. Prefer Luna Medium/High before moving to Terra when deeper coordination reasoning is needed.
+- Hygiene: GPT-5.6 Terra / Medium for repository cleanup and maintenance. Prefer Terra High/XHigh before moving to Sol when cleanup requires deeper reasoning.
+- Runner: GPT-5.6 Sol / Medium for substantial live infrastructure lanes until a cheaper runner profile is field-proven. Prefer Sol High/XHigh before changing model tier for a hard lane.
+- Root: parent-selected model for the sprint critical path; prefer reasoning-effort escalation before model-tier escalation when the current model remains appropriate.
 
-Do not keep a heavier model on a task solely because it was previously used there. If a cheaper role proves sufficient, prefer it on future spawns. If a cheaper role stalls, misclassifies risk, repeats failed work, or encounters material ambiguity, return the problem to Root or respawn/escalate with a stronger model rather than burning retries.
+Do not keep a heavier model on a task solely because it was previously used there. Do not repeatedly retry the same failing task at the same model/reasoning setting. If a cheaper role proves sufficient, prefer it on future spawns. If a role stalls, return the problem to Root with evidence and recommend the next reasoning-effort step before recommending a model-tier change.
 
 Spawn the project-scoped `coordinator` agent when beginning the multi-agent trial.
 The coordinator is GPT-5.6 Luna / Low and acts only as control tower/scribe. It
