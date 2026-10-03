@@ -10,6 +10,7 @@ from urllib.parse import quote
 import yaml
 
 from .config import _environment
+from .nexus_dashboard_routes import ensure_management_routes
 from .nexus_dashboard_browser import (
     NexusDashboardBrowserError, _login, _spki_pin, _wait_for,
 )
@@ -133,6 +134,7 @@ def ensure_fabric(intent, username, password, timeout=300):
             page.goto("https://" + address + "/", wait_until="domcontentloaded",
                       timeout=min(30000, int(timeout * 1000)))
             _login(page, username, password, max(1, deadline - time.monotonic()))
+            ensure_management_routes(page, intent, deadline)
             status, template = _api(page, "GET", _TEMPLATE)
             if status != 200 or not isinstance(template, dict):
                 raise NexusDashboardBrowserError("NDFC Easy_Fabric template is unavailable")
