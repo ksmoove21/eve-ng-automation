@@ -9,7 +9,7 @@ from urllib.parse import quote
 import yaml
 
 from .config import _environment
-from .ndfc_fabric import _FABRICS, _api
+from .ndfc_fabric import _BASE, _FABRICS, _api
 from .ndfc_switches import compile_switches
 from .nexus_dashboard_browser import (
     NexusDashboardBrowserError, _login, _spki_pin, _wait_for,
@@ -25,7 +25,8 @@ def _inventory(page, endpoint):
 
 
 def _preview(page, endpoint, serial):
-    status, body = _api(page, "GET", endpoint + "/config-preview/" + quote(serial, safe=""))
+    status, body = _api(page, "GET", endpoint + "/config-preview/" +
+                        quote(serial, safe="") + "?forceShowRun=true")
     if status != 200 or not isinstance(body, list):
         raise NexusDashboardBrowserError(
             "NDFC switch config-preview failed with HTTP " + str(status))
@@ -35,6 +36,30 @@ def _preview(page, endpoint, serial):
         raise NexusDashboardBrowserError(
             "NDFC switch config-preview did not identify exactly one requested serial")
     return matching[0]
+
+
+def _deployer_history(page, fabric, serial, username):
+    endpoint = (_BASE + "/lan-fabric/rest/config/delivery/deployerHistoryByFabric/" +
+                quote(fabric, safe="") +
+                "?serial-number=" + quote(serial, safe="") +
+                "&sort=submittedTime:DESC&filter=" +
+                quote("user==" + username, safe="="))
+    status, body = _api(page, "GET", endpoint)
+    if status != 200 or not isinstance(body, list):
+        raise NexusDashboardBrowserError(
+            "NDFC switch deployer history failed with HTTP " + str(status))
+    return [row for row in body if isinstance(row, dict) and
+            row.get("serialnumber") == serial and row.get("user") == username]
+
+
+def _raise_new_deployment_failure(history, baseline, name):
+    failures = [row for row in history if row.get("submittedTime", "") > baseline
+                and row.get("status") in ("FAILED", "NOT_EXECUTED")]
+    if failures:
+        detail = next((row.get("statusDescription") for row in failures
+                       if row.get("statusDescription")), "Command delivery failed")
+        raise NexusDashboardBrowserError(
+            "NDFC per-switch deploy failed for " + name + ": " + detail[:300])
 
 
 def deploy_switches(intent, username, password, names=None, timeout=300):
@@ -75,6 +100,9 @@ def deploy_switches(intent, username, password, names=None, timeout=300):
                     results.append({"name": name, "status": "already-in-sync"})
                     print(json.dumps(results[-1]), flush=True)
                     continue
+                history = _deployer_history(page, fabric, serial, username)
+                baseline = max((row.get("submittedTime", "") for row in history),
+                               default="")
                 status, response = _api(
                     page, "POST", endpoint + "/config-deploy/" + quote(serial, safe=""))
                 if status != 200:
@@ -84,7 +112,11 @@ def deploy_switches(intent, username, password, names=None, timeout=300):
                 deadline = time.monotonic() + timeout
                 def converged():
                     view = _preview(page, endpoint, serial)
-                    return view.get("status") == "In-Sync" and not view.get("pendingConfig")
+                    if view.get("status") == "In-Sync" and not view.get("pendingConfig"):
+                        return True
+                    _raise_new_deployment_failure(
+                        _deployer_history(page, fabric, serial, username), baseline, name)
+                    return False
                 _wait_for(page, converged, deadline, "NDFC In-Sync " + name)
                 results.append({"name": name, "status": "in-sync"})
                 print(json.dumps(results[-1]), flush=True)
