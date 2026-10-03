@@ -106,3 +106,19 @@ def test_attachment_payloads_target_only_declared_switches():
     assert {x["serialNumber"] for x in network["lanAttachList"]} == {
         "SERIAL-Leaf-1", "SERIAL-Leaf-2"}
     assert all("switchPorts" not in x for x in network["lanAttachList"])
+
+
+def test_attachment_readback_rejects_undeclared_serial(monkeypatch):
+    from eve_lab import ndfc_tenant_api as api
+    from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
+
+    body = [{"vrfName": "BLUE", "lanAttachList": [
+        {"serialNumber": "SERIAL-1", "vlan": 130, "deployment": True},
+        {"serialNumber": "SERIAL-EXTRA", "vlan": 130, "deployment": True},
+    ]}]
+    monkeypatch.setattr(api, "_api", lambda *_: (200, body))
+    payload = [{"vrfName": "BLUE", "lanAttachList": [
+        {"serialNumber": "SERIAL-1", "vlan": 130, "deployment": True}]}]
+    with pytest.raises(NexusDashboardBrowserError, match="undeclared"):
+        api._ensure_attachment(None, "/vrfs/attachments", "vrfName",
+                               payload, {"SERIAL-1"}, 130)

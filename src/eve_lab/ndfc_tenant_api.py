@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import time
 from pathlib import Path
 from urllib.parse import quote
 
@@ -10,10 +11,12 @@ import yaml
 from .config import _environment
 from .ndfc_fabric import _BASE, _FABRICS, _api
 from .ndfc_tenants import (
-    compile_tenants, network_create_payload, preflight_inventory,
-    vrf_create_payload,
+    compile_tenants, network_attach_payload, network_create_payload,
+    preflight_inventory, vrf_attach_payload, vrf_create_payload,
 )
-from .nexus_dashboard_browser import NexusDashboardBrowserError, _login, _spki_pin
+from .nexus_dashboard_browser import (
+    NexusDashboardBrowserError, _login, _spki_pin, _wait_for,
+)
 
 _TOP_DOWN = _BASE + "/lan-fabric/rest/top-down/fabrics/"
 
@@ -153,11 +156,129 @@ def stage_tenants(intent, username, password):
             browser.close()
 
 
+def _attachment_records(body, name_key):
+    """Normalize Cisco list rows with nested or flat attachment records."""
+    if not isinstance(body, list):
+        raise NexusDashboardBrowserError("NDFC attachment readback is not a list")
+    records = {}
+    for row in body:
+        if not isinstance(row, dict):
+            raise NexusDashboardBrowserError("NDFC attachment readback has invalid row")
+        children = row.get("lanAttachList")
+        children = children if isinstance(children, list) else [row]
+        for child in children:
+            if not isinstance(child, dict):
+                raise NexusDashboardBrowserError("NDFC attachment readback has invalid child")
+            name = child.get(name_key) or row.get(name_key)
+            serial = child.get("serialNumber")
+            if not name or not serial:
+                raise NexusDashboardBrowserError(
+                    "NDFC attachment readback lacks name or serial")
+            key = name, serial
+            if key in records:
+                raise NexusDashboardBrowserError(
+                    "NDFC attachment readback duplicates a switch serial")
+            records[key] = child
+    return records
+
+
+def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan):
+    name = payload[0][name_key]
+    def current():
+        status, body = _api(page, "GET", endpoint)
+        if status != 200:
+            raise NexusDashboardBrowserError(
+                "NDFC attachment readback failed with HTTP " + str(status))
+        records = _attachment_records(body, name_key)
+        selected = {serial: row for (row_name, serial), row in records.items()
+                    if row_name == name}
+        extra = set(selected) - expected_serials
+        if extra:
+            raise NexusDashboardBrowserError(
+                "NDFC " + name + " has undeclared switch attachments")
+        for row in selected.values():
+            if str(row.get("vlan")) != str(vlan) or row.get("deployment") is False:
+                raise NexusDashboardBrowserError(
+                    "NDFC " + name + " attachment VLAN or state conflicts")
+        return selected
+
+    attached = current()
+    missing = expected_serials - set(attached)
+    if missing:
+        request = [{name_key: name, "lanAttachList": [
+            row for row in payload[0]["lanAttachList"]
+            if row["serialNumber"] in missing]}]
+        status, body = _api(page, "POST", endpoint, request)
+        if status != 200:
+            raise NexusDashboardBrowserError(
+                "NDFC " + name + " attachment failed with HTTP " +
+                str(status) + ": " + str(body)[:250])
+        deadline = time.monotonic() + 120
+        _wait_for(page, lambda: set(current()) == expected_serials,
+                  deadline, "NDFC " + name + " attachment readback")
+    return {"name": name, "status": "attached" if missing else "already-attached",
+            "switches": len(expected_serials)}
+
+
+def attach_tenants(intent, username, password):
+    """Attach staged tenant objects to exact declared serials without deployment."""
+    from playwright.sync_api import sync_playwright
+
+    compiled = compile_tenants(intent)
+    fabric = compiled["fabric"]
+    root = _TOP_DOWN + quote(fabric, safe="")
+    address = intent["management"]["nd"]["address"].split("/")[0]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=["--ignore-certificate-errors-spki-list=" + _spki_pin(address)])
+        try:
+            page = browser.new_page()
+            page.goto("https://" + address + "/", wait_until="domcontentloaded",
+                      timeout=30000)
+            _login(page, username, password, 90)
+            inventory = _collection(
+                page, _FABRICS + "/" + quote(fabric, safe="") +
+                "/inventory/switchesByFabric", "switch inventory")
+            serials = preflight_inventory(intent, inventory)
+            for kind, leaf, desired in (
+                    ("VRF", "vrfs", compiled["vrfs"]),
+                    ("Network", "networks", compiled["networks"])):
+                records = _collection(page, root + "/" + leaf, kind)
+                key = "vrfName" if kind == "VRF" else "networkName"
+                by_name = {item.get(key): item for item in records}
+                if len(by_name) != len(records):
+                    raise NexusDashboardBrowserError(
+                        "NDFC staged " + kind + " list has duplicate names")
+                for item in desired:
+                    if item["name"] not in by_name:
+                        raise NexusDashboardBrowserError(
+                            "NDFC declared " + kind + " is absent before attachment")
+                    payload = (vrf_create_payload(fabric, item) if kind == "VRF"
+                               else network_create_payload(fabric, item))
+                    _verify_object(by_name[item["name"]], payload, kind)
+            vrfs = [_ensure_attachment(
+                page, root + "/vrfs/attachments", "vrfName",
+                vrf_attach_payload(fabric, item, serials),
+                {serials[name] for name in item["switches"]}, item["vlan"])
+                for item in compiled["vrfs"]]
+            networks = [_ensure_attachment(
+                page, root + "/networks/attachments", "networkName",
+                network_attach_payload(fabric, item, serials),
+                {serials[name] for name in item["switches"]}, item["vlan"])
+                for item in compiled["networks"]]
+            return {"fabric": fabric, "vrfs": vrfs, "networks": networks,
+                    "deployment": "not-requested"}
+        finally:
+            browser.close()
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
     parser.add_argument("--check", action="store_true",
                         help="Compile without NDFC access")
+    parser.add_argument("--attach", action="store_true",
+                        help="Attach staged overlays without deploying")
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
     if args.check:
@@ -169,7 +290,8 @@ def main():
     if not username or not password:
         raise ValueError(
             "Set NDFC_RUNNER_USERNAME and NDFC_RUNNER_PASSWORD in EVE_ENV_FILE")
-    result = stage_tenants(intent, username, password)
+    result = (attach_tenants(intent, username, password) if args.attach
+              else stage_tenants(intent, username, password))
     result.pop("switch_serials")
     print(json.dumps(result, indent=2))
 
