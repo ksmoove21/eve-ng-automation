@@ -94,6 +94,21 @@ def _derived_service_ips(interface, gateway, count, label):
     return addresses
 
 
+def _explicit_service_ips(interface, gateway, values, label):
+    """Validate an owner-declared external service-IP pool on one ND network."""
+    if not isinstance(values, list) or not 1 <= len(values) <= 32:
+        raise ValueError(label + " service-IP addresses must be a list of 1 to 32 IPv4 hosts")
+    addresses = _address_list(values, label + " service-IP addresses")
+    for address in addresses:
+        candidate = IPv4Address(address)
+        if (candidate not in interface.network
+                or candidate in (interface.network.network_address,
+                                 interface.network.broadcast_address)
+                or candidate in (interface.ip, gateway)):
+            raise ValueError(label + " service-IP address must be usable in its declared subnet and differ from node and gateway")
+    return addresses
+
+
 def normalize_intent(data):
     """Validate declarative first-boot and supported post-bootstrap intent."""
     version = data.get("schema_version") if isinstance(data, dict) else None
@@ -103,14 +118,14 @@ def normalize_intent(data):
             "dns_servers", "search_domains", "ntp_servers",
             "persistent_service_ip_count", "fabric_controller",
         )
-    elif version == 2:
+    elif version in (2, 3):
         fields = (
             "schema_version", "cluster_name", "management", "data",
             "dns_servers", "search_domains", "ntp_servers",
             "service_ip_pools", "fabric_controller",
         )
     else:
-        raise ValueError("Nexus Dashboard bootstrap schema_version must be 1 or 2")
+        raise ValueError("Nexus Dashboard bootstrap schema_version must be 1, 2, or 3")
     _exact(data, fields, "Nexus Dashboard bootstrap")
     cluster_name = data["cluster_name"]
     if not isinstance(cluster_name, str) or not _CLUSTER_NAME.fullmatch(cluster_name):
@@ -139,15 +154,27 @@ def normalize_intent(data):
 
     if version == 1:
         pool_counts = {"management": 0, "data": data["persistent_service_ip_count"]}
+        management_service_ips = []
+        data_service_ips = _derived_service_ips(
+            data_network, IPv4Address(networks["data"]["gateway"]),
+            pool_counts["data"], "data")
     else:
-        pool_counts = data["service_ip_pools"]
-        _exact(pool_counts, ("management", "data"), "service_ip_pools")
-    management_service_ips = ([] if version == 1 else _derived_service_ips(
-        management, IPv4Address(networks["management"]["gateway"]),
-        pool_counts["management"], "management"))
-    data_service_ips = _derived_service_ips(
-        data_network, IPv4Address(networks["data"]["gateway"]),
-        pool_counts["data"], "data")
+        pools = data["service_ip_pools"]
+        _exact(pools, ("management", "data"), "service_ip_pools")
+        if version == 2:
+            management_service_ips = _derived_service_ips(
+                management, IPv4Address(networks["management"]["gateway"]),
+                pools["management"], "management")
+            data_service_ips = _derived_service_ips(
+                data_network, IPv4Address(networks["data"]["gateway"]),
+                pools["data"], "data")
+        else:
+            management_service_ips = _explicit_service_ips(
+                management, IPv4Address(networks["management"]["gateway"]),
+                pools["management"], "management")
+            data_service_ips = _explicit_service_ips(
+                data_network, IPv4Address(networks["data"]["gateway"]),
+                pools["data"], "data")
     if set(management_service_ips) & set(data_service_ips):
         raise ValueError("management and data service-IP pools must not overlap")
 

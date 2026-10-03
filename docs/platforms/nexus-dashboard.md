@@ -102,11 +102,13 @@ remain private; no environment address or hostname is encoded in reusable code.
 
 The owner superseded the earlier DNS and IP-address NTP sources. The current
 intent uses two DNS providers and an FQDN NTP target. Schema v2 declares
-independent MANAGEMENT and DATA service-IP pool counts. The engine derives each
-pool after its corresponding node interface, rejects unusable/gateway/overlap
-candidates, preflights against live external-IP resources, and read-verifies
-only its separately named documented resources. Existing schema-v1 intent
-remains DATA-only compatible.
+independent MANAGEMENT and DATA service-IP pool counts; the engine derives each
+pool after its corresponding node interface. Schema v3 accepts explicit
+MANAGEMENT and DATA IPv4 address lists for environments with reserved service
+ranges. Each address must be usable in the declared interface subnet and differ
+from the node and gateway addresses. Both schemas reject duplicate/overlapping
+pools, check for live external-IP resource conflicts, and read-verify the
+separately named documented resources. Schema v1 remains DATA-only compatible.
 
 **OBSERVED:** the live disposable appliance has five available MANAGEMENT and
 five available DATA service IPs. Bounded ICMP and neighbor-cache checks from

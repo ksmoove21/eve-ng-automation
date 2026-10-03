@@ -219,6 +219,13 @@ For Cisco IOS XE:
 
 Device-specific logic should remain isolated from generic topology logic.
 
+For Nexus Dashboard, environment-specific bootstrap addresses and external
+service-IP pools live in private initialization intent. Schema v2 derives
+MANAGEMENT and DATA pools from declared counts. Schema v3 accepts explicit
+address lists when the operator owns reserved ranges. The platform adapter
+validates subnet membership, uniqueness, and exclusions before any guest
+mutation; it must not silently replace declared addresses with derived ones.
+
 Do not log secrets or full device configurations in errors.
 
 ## Validation architecture

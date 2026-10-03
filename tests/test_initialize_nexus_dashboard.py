@@ -141,6 +141,30 @@ class NexusDashboardInitTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "management service-IP count"):
             normalize_intent(value)
 
+    def test_schema_v3_preserves_explicit_noncontiguous_service_addresses(self):
+        value = {key: item for key, item in INTENT.items()
+                 if key != "persistent_service_ip_count"}
+        value.update({"schema_version": 3, "service_ip_pools": {
+            "management": ["192.0.2.20", "192.0.2.22", "192.0.2.24"],
+            "data": ["198.51.100.30", "198.51.100.32", "198.51.100.34"],
+        }})
+        intent = normalize_intent(value)
+        self.assertEqual(intent["service_ip_pools"]["Management"], value["service_ip_pools"]["management"])
+        self.assertEqual(intent["service_ip_pools"]["Data"], value["service_ip_pools"]["data"])
+        self.assertEqual([item["spec"]["ip"] for item in _external_ips_payloads(intent)],
+                         [value["service_ip_pools"]["management"], value["service_ip_pools"]["data"]])
+
+    def test_schema_v3_rejects_duplicate_gateway_node_and_foreign_subnet_addresses(self):
+        base = {key: item for key, item in INTENT.items()
+                if key != "persistent_service_ip_count"}
+        base.update({"schema_version": 3, "service_ip_pools": {
+            "management": ["192.0.2.20"], "data": ["198.51.100.30"]}})
+        for invalid in (["192.0.2.20", "192.0.2.20"], ["192.0.2.1"],
+                        ["192.0.2.9"], ["198.51.100.20"], []):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                normalize_intent({**base, "service_ip_pools": {
+                    **base["service_ip_pools"], "management": invalid}})
+
     @patch("eve_lab.nexus_dashboard_browser._external_ip_response")
     def test_service_ip_reconciler_rejects_live_resource_collision(self, response):
         intent = normalize_intent({
