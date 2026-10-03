@@ -417,6 +417,28 @@ def _launch_fabric_controller(page, deadline):
     item.click()
 
 
+def _dismiss_fabric_controller_dialogs(page, deadline):
+    """Dismiss first-run information and device-credential prompts."""
+    modal = page.locator("#modal-root .modal.modeblocked")
+    if modal.count() == 0:
+        return
+    for _ in range(4):
+        prerequisites = page.locator(
+            "#modal-root .welcome-modal", has_text="Fabric Controller")
+        cancel = page.get_by_role("button", name="Cancel")
+        if prerequisites.count() == 1 and prerequisites.is_visible():
+            prerequisites.locator(".info-detail-screen-close").click()
+        elif cancel.count() == 1 and cancel.is_visible() and (
+                "Set credentials" in page.locator("body").inner_text()):
+            # Device credentials are for onboarding, outside this baseline.
+            cancel.click()
+        else:
+            break
+        page.wait_for_timeout(1000)
+    _wait_for(page, lambda: modal.count() == 0, deadline,
+              "Fabric Controller first-run dialog dismissal")
+
+
 def _fabric_controller_service_setup(page, deadline):
     """Perform the observed supported LAN/Advanced first-run UI only when present."""
     setup = page.locator(".gradient-card", has_text="Service Setup")
@@ -430,21 +452,12 @@ def _fabric_controller_service_setup(page, deadline):
         or (admin.count() == 1 and admin.is_visible())), deadline,
         "Fabric Controller first-run or configured UI")
     page.wait_for_timeout(1000)
-    # NDFC 12.2.2.241 presents a first-run Prerequisites information modal
-    # over Service Setup. It is not a validation failure and has an explicit
-    # close control; leave its opt-out preference unchanged.
-    prerequisites = page.locator(
-        "#modal-root .welcome-modal", has_text="Fabric Controller")
-    if prerequisites.count() == 1 and prerequisites.is_visible():
-        close = prerequisites.locator(".info-detail-screen-close")
-        if close.count() != 1:
-            raise NexusDashboardBrowserError(
-                "Fabric Controller prerequisites modal did not expose its close control")
-        close.click()
-        _wait_for(page, lambda: not prerequisites.is_visible(), deadline,
-                  "Fabric Controller prerequisites modal dismissal")
-    if admin.count() == 1 and admin.is_visible() and not (
-            setup.count() == 1 and setup.is_visible()):
+    _dismiss_fabric_controller_dialogs(page, deadline)
+    # The dashboard retains its Service Setup card after submission. The
+    # completed two-step journey is the observed persisted setup indicator.
+    journey_complete = "Getting Started Progress 100%" in page.locator("body").inner_text()
+    if admin.count() == 1 and admin.is_visible() and (
+            journey_complete or not (setup.count() == 1 and setup.is_visible())):
         return False
     setup.click()
     go = page.get_by_text("Go", exact=True)
@@ -475,7 +488,7 @@ def _fabric_controller_service_setup(page, deadline):
             raise NexusDashboardBrowserError("Fabric Controller Summary omitted " + value)
     submit = page.get_by_role("button", name="Submit")
     submit.click(no_wait_after=True)
-    _wait_for(page, lambda: submit.is_disabled(), deadline,
+    _wait_for(page, lambda: submit.count() == 0 or submit.is_disabled(), deadline,
               "Fabric Controller Service Setup submission")
     return True
 
@@ -484,14 +497,7 @@ def _set_fabric_controller_connectivity(page, deadline, connectivity):
     admin = page.get_by_role("link", name="Admin", exact=True)
     _wait_for(page, lambda: admin.count() == 1 and admin.is_visible(), deadline,
               "Fabric Controller Admin UI")
-    body = page.locator("body").inner_text()
-    cancel = page.get_by_role("button", name="Cancel")
-    if "Set credentials" in body and cancel.count() == 1 and cancel.is_visible():
-        # This optional prompt is for device onboarding, which is outside the
-        # platform baseline and must not create or store device credentials.
-        cancel.click()
-        _wait_for(page, lambda: not cancel.is_visible(), deadline,
-                  "optional device-credentials prompt dismissal")
+    _dismiss_fabric_controller_dialogs(page, deadline)
     admin.click()
     system = page.get_by_role("link", name="System Settings", exact=True)
     _wait_for(page, lambda: system.count() == 1 and system.is_visible(), deadline,

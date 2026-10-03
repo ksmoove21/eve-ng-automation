@@ -108,6 +108,30 @@ class NexusDashboardInitTests(unittest.TestCase):
 
         wait_for.assert_called_once()
         setup.click.assert_not_called()
+    @patch("eve_lab.nexus_dashboard_browser._wait_for")
+    def test_fabric_service_setup_does_not_resubmit_completed_journey(self, wait_for):
+        page = MagicMock()
+        setup = MagicMock()
+        setup.count.return_value = 1
+        setup.is_visible.return_value = True
+        admin = MagicMock()
+        admin.count.return_value = 1
+        admin.is_visible.return_value = True
+        prerequisites = MagicMock()
+        prerequisites.count.return_value = 0
+        body = MagicMock()
+        body.inner_text.return_value = "Getting Started Progress 100% 2 out of 2 steps completed"
+        page.locator.side_effect = lambda selector, **kwargs: {
+            ".gradient-card": setup,
+            "#modal-root .welcome-modal": prerequisites,
+            "#modal-root .modal.modeblocked": prerequisites,
+            "body": body,
+        }[selector]
+        page.get_by_role.return_value = admin
+
+        self.assertFalse(_fabric_controller_service_setup(page, deadline=1))
+        setup.click.assert_not_called()
+
     def _connectivity_page(self, initial):
         page = MagicMock()
         mode = MagicMock()
@@ -137,10 +161,14 @@ class NexusDashboardInitTests(unittest.TestCase):
         category.is_visible.return_value = True
         body = MagicMock()
         body.inner_text.return_value = ""
-        page.locator.side_effect = lambda selector: {
+        no_modal = MagicMock()
+        no_modal.count.return_value = 0
+        page.locator.side_effect = lambda selector, **kwargs: {
             "body": body,
             "form": form,
             '[id="serverProperties.global.oob_network_mode"]': mode,
+            "#modal-root .welcome-modal": no_modal,
+            "#modal-root .modal.modeblocked": no_modal,
         }[selector]
         page.get_by_role.side_effect = lambda role, name, **kwargs: {
             "Admin": admin,
