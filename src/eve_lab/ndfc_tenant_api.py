@@ -11,8 +11,9 @@ import yaml
 from .config import _environment
 from .ndfc_fabric import _BASE, _FABRICS, _api
 from .ndfc_tenants import (
-    compile_tenants, network_attach_payload, network_create_payload,
-    preflight_inventory, vrf_attach_payload, vrf_create_payload,
+    compile_tenants, compile_tor_ports, network_attach_payload,
+    network_create_payload, preflight_inventory, vrf_attach_payload,
+    vrf_create_payload,
 )
 from .nexus_dashboard_browser import (
     NexusDashboardBrowserError, _login, _spki_pin, _wait_for,
@@ -184,6 +185,7 @@ def _attachment_records(body, name_key):
 
 def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan):
     name = payload[0][name_key]
+    expected_tor_ports = payload[0]["lanAttachList"][0].get("torPorts", "")
     def current():
         status, body = _api(page, "GET", endpoint)
         if status != 200:
@@ -200,10 +202,17 @@ def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan
             if str(row.get("vlan")) != str(vlan) or row.get("deployment") is False:
                 raise NexusDashboardBrowserError(
                     "NDFC " + name + " attachment VLAN or state conflicts")
+            actual_tor_ports = row.get("torPorts") or ""
+            if actual_tor_ports and actual_tor_ports != expected_tor_ports:
+                raise NexusDashboardBrowserError(
+                    "NDFC " + name + " has undeclared ToR port attachments")
         return selected
 
     attached = current()
     missing = expected_serials - set(attached)
+    if expected_tor_ports:
+        missing |= {serial for serial, row in attached.items()
+                    if not row.get("torPorts")}
     if missing:
         request = [{name_key: name, "lanAttachList": [
             row for row in payload[0]["lanAttachList"]
@@ -220,11 +229,15 @@ def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan
             "switches": len(expected_serials)}
 
 
-def attach_tenants(intent, username, password):
-    """Attach staged tenant objects to exact declared serials without deployment."""
+def attach_tenants(intent, topology, username, password):
+    """Attach staged tenant objects and exact ToR host ports without deployment."""
     from playwright.sync_api import sync_playwright
 
     compiled = compile_tenants(intent)
+    tor_ports = compile_tor_ports(intent, topology)
+    for network in compiled["networks"]:
+        if network["name"] not in tor_ports:
+            raise ValueError("DC1 network lacks declared endpoint ToR ports")
     fabric = compiled["fabric"]
     root = _TOP_DOWN + quote(fabric, safe="")
     address = intent["management"]["nd"]["address"].split("/")[0]
@@ -264,7 +277,7 @@ def attach_tenants(intent, username, password):
                 for item in compiled["vrfs"]]
             networks = [_ensure_attachment(
                 page, root + "/networks/attachments", "networkName",
-                network_attach_payload(fabric, item, serials),
+                network_attach_payload(fabric, item, serials, tor_ports[item["name"]]),
                 {serials[name] for name in item["switches"]}, item["vlan"])
                 for item in compiled["networks"]]
             return {"fabric": fabric, "vrfs": vrfs, "networks": networks,
@@ -290,8 +303,10 @@ def main():
     if not username or not password:
         raise ValueError(
             "Set NDFC_RUNNER_USERNAME and NDFC_RUNNER_PASSWORD in EVE_ENV_FILE")
-    result = (attach_tenants(intent, username, password) if args.attach
-              else stage_tenants(intent, username, password))
+    result = (attach_tenants(
+        intent, yaml.safe_load(args.intent.with_name("topology.yaml").read_text()),
+        username, password) if args.attach
+        else stage_tenants(intent, username, password))
     result.pop("switch_serials")
     print(json.dumps(result, indent=2))
 

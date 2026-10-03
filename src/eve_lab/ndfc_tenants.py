@@ -1,6 +1,7 @@
 """Compile declared NDFC tenant overlays without accessing the live controller."""
 
 from ipaddress import ip_address, ip_interface, ip_network
+import re
 
 
 def _range(text):
@@ -109,6 +110,48 @@ def preflight_inventory(intent, inventory):
     return serials
 
 
+def compile_tor_ports(intent, topology, site="DC1"):
+    """Bind declared tenant endpoints to exact ToR host ports in the topology."""
+    profiles = [item for item in intent["ndfc_fabrics"] if item["site"] == site]
+    if site != "DC1" or len(profiles) != 1:
+        raise ValueError("Exactly one active DC1 fabric is required")
+    tors = set(profiles[0]["tor_pair"]["nodes"])
+    by_endpoint = {}
+    for link in topology["links"]:
+        if "from" not in link or "to" not in link:
+            continue
+        for left, right in (("from", "to"), ("to", "from")):
+            endpoint = link[left]["node"]
+            if link[right]["node"] in tors:
+                by_endpoint.setdefault(endpoint, []).append(
+                    (link[right]["node"], link[right]["interface"]))
+    used_ports = set()
+    result = {}
+    for tenant in intent["tenants"][site.lower()]:
+        networks = [(item["name"], ip_network(item["prefix"], strict=True))
+                    for item in tenant["networks"]]
+        for endpoint in tenant.get("endpoints", []):
+            name = endpoint["node"]
+            matches = by_endpoint.get(name, [])
+            if len(matches) != 1 or matches[0][0] != endpoint["attachment"]:
+                raise ValueError("DC1 endpoint lacks one exact declared ToR link: " + name)
+            tor, port = matches[0]
+            if not isinstance(port, str) or not re.fullmatch(r"Ethernet\d+/\d+", port):
+                raise ValueError("DC1 endpoint ToR interface is not Ethernet: " + name)
+            if (tor, port) in used_ports:
+                raise ValueError("DC1 tenant endpoints share a ToR host port")
+            used_ports.add((tor, port))
+            address = ip_interface(endpoint["address"]).ip
+            selected = [network_name for network_name, prefix in networks
+                        if address in prefix]
+            if len(selected) != 1:
+                raise ValueError("DC1 endpoint does not match one tenant network")
+            result.setdefault(selected[0], {}).setdefault(tor, []).append(port)
+    return {name: " ".join(tor + "(" + ",".join(sorted(ports)) + ")"
+                           for tor, ports in sorted(tor_map.items()))
+            for name, tor_map in result.items()}
+
+
 def vrf_create_payload(fabric, vrf):
     """Cisco LAN top-down VRF payload using the base VRF template."""
     import json
@@ -173,7 +216,7 @@ def vrf_attach_payload(fabric, vrf, serials):
     }]
 
 
-def network_attach_payload(fabric, network, serials):
+def network_attach_payload(fabric, network, serials, tor_ports=""):
     """Build overlay network attachments without touching switch ports."""
     return [{
         "networkName": network["name"],
@@ -183,5 +226,6 @@ def network_attach_payload(fabric, network, serials):
             "serialNumber": serials[name],
             "vlan": network["vlan"],
             "deployment": True,
+            **({"torPorts": tor_ports} if tor_ports else {}),
         } for name in network["switches"]],
     }]

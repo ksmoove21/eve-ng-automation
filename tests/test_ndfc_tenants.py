@@ -122,3 +122,33 @@ def test_attachment_readback_rejects_undeclared_serial(monkeypatch):
     with pytest.raises(NexusDashboardBrowserError, match="undeclared"):
         api._ensure_attachment(None, "/vrfs/attachments", "vrfName",
                                payload, {"SERIAL-1"}, 130)
+
+
+def test_tor_host_ports_follow_declared_endpoint_links():
+    from eve_lab.ndfc_tenants import compile_tor_ports, network_attach_payload
+
+    intent = _intent()
+    intent["ndfc_fabrics"][0]["tor_pair"] = {"nodes": ["ToR-1", "ToR-2"]}
+    intent["tenants"]["dc1"][0]["endpoints"][0].update(
+        node="Server-1", attachment="ToR-1")
+    intent["tenants"]["dc1"][1]["endpoints"][0].update(
+        node="Developer-1", attachment="ToR-2")
+    topology = {"links": [
+        {"from": {"node": "Server-1", "interface": "eth0"},
+         "to": {"node": "ToR-1", "interface": "Ethernet1/3"}},
+        {"from": {"node": "ToR-2", "interface": "Ethernet1/4"},
+         "to": {"node": "Developer-1", "interface": "eth0"}},
+    ]}
+    ports = compile_tor_ports(intent, topology)
+    assert ports == {"BLUE-NET": "ToR-1(Ethernet1/3)",
+                     "GREEN-NET": "ToR-2(Ethernet1/4)"}
+    network = compile_tenants(intent)["networks"][0]
+    payload = network_attach_payload(
+        "LAB", network, {"Leaf-1": "SERIAL-1", "Leaf-2": "SERIAL-2"},
+        ports["BLUE-NET"])[0]["lanAttachList"]
+    assert {row["torPorts"] for row in payload} == {"ToR-1(Ethernet1/3)"}
+    topology["links"][0]["to"]["interface"] = "Ethernet1/4"
+    topology["links"][1]["from"]["node"] = "ToR-1"
+    intent["tenants"]["dc1"][1]["endpoints"][0]["attachment"] = "ToR-1"
+    with pytest.raises(ValueError, match="share a ToR host port"):
+        compile_tor_ports(intent, topology)
