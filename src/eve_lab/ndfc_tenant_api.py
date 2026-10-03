@@ -12,9 +12,12 @@ import yaml
 from .config import _environment
 from .ndfc_fabric import _BASE, _FABRICS, _api
 from .ndfc_tenants import (
-    compile_tenants, compile_tor_ports, network_attach_payload,
+    compile_tenants, compile_tor_access_ports, compile_tor_ports, network_attach_payload,
     network_create_payload, preflight_inventory, vrf_attach_payload,
     vrf_create_payload,
+)
+from .ndfc_tor_access import (
+    deploy_access_ports, reconcile_access_ports, verify_access_ports,
 )
 from .nexus_dashboard_browser import (
     NexusDashboardBrowserError, _login, _spki_pin, _wait_for,
@@ -279,6 +282,7 @@ def attach_tenants(intent, topology, username, password):
 
     compiled = compile_tenants(intent)
     tor_ports = compile_tor_ports(intent, topology)
+    access_ports = compile_tor_access_ports(intent, topology)
     for network in compiled["networks"]:
         if network["name"] not in tor_ports:
             raise ValueError("DC1 network lacks declared endpoint ToR ports")
@@ -328,8 +332,9 @@ def attach_tenants(intent, topology, username, password):
                 set(next(profile["tor_pair"]["nodes"] for profile in
                          intent["ndfc_fabrics"] if profile["site"] == "DC1")))
                 for item in compiled["networks"]]
+            host_ports = reconcile_access_ports(page, access_ports, serials)
             return {"fabric": fabric, "vrfs": vrfs, "networks": networks,
-                    "deployment": "not-requested"}
+                    "host_ports": host_ports, "deployment": "not-requested"}
         finally:
             browser.close()
 
@@ -385,6 +390,7 @@ def deploy_tenants(intent, topology, username, password):
 
     compiled = compile_tenants(intent)
     tor_ports = compile_tor_ports(intent, topology)
+    access_ports = compile_tor_access_ports(intent, topology)
     tor_names = set(next(profile["tor_pair"]["nodes"] for profile in
                          intent["ndfc_fabrics"] if profile["site"] == "DC1"))
     fabric = compiled["fabric"]
@@ -408,6 +414,8 @@ def deploy_tenants(intent, topology, username, password):
             before = {kind: _deployment_states(
                 page, root, compiled, serials, tor_ports, tor_names, kind)
                 for kind in ("VRF", "Network")}
+            # Require the access policy from --attach before any resource deploy.
+            verify_access_ports(page, access_ports, serials)
             result = {}
             for kind, endpoint in (("VRF", _TOP_DOWN_ROOT + "/vrfs/deploy"),
                                    ("Network", _TOP_DOWN_ROOT + "/networks/deploy")):
@@ -436,7 +444,10 @@ def deploy_tenants(intent, topology, username, password):
                     "resources": len(compiled["vrfs" if kind == "VRF" else "networks"]),
                     "attachments_deployed": len(pending),
                 }
-            return {"fabric": fabric, **result, "deployment": "in-sync"}
+            host_ports = deploy_access_ports(
+                page, fabric, access_ports, serials, username)
+            return {"fabric": fabric, **result, "host_ports": host_ports,
+                    "deployment": "in-sync"}
         finally:
             browser.close()
 

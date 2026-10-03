@@ -152,6 +152,24 @@ def compile_tor_ports(intent, topology, site="DC1"):
             for name, tor_map in result.items()}
 
 
+def compile_tor_access_ports(intent, topology, site="DC1"):
+    """Map declared untagged endpoint links to their Network access VLANs."""
+    if intent["tenants"].get("host_port_mode") != "access":
+        raise ValueError("DC1 tenant host_port_mode must explicitly be access")
+    networks = {item["name"]: item["vlan"] for item in
+                compile_tenants(intent, site)["networks"]}
+    tor_ports = compile_tor_ports(intent, topology, site)
+    result = []
+    for network, text in sorted(tor_ports.items()):
+        for tor, ports in re.findall(r"(\S+)\(([^)]*)\)", text):
+            for port in ports.split(","):
+                result.append({"tor": tor, "port": port,
+                               "network": network, "vlan": networks[network]})
+    if not result or len({(item["tor"], item["port"]) for item in result}) != len(result):
+        raise ValueError("DC1 tenant host access ports are absent or duplicated")
+    return result
+
+
 def vrf_create_payload(fabric, vrf):
     """Cisco LAN top-down VRF payload using the base VRF template."""
     import json
