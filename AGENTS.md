@@ -138,6 +138,38 @@ Spend context on evidence that changes implementation decisions.
 - Keep sprint prompts task-specific. Standing architecture, repository, safety, and autonomy rules belong in checked-in guidance rather than being repeated verbatim in every prompt.
 - If the client supports context compaction or summarization, use it only after current state and important evidence are durable in the repository or sprint artifacts.
 
+## Nexus Dashboard subagent runner trial
+
+This branch is testing bounded Codex subagents as parallel execution runners. It is an experiment for the active Nexus Dashboard/NDFC DC1 sprint, not yet a durable project-wide convention.
+
+The primary/root agent owns the sprint, critical path, integration decisions, acceptance criteria, and the troubleshooting context of the problem it is actively working. Use the project-scoped `runner` agent for substantial independent work lanes that would otherwise make Root leave that critical path. Start with one runner. A second runner may be added only when a distinct ready lane exists. The branch configuration caps concurrent spawned threads at two, excluding Root.
+
+Root should normally diagnose failures arising directly from its own active lane. Do not offload an active failure merely to free Root from troubleshooting context. Runners are for independent progress, not for duplicating Root.
+
+Examples for the current sprint:
+
+- Root: Nexus Dashboard, Cluster Bringup, Fabric Controller/NDFC lifecycle, fabric creation, and integration gates.
+- Runner lane: PA-FW-1/PA-FW-2 bootstrap, management readiness, HA, interfaces/zones, then WAN/ISP prerequisites as dependencies permit.
+- Optional second runner lane: DC1 Nexus switch bootstrap, exact-image/port validation, management readiness, and preparation for NDFC discovery.
+
+### EVE control-plane lease
+
+EVE Web/API authentication is a shared control-plane resource for this trial. EVE documents that the same user can log in from only one location and that a second login disables the first session. Avoid competing logins even when several Codex threads are active.
+
+Root is the default EVE control-plane lease holder.
+
+- A runner must not authenticate or re-authenticate to EVE Web/API, create a new EVE session, or perform EVE lifecycle mutation unless Root explicitly grants the EVE lease.
+- A runner needing EVE control-plane access must message Root and wait for an explicit handoff. Root must stop EVE Web/API activity before granting the lease.
+- Only one runner may hold the EVE lease at a time. Root communicates lease ownership changes to every affected runner.
+- The runner returns the lease immediately after the bounded EVE operation. Root may then re-establish its own session if necessary.
+- Prefer Root performing EVE plan/apply/start/stop and console-endpoint discovery while runners work inside already-started guest devices.
+
+The EVE lease does not globally serialize guest work. Once a runner has an authorized direct console endpoint or the guest is management-ready, different agents may work concurrently on different devices through serial/VNC, SSH, or the guest's supported API.
+
+Maintain one active command writer per guest device or console unless Root explicitly coordinates otherwise. Multiple agents observing the same device is acceptable when the access method supports it, but do not allow independent writers to interleave input.
+
+When a runner finishes or blocks, Root either assigns the next ready task in that lane, transfers ownership, or closes the runner. Do not keep idle runners alive merely because the concurrency cap permits them.
+
 ## EVE CPU Limit runtime policy
 
 QEMU nodes created or reconciled by this automation must have EVE-NG CPU Limit
