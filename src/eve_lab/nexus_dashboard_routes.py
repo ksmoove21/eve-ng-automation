@@ -36,6 +36,8 @@ def ensure_management_routes(page, intent, deadline):
     card = page.locator("section.card").filter(
         has=page.get_by_role("heading", name="Routes", exact=True))
     _wait_for(page, lambda: card.count() == 1, deadline, "ND Routes tile")
+    _wait_for(page, lambda: "Loading..." not in card.inner_text(), deadline,
+              "ND Routes tile data")
     missing = [route for route in routes
                if card.get_by_text(route, exact=True).count() == 0]
     if not missing:
