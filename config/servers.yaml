@@ -2,9 +2,10 @@ servers:
   default:
     # Replace this example endpoint with your EVE-NG server. The automation
     # assumes DNS/routing/TLS reachability already exists from the controller.
-    url: https://eve.example.com
+    url_env: EVE_URL
     username_env: EVE_USERNAME
     password_env: EVE_PASSWORD
     timeout: 120
+    ssh_host_env: EVE_SSH_HOST
     ssh_username_env: EVE_SSH_USERNAME
     ssh_password_env: EVE_SSH_PASSWORD

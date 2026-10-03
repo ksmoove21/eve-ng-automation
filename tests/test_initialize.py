@@ -31,12 +31,35 @@ class InitTests(unittest.TestCase):
         ssh.assert_not_called()
 
     def test_ios_family_templates_reuse_the_cisco_console_path(self):
-        for template in ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol'):
+        for template in ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol', 'viosl2'):
             with self.subTest(template=template):
                 self.nodes['7']['template'] = template
                 result = self.run_init(check=True)
                 self.assertEqual(result['planned'][0]['template'], template)
                 self.assertEqual(result['planned'][0]['file'], str(self.base / 'R0-init.cfg'))
+
+    @patch('eve_lab.initialize.load_topology', return_value={'name': 'test'})
+    @patch('eve_lab.initialize.compile_sdwan')
+    def test_compiled_sdwan_ios_operations_override_generated_config_files(
+            self, compile_sdwan, load_topology):
+        (self.root / 'labs/test/intent.yaml').write_text('version: 1\n')
+        (self.base / 'R0-init.cfg').unlink()
+        self.nodes['7']['template'] = 'iol'
+        compile_sdwan.return_value = {
+            'node_operations': {
+                'R0': {
+                    'adapter': 'ios-transparent-bridge',
+                    'commands': ['hostname R0', 'bridge-domain 101'],
+                },
+            },
+        }
+        result = self.run_init(check=True)
+        self.assertEqual(result['skipped'], [])
+        self.assertEqual(
+            result['planned'][0]['file'],
+            str(self.root / 'labs/test/intent.yaml'))
+        load_topology.assert_called_once_with(self.root, 'test')
+        compile_sdwan.assert_called_once()
 
     def test_native_iol_blank_console_uses_advertised_telnet_url(self):
         self.nodes['7'].update(template='iol', console='')

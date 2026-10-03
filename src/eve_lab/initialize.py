@@ -30,9 +30,11 @@ from .nexus_dashboard_browser import (
     configure_external_ips as nexus_dashboard_external_ips,
     configure_fabric_controller as nexus_dashboard_fabric_controller,
 )
+from .sdwan_intent import load_and_compile as compile_sdwan
+from .topology import load_topology
 
 
-IOS_TEMPLATES = ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol')
+IOS_TEMPLATES = ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol', 'viosl2')
 
 
 def telnet_console_url(node):
@@ -243,6 +245,9 @@ def _open_telnet_console(ssh, port, satellite_target=None):
     command = ('telnet 127.0.0.1 ' + str(port) if satellite_target is None
                else console_command(satellite_target, port))
     channel.exec_command(command)
+    # The manager shell can accept bytes before local or satellite telnet has
+    # attached to QEMU. Avoid losing one-shot bootstrap input on either path.
+    time.sleep(1)
     return channel
 
 
@@ -292,8 +297,21 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
               'interface_status': {}, 'lifecycle': {}, 'reloaded': [], 'warnings': []}
     pending = []
     base = (Path(root) / 'labs' / topology['name'] / 'configs').resolve()
+    intent_path = (Path(root) / 'labs' / topology['name'] / 'intent.yaml').resolve()
+    compiled_operations = {}
+    if intent_path.is_file():
+        declared_topology = load_topology(Path(root), topology['name'])
+        compiled_operations = compile_sdwan(
+            Path(root), topology['name'], declared_topology)['node_operations']
     for name, node in nodes.items():
         template = node.get('template')
+        compiled = compiled_operations.get(name)
+        compiled_commands = (
+            list(compiled['commands'])
+            if isinstance(compiled, dict)
+            and compiled.get('adapter') in ('ios-config', 'ios-transparent-bridge')
+            and isinstance(compiled.get('commands'), list)
+            else None)
         address = targets.get(name) if template in ('paloalto', 'panorama') else None
         reason = None
         if template not in (IOS_TEMPLATES + (CAT9KV_TEMPLATE, NEXUS_DASHBOARD_TEMPLATE, 'nxosv9k', 'nxosv9k-9300v', 'paloalto', 'panorama')):
@@ -304,16 +322,25 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                 reason += '; stop the node and run eve init <lab> --node <name> --prepare-console, or use --management-ip after initial setup'
         elif not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*', name):
             reason = 'Node name is not a safe config filename'
-        iosxe_ipsec_profile = template in IOS_TEMPLATES and (base / (name + '-init.yaml')).is_file()
-        yaml_init = iosxe_ipsec_profile or template in ('nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE, NEXUS_DASHBOARD_TEMPLATE)
-        path = (base / (name + ('-init.yaml' if yaml_init else '-init.cfg'))).resolve()
-        if not reason and (not path.is_relative_to(base) or not path.is_file()):
-            reason = 'Missing init file: configs/' + name + ('-init.yaml' if yaml_init else '-init.cfg')
+        iosxe_ipsec_profile = (
+            compiled_commands is None and template in IOS_TEMPLATES
+            and (base / (name + '-init.yaml')).is_file())
+        yaml_init = iosxe_ipsec_profile or template in (
+            'nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE,
+            NEXUS_DASHBOARD_TEMPLATE)
+        path = (intent_path if compiled_commands is not None else
+                (base / (name + ('-init.yaml' if yaml_init else '-init.cfg'))).resolve())
+        if not reason and compiled_commands is None and (
+                not path.is_relative_to(base) or not path.is_file()):
+            reason = ('Missing init file: configs/' + name +
+                      ('-init.yaml' if yaml_init else '-init.cfg'))
         if reason:
             result['skipped'].append({'node': name, 'reason': reason})
             print(f'Skipped {name}: {reason}', file=sys.stderr)
             continue
-        if template in ('nxosv9k', 'nxosv9k-9300v'):
+        if compiled_commands is not None:
+            commands = compiled_commands
+        elif template in ('nxosv9k', 'nxosv9k-9300v'):
             commands = load_nxos_bootstrap(path)
         elif template == CAT9KV_TEMPLATE:
             commands = load_cat9kv_bootstrap(path, root)
