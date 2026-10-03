@@ -170,6 +170,49 @@ requested image is unavailable rather than silently selecting a different image.
 Canvas layout is declarative when coordinates are provided. Do not treat visual
 placement as authoritative runtime-only state.
 
+## EVE integration surfaces
+
+EVE-NG interaction is intentionally multi-surface. The engine should use the
+best available supported integration for the operation rather than assuming all
+EVE behavior must be implemented directly in custom Python.
+
+Available surfaces include:
+
+- the native EVE API;
+- EVE-IAC where its declarative topology/lifecycle behavior reduces custom
+  plumbing or improves execution efficiency;
+- suitable SDKs/libraries when they provide a cleaner supported contract for a
+  specific EVE capability;
+- narrowly scoped EVE-host SSH for host-level operations, image/runtime
+  handling, or diagnostics that genuinely require host access.
+
+There is no mandatory API-versus-EVE-IAC ordering. A workflow may compose
+multiple surfaces when that produces the cleanest deterministic result.
+
+Before implementing new EVE-specific Python:
+
+1. inspect the native EVE API capability already available to the engine;
+2. inspect EVE-IAC and any suitable maintained SDK/library for the requested
+   operation;
+3. reuse or compose those integrations when they reduce custom implementation
+   without weakening safety, desired-state reconciliation, or evidence;
+4. add custom Python only for a real capability gap, normalization boundary,
+   orchestration policy, safety requirement, or reusable behavior that the
+   integration surfaces do not provide.
+
+Python remains the orchestration and policy layer. It owns dependency ordering,
+desired-state reconciliation policy, normalization, guards, evidence, and
+validation. It should not duplicate EVE platform behavior merely because doing
+so is possible.
+
+When a custom path or EVE-host SSH is required, record the concrete capability
+gap in the applicable platform/operation evidence so future work does not repeat
+the same investigation.
+
+Guest/device interaction is a separate lifecycle concern. Console, guest SSH,
+NETCONF, browser automation, and vendor APIs should still be selected according
+to the guest/platform lifecycle state.
+
 ## Reconciliation behavior
 
 `eve apply` is a reconciler, not a one-shot creation script.
