@@ -12,3 +12,7 @@ config_file = "agents/runner.toml"
 [agents.coordinator]
 description = "Low-cost sprint control tower and scribe for storyboard, handoffs, ownership, and Git-visible checkpoints."
 config_file = "agents/coordinator.toml"
+
+[agents.hygiene]
+description = "Cost-efficient repository hygiene specialist for cleanup, stale-state reconciliation, documentation organization, and low-risk maintenance."
+config_file = "agents/hygiene.toml"
