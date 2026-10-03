@@ -271,3 +271,24 @@ the sprint paths. Final acceptance review remains pending.
 - [EVE Professional release notes](https://www.eve-ng.net/index.php/documentation/release-notes/)
 - [EVE Pro cluster upgrade guidance](https://www.eve-ng.net/index.php/1845-2/eve-pro-upgrade-from-v6-x-to-v7-x/)
 - [EVE API single-location rule](https://www.eve-ng.net/index.php/how-to-eve-ng-api/)
+
+## DC1 NX-OS DHCP scope note
+
+**OBSERVED on the active DC1 target:** NX-OS 10.5(2) on the leaf accepted
+`feature dhcp`, but the first bounded probe with that feature alone did not
+expose IOS-style `ip dhcp pool` local-server syntax. That observation was
+initially escalated too early as an architectural blocker.
+
+**OWNER INTENT / CURRENT SPRINT:** preserve the NDFC Leaf Pre-Interfaces
+Freeform lines `feature dhcp` followed by `service dhcp`. Do not remove them.
+Local DHCP-server capability and lease validation are deferred from the DC1
+sprint. DC1 endpoints use their Git-declared static addresses for current
+acceptance, so DHCP must not gate switch onboarding, R4 convergence, or R6.
+
+**ENGINE LEARNING:** when a command surface is unexpectedly absent, first check
+the exact NOS release's command reference, feature/service prerequisites,
+release notes, and relevant vendor guidance, then run a bounded live probe.
+Syntax/prerequisite discovery is implementation work rather than an owner
+decision. Reconcile validated version-specific findings back into this platform
+document so future sprints do not repeat the same discovery.
+
