@@ -83,7 +83,7 @@ def compile_tenants(intent, site="DC1"):
                 raise ValueError("DC1 endpoint mask or gateway conflicts with network")
     return {"fabric": profile["name"], "vrfs": vrfs, "networks": networks}
 
-def preflight_inventory(intent, inventory):
+def preflight_inventory(intent, inventory, allowed_cc_status=("In-Sync",)):
     """Bind tenant attachment names to exact managed DC1 serial identities."""
     from .ndfc_switches import compile_switches
 
@@ -101,7 +101,7 @@ def preflight_inventory(intent, inventory):
         if (item.get("ipAddress") != wanted["ip"] or
                 item.get("switchRole") != roles[wanted["role"]] or
                 not isinstance(serial, str) or not serial.strip() or
-                item.get("ccStatus") != "In-Sync"):
+                item.get("ccStatus") not in allowed_cc_status):
             raise ValueError("NDFC tenant preflight switch identity or sync differs for " +
                              wanted["name"])
         if serial in serials.values():

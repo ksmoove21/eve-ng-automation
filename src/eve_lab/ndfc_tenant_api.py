@@ -237,8 +237,13 @@ def _ensure_attachment(page, endpoint, name_key, payload, expected_serials, vlan
                 "NDFC " + name + " attachment failed with HTTP " +
                 str(status) + ": " + str(body)[:250])
         deadline = time.monotonic() + 120
-        _wait_for(page, lambda: set(current()) == expected_serials,
-                  deadline, "NDFC " + name + " attachment readback")
+        def matches_intent():
+            observed = current()
+            return (set(observed) == expected_serials and
+                    all(row.get("torPorts", "") == expected_tor_ports
+                        for row in observed.values()))
+        _wait_for(page, matches_intent, deadline,
+                  "NDFC " + name + " attachment and ToR port readback")
     return {"name": name, "status": "attached" if missing else "already-attached",
             "switches": len(expected_serials)}
 
@@ -370,7 +375,8 @@ def deploy_tenants(intent, topology, username, password):
             inventory = _collection(
                 page, _FABRICS + "/" + quote(fabric, safe="") +
                 "/inventory/switchesByFabric", "switch inventory")
-            serials = preflight_inventory(intent, inventory)
+            serials = preflight_inventory(
+                intent, inventory, allowed_cc_status=("In-Sync", "Pending"))
             before = {kind: _deployment_states(
                 page, root, compiled, serials, tor_ports, tor_names, kind)
                 for kind in ("VRF", "Network")}

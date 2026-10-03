@@ -69,6 +69,12 @@ def test_live_inventory_preflight_rejects_wrong_role_or_serial(monkeypatch):
          "ccStatus": "In-Sync"},
     ]
     assert preflight_inventory({}, inventory)["Border-1"] == "SERIAL-2"
+    inventory[1]["ccStatus"] = "Pending"
+    with pytest.raises(ValueError):
+        preflight_inventory({}, inventory)
+    assert preflight_inventory({}, inventory,
+                               allowed_cc_status=("In-Sync", "Pending"))["Border-1"] == "SERIAL-2"
+    inventory[1]["ccStatus"] = "In-Sync"
     inventory[1]["switchRole"] = "leaf"
     with pytest.raises(ValueError):
         preflight_inventory({}, inventory)
@@ -207,3 +213,29 @@ def test_deploy_preflight_scopes_serials_and_requires_exact_tor_ports(monkeypatc
          "GREEN-NET": "ToR-2(Ethernet1/4)"},
         {"ToR-1", "ToR-2"}, "Network")
     assert len(states) == 4 and set(states.values()) == {"PENDING"}
+
+
+def test_attachment_does_not_claim_tor_ports_when_controller_ignores_them(monkeypatch):
+    from eve_lab import ndfc_tenant_api as api
+    from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
+
+    body = [{"networkName": "BLUE-NET", "lanAttachList": [
+        {"switchSerialNo": "SERIAL-1", "vlanId": 110,
+         "isLanAttached": True, "lanAttachState": "PENDING", "portNames": ""},
+    ]}]
+    methods = []
+    def fake_api(_, method, endpoint, payload=None):
+        methods.append(method)
+        return 200, body if method == "GET" else {"successList": []}
+    def fake_wait(_, predicate, deadline, description):
+        if not predicate():
+            raise NexusDashboardBrowserError("ToR ports absent after POST")
+    monkeypatch.setattr(api, "_api", fake_api)
+    monkeypatch.setattr(api, "_wait_for", fake_wait)
+    payload = [{"networkName": "BLUE-NET", "lanAttachList": [
+        {"serialNumber": "SERIAL-1", "vlan": 110, "deployment": True,
+         "torPorts": "ToR-1(Ethernet1/3)"}]}]
+    with pytest.raises(NexusDashboardBrowserError, match="ToR ports absent"):
+        api._ensure_attachment(None, "/networks/attachments", "networkName",
+                               payload, {"SERIAL-1"}, 110, {"ToR-1"})
+    assert "POST" in methods
