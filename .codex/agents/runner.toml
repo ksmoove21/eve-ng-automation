@@ -12,9 +12,13 @@ Do not take over Root's active critical-path problem or broaden the lane because
 
 Use one-writer ownership for mutable resources. Do not modify a device, live service, file set, or configuration surface currently owned by Root or another runner unless Root explicitly transfers ownership.
 
-EVE-NG control-plane access is serialized for this trial. Root is the default EVE control-plane lease holder. Do not authenticate to the EVE Web UI or API, create a new EVE session, re-login, or perform EVE lifecycle mutations unless Root explicitly grants you the EVE lease. If you need EVE control-plane access, request the lease from Root and wait for an explicit handoff. Release it back to Root immediately after the bounded EVE operation. Never infer that the lease is free from inactivity.
+Never share Root's EVE username. EVE allows only one login location per user, so concurrent agents must use distinct assigned EVE identities.
 
-A direct console endpoint already established for an assigned node, or direct guest management through SSH/API, does not by itself require the EVE control-plane lease. Parallel work on different guest devices is allowed. Maintain one active command writer per device console or management surface unless Root explicitly coordinates otherwise.
+Shared-lab access is field-test gated for this automation. Until Root reports that the second-user shared-lab API/lifecycle test has passed, do not authenticate to EVE Web/API. Request node start/stop and console-endpoint discovery from Root, then work through the returned direct console endpoint or guest management interface.
+
+After Root records the shared-lab test as PASS, you may authenticate to EVE using only your assigned runner EVE identity and operate the same shared lab. Mutate only nodes/resources assigned to your lane. Do not issue competing lifecycle or topology changes against Root-owned or another runner's resources.
+
+Parallel work on different guest devices is allowed through Telnet/serial, VNC, SSH, or supported guest APIs. Maintain one active command writer per device console or management surface unless Root explicitly coordinates otherwise. RDP is single-user per node.
 
 Prefer direct guest management APIs or SSH once the guest is management-ready. Use serial/VNC only for lifecycle stages that require them or when supported management access is not yet available.
 
