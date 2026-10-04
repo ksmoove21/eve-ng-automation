@@ -119,22 +119,30 @@ class PresentationTests(unittest.TestCase):
             "name": "palo-lab", "remote_folder": "/",
             "nodes": [{"name": "R1", "template": "c8000v", "type": "qemu",
                        "image": "c8000v-17.15.06", "cpu": 4, "ethernet": 4}],
-            "networks": [{"name": "CLOUD0-MGMT", "type": "pnet1"}],
+            "networks": [{"name": "CLOUD0-MGMT", "type": "pnet0"}],
             "links": [{"node": "R1", "interface": "Gi1", "network": "CLOUD0-MGMT"}],
             "presentation": {"version": 1, "hidden_networks": ["CLOUD0-MGMT"]},
         }
         with patch("eve_lab.deploy.reconcile_presentation", return_value={"declared": 0, "matched": 0}):
             result = apply(client, topology)
             self.assertIn("hid declared network: CLOUD0-MGMT", result["changes"])
-            self.assertEqual(client.networks["1"]["visibility"], 0)
+            self.assertEqual(client.networks["1"]["hideme"], 1)
+            self.assertEqual(client.networks["1"]["visibility"], 1)
             self.assertEqual(client.ports["1"]["7"]["network_id"], 1)
             client.writes.clear()
             self.assertEqual(apply(client, topology)["changes"], [])
             self.assertEqual(client.writes, [])
-            client.networks["1"]["visibility"] = 1
+            client.networks["1"]["hideme"] = 0
             result = apply(client, topology)
             self.assertEqual(result["changes"], ["hid declared network: CLOUD0-MGMT"])
-            self.assertEqual(client.networks["1"]["visibility"], 0)
+            self.assertEqual(client.networks["1"]["hideme"], 1)
+            self.assertEqual(client.networks["1"]["visibility"], 1)
+            self.assertEqual(client.writes[-1],
+                             ("PUT", "labs/palo-lab.unl/networks/1", {"hideme": 1}))
+            # An EVE Pro pnet cloud can be hidden even while visibility reads 1.
+            client.writes.clear()
+            self.assertEqual(apply(client, topology)["changes"], [])
+            self.assertEqual(client.writes, [])
 
     def test_topology_loader_keeps_presentation_separate(self):
         with TemporaryDirectory() as directory:

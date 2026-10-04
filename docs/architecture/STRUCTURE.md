@@ -169,7 +169,10 @@ Explicitly declared networks remain topology objects. The optional
 networks on the native canvas without changing their attachments or semantic
 status. This follows the same topology-versus-presentation separation used by
 EVE-IaC; Git intent describes nodes, networks, and links while presentation
-metadata controls how those objects are rendered. Optional regions and labels
+metadata controls how those objects are rendered. For native EVE Pro canvas
+hiding, cloud (`pnetN`) networks use `hideme=1` readback while direct-link
+backing bridges use `visibility=0`; the cloud `visibility` value can remain `1`
+when its icon is hidden. Optional regions and labels
 belong in `labs/<lab>/presentation.yaml`; when that file exists, the reconciler
 owns the lab's EVE text objects and prunes undeclared ones.
 

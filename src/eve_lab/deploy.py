@@ -81,6 +81,17 @@ def named(client, path):
     return result
 
 
+def hidden_network_setting(network):
+    """EVE cloud icons use hideme; bridge cables use visibility."""
+    field = "visibility" if network.get("type") == "bridge" else "hideme"
+    return field, 0 if field == "visibility" else 1
+
+
+def network_is_hidden(network):
+    field, expected = hidden_network_setting(network)
+    return str(network.get(field)) == str(expected)
+
+
 def check_settings(desired, actual):
     for key, value in desired.items():
         if str(actual.get(key)) != str(value):
@@ -600,13 +611,15 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
             network = networks.get(name)
             if network is None:
                 raise RuntimeError(f"Declared hidden network disappeared: {name}")
-            if str(network.get("visibility", 1)) != "0":
-                client.request("PUT", f"{path}/networks/{network['id']}", {"visibility": 0})
+            field, expected = hidden_network_setting(network)
+            if not network_is_hidden(network):
+                client.request("PUT", f"{path}/networks/{network['id']}",
+                               {field: expected})
                 changes.append(
                     f"hid {'declared network' if name in hidden_names else 'direct-link bridge'}: {name}"
                 )
                 updated = named(client, path + "/networks")
-                if name not in updated or str(updated[name].get("visibility")) != "0":
+                if name not in updated or not network_is_hidden(updated[name]):
                     raise RuntimeError(f"Server did not hide network {name}")
         # Direct links are topology semantics. EVE requires an exclusive bridge
         # record as runtime backing, but every such record must remain hidden so
@@ -614,12 +627,12 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
         final_networks = named(client, path + "/networks")
         visible_backing = [name for name, _ in direct
                            if name not in final_networks
-                           or str(final_networks[name].get("visibility", 1)) != "0"]
+                           or not network_is_hidden(final_networks[name])]
         if visible_backing:
             raise RuntimeError(f"Direct-link backing networks are not hidden: {visible_backing}")
         visible_declared = [name for name in hidden_names
                             if name not in final_networks
-                            or str(final_networks[name].get("visibility", 1)) != "0"]
+                            or not network_is_hidden(final_networks[name])]
         if visible_declared:
             raise RuntimeError(f"Declared hidden networks are not hidden: {visible_declared}")
         presentation_report = reconcile_presentation(client, path, topology.get("presentation"), changes)

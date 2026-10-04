@@ -37,7 +37,7 @@ class FakeEve:
                     "2": {"id": 1, "name": "eve-sat01", "online": 1, "cpu": 16, "live_ram": 131072,
                            "disk": 104857600, "disk_usage": 0}}
         if path == "list/networks":
-            return {"pnet1": "Cloud1", "bridge": "bridge"}
+            return {"pnet0": "Cloud0", "pnet1": "Cloud1", "bridge": "bridge"}
         if path == "folders/":
             return {}
         if path == "labs" and method == "POST":
@@ -86,7 +86,11 @@ class FakeEve:
             del self.ports[ident]
             return None
         if method == "PUT" and "/networks/" in path:
-            self.networks[path.split("/networks/")[1]].update(payload)
+            network = self.networks[path.split("/networks/")[1]]
+            if network.get("type", "").startswith("pnet"):
+                payload = {key: value for key, value in payload.items()
+                           if key != "visibility"}
+            network.update(payload)
             return None
         if "/nodes/" in path:
             if method == "PUT" and "/" not in path.split("/nodes/")[1]:
@@ -524,15 +528,17 @@ class DeploymentTests(unittest.TestCase):
             {"cable": "legacy-direct-link"},
         )
 
-    def test_direct_link_endpoint_alias_rejects_ambiguous_duplicate_backing(self):
+    def test_direct_link_alias_rejects_duplicate_runtime_bridge_names(self):
         topology = self.direct_topology()
         apply(self.client, topology)
-        self.client.networks["1"]["name"] = "legacy-a"
+        self.client.networks["1"]["name"] = "legacy-cable"
         self.client.networks["2"] = {
-            **self.client.networks["1"], "id": 1, "name": "legacy-b"
+            **self.client.networks["1"], "id": 2, "name": "legacy-cable",
         }
-        with self.assertRaisesRegex(RuntimeError, "matches multiple runtime backing networks"):
+        self.client.writes.clear()
+        with self.assertRaisesRegex(RuntimeError, "Duplicate remote name"):
             apply(self.client, topology)
+        self.assertEqual(self.client.writes, [])
 
     def test_direct_link_rejects_shared_bridge(self):
         topology = self.direct_topology()
