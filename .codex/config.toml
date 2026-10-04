@@ -1,7 +1,7 @@
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 3
-default_subagent_model = "gpt-5.6-sol"
+default_subagent_model = "gpt-5.6-terra"
 default_subagent_reasoning_effort = "medium"
 interrupt_message = true
 
@@ -14,5 +14,5 @@ description = "Low-cost sprint control tower and scribe for storyboard, handoffs
 config_file = "agents/coordinator.toml"
 
 [agents.hygiene]
-description = "Cost-efficient repository hygiene specialist for cleanup, stale-state reconciliation, documentation organization, and low-risk maintenance."
+description = "On-demand repository hygiene specialist for checkpoint cleanup, stale-state reconciliation, documentation organization, and low-risk maintenance."
 config_file = "agents/hygiene.toml"
