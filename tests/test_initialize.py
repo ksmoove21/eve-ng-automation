@@ -162,7 +162,7 @@ class InitTests(unittest.TestCase):
         self.nodes['7']['sat'] = 3
         self.client.request.side_effect = [
             self.nodes,
-            {'3': {'id': 3, 'name': 'eve-sat03', 'online': 1,
+            {'3': {'id': 3, 'name': 'satellite-3', 'online': 1,
                    'pubkey': 'VTxVhflwGkuBOsZs2kfD51KwG+1i5lxHywHOvjcUWCY='}},
         ]
 
@@ -171,11 +171,11 @@ class InitTests(unittest.TestCase):
         channel = ssh.return_value.get_transport.return_value.open_session.return_value
         resolve_target.assert_called_once_with(
             ssh.return_value,
-            {'id': 3, 'name': 'eve-sat03', 'online': 1,
+            {'id': 3, 'name': 'satellite-3', 'online': 1,
              'pubkey': 'VTxVhflwGkuBOsZs2kfD51KwG+1i5lxHywHOvjcUWCY='})
         command = channel.exec_command.call_args.args[0]
         self.assertIn('ssh -o BatchMode=yes -o StrictHostKeyChecking=yes', command)
         self.assertIn('172.30.130.3', command)
         self.assertIn('telnet 127.0.0.1 32775', command)
-        self.assertEqual(result['planned'][0]['satellite'], 'eve-sat03')
+        self.assertEqual(result['planned'][0]['satellite'], 'satellite-3')
         self.assertEqual(result['completed'], ['R0'])
