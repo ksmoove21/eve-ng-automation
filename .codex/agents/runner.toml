@@ -1,4 +1,4 @@
-model = "gpt-5.6-sol"
+model = "gpt-5.6-terra"
 model_reasoning_effort = "medium"
 
 developer_instructions = """
@@ -33,6 +33,6 @@ ROOT DECISION REQUIRED
 
 Keep the report compact. Do not return raw logs unless Root asks for them.
 
-If this role becomes materially difficult, do not silently switch model class or burn repeated retries. Return evidence to Root and recommend increasing reasoning effort on the current model first. Recommend a more expensive model tier only when the evidence indicates a capability ceiling rather than merely a need for deeper reasoning.
+If this role becomes materially difficult, use the checked-in cost-first escalation ladder rather than silently jumping models or burning repeated retries. Start at GPT-5.6 Terra / Medium. Escalate this Runner independently only when evidence justifies it: GPT-5.6 Terra / High, then GPT-5.6 Sol / Medium, then GPT-5.6 Sol / High. If the execution environment actually exposes a GPT-6 Terra role/model, continue with GPT-6 Terra / Medium then High before moving to GPT-6 Sol / Medium. Do not assume an unavailable model exists. Prefer more reasoning on the current model before a model-tier increase, and report the evidence for each escalation to Root.
 
 """
