@@ -368,3 +368,38 @@ def test_dc2_switch_deploy_rejects_cross_site_selection_before_api():
     intent, _ = _fixture()
     with pytest.raises(ValueError, match="declared DC2"):
         deploy_switches(intent, "user", "secret", names=["S1"], site="DC2")
+
+def test_dc2_controller_only_tenant_creation_accepts_exact_na_inventory(monkeypatch):
+    from eve_lab import ndfc_tenant_api
+
+    intent, _ = _fixture()
+    intent["management"]["nd"] = {"address": "192.0.2.1/24"}
+    _, switches = compile_switches(intent, "DC2")
+    roles = {"spine": "spine", "leaf": "leaf",
+             "border": "border gateway", "tor": "tor"}
+    inventory = [{"logicalName": row["name"], "ipAddress": row["ip"],
+                  "switchRole": roles[row["role"]],
+                  "serialNumber": "S" + str(index), "ccStatus": "NA"}
+                 for index, row in enumerate(switches)]
+    _fake_browser(monkeypatch)
+    monkeypatch.setattr(ndfc_tenant_api, "_spki_pin", lambda address: "pin")
+    monkeypatch.setattr(ndfc_tenant_api, "_login", lambda *args: None)
+    monkeypatch.setattr(ndfc_tenant_api, "_api", lambda page, method, endpoint:
+                        (200, [{"fabricName": "SECOND-FABRIC"}])
+                        if method == "GET" and endpoint == ndfc_tenant_api._FABRICS
+                        else pytest.fail("tenant staging must not deploy switches"))
+    monkeypatch.setattr(ndfc_tenant_api, "_collection",
+                        lambda page, endpoint, kind: inventory
+                        if kind == "switch inventory" else pytest.fail(kind))
+    monkeypatch.setattr(ndfc_tenant_api, "_check_template", lambda *args: None)
+    staged = []
+    def record_stage(page, endpoint, kind, desired):
+        staged.append((kind, len(desired)))
+        return [{"name": item["vrfName" if kind == "VRF" else "networkName"],
+                 "status": "created"} for item in desired]
+    monkeypatch.setattr(ndfc_tenant_api, "_stage_collection", record_stage)
+    result = ndfc_tenant_api.stage_tenants(intent, "user", "secret", site="DC2")
+    assert staged == [("VRF", 2), ("Network", 2)]
+    assert result["deployment"] == "not-requested"
+    with pytest.raises(ValueError, match="identity or sync"):
+        ndfc_tenant_api.preflight_inventory(intent, inventory, site="DC2")

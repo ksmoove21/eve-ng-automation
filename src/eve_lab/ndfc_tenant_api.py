@@ -166,9 +166,13 @@ def stage_tenants(intent, username, password, site="DC1"):
             inventory = _collection(
                 page, _FABRICS + "/" + quote(fabric, safe="") +
                 "/inventory/switchesByFabric", "switch inventory")
+            # Creating controller-side VRF/Network objects does not push switch
+            # configuration. Imported exact identities may have ccStatus NA
+            # until the first successful fabric Recalculate and deploy.
             serials = preflight_inventory(
                 intent, inventory,
-                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync"), site=site)
+                allowed_cc_status=("In-Sync", "Pending", "Out-of-Sync", "NA"),
+                site=site)
             vrf_payloads = [vrf_create_payload(fabric, item) for item in compiled["vrfs"]]
             network_payloads = [network_create_payload(fabric, item)
                                 for item in compiled["networks"]]
