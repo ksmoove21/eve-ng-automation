@@ -78,21 +78,21 @@ class SatelliteImageTests(unittest.TestCase):
         self.assertEqual(assess_image_snapshots("image", 1, [raw, raw])["status"], "INVALID")
 
     def test_wireguard_resolution_uses_inventory_key_without_exposing_config(self):
-        command = resolution_command("eve-sat03", "VTxVhflwGkuBOsZs2kfD51KwG+1i5lxHywHOvjcUWCY=")
+        command = resolution_command("satellite-3", "VTxVhflwGkuBOsZs2kfD51KwG+1i5lxHywHOvjcUWCY=")
         self.assertIn("wg show wg0 dump", command)
         self.assertEqual(_target_from_output("TARGET|10.42.0.3|wireguard"), ("10.42.0.3", "wireguard"))
         self.assertEqual(_target_from_output("TARGET||wireguard"), (None, "wireguard"))
         with self.assertRaises(ValueError):
-            resolution_command("eve-sat03", "invalid; key")
+            resolution_command("satellite-3", "invalid; key")
 
     def test_manager_mediated_command_is_strict_and_rejects_injection(self):
-        command = remote_command("eve-sat03", "nd-9.3.2.1c")
+        command = remote_command("satellite-3", "nd-9.3.2.1c")
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn("BatchMode=yes", command)
         with self.assertRaises(ValueError):
-            remote_command("eve-sat03;touch", "image")
+            remote_command("satellite-3;touch", "image")
         with self.assertRaises(ValueError):
-            remote_command("eve-sat03", "../image")
+            remote_command("satellite-3", "../image")
     def test_satellite_console_command_is_strict_and_local_to_member(self):
         command = console_command("172.30.130.3", 48469)
         self.assertIn("StrictHostKeyChecking=yes", command)
@@ -104,8 +104,8 @@ class SatelliteImageTests(unittest.TestCase):
             console_command("172.30.130.3", 0)
 
     def test_satellite_member_requires_one_online_non_manager_member(self):
-        cluster = {"3": {"id": 3, "name": "eve-sat03", "online": 1}}
-        self.assertEqual(satellite_member(cluster, 3)["name"], "eve-sat03")
+        cluster = {"3": {"id": 3, "name": "satellite-3", "online": 1}}
+        self.assertEqual(satellite_member(cluster, 3)["name"], "satellite-3")
         cluster["3"]["online"] = 0
         with self.assertRaisesRegex(RuntimeError, "not online"):
             satellite_member(cluster, 3)
