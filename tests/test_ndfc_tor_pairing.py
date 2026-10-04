@@ -85,6 +85,10 @@ def test_gui_readback_enable_true_with_null_leaf_serials_is_unpaired():
     assert ndfc_tor_pairing._association_state(
         view, [{"leafSNs": "S-L3,S-L4"}, {"leafSNs": "S-L3,S-L4"}],
         _serials()["leaf"], _serials()["tor"]) == "paired"
+    assert ndfc_tor_pairing._association_state(
+        view, [{"switchSN": "S-L3", "peerSN": "S-L4"},
+               {"switchSN": "S-L3", "peerSN": "S-L4"}],
+        _serials()["leaf"], _serials()["tor"]) == "paired"
     view["torPairs"][0]["leafSNs"] = "S-L3,FOREIGN"
     with pytest.raises(NexusDashboardBrowserError, match="foreign"):
         ndfc_tor_pairing._association_state(

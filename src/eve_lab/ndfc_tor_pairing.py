@@ -138,6 +138,8 @@ def _parent_serials(value):
             return _serial_set(value[key])
     if "leafSN1" in value and "leafSN2" in value:
         return _serial_set([value["leafSN1"], value["leafSN2"]])
+    if "switchSN" in value and "peerSN" in value:
+        return _serial_set([value["switchSN"], value["peerSN"]])
     raise NexusDashboardBrowserError("NDFC ToR parent readback lacks leaf serials")
 
 

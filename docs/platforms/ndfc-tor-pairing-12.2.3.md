@@ -34,7 +34,7 @@ GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/tor/fabrics/{fabricName
 GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/tor/fabrics/{fabricName}/switches/tor/{torSerial}
 ```
 
-After Save, verify the exact `torPairs[].leafSNs` and ToR parent leaf serials; the tested readback reported `Already paired with (...)` and populated `leafSNs` while its `enable` field remained `false`. Verify generated parent Po and child member policies against the physical link map before deployment.
+After Save, verify the exact `torPairs[].leafSNs` and ToR parent leaf serials. The installed DC2 12.2.3 readback returned `torPairs[].remarks: "Already paired"`, populated `leafSNs`, and each `switches/tor/{torSerial}` parent returned `switchSN` and `peerSN` for the leaf pair. The UI `enable` field can differ from association state; use the serial readback. Verify generated parent Po and child member policies against the physical link map before deployment.
 
 The installed fabric recalculate endpoint is `POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabricName}/config-save`. For a scoped follow-on deployment, use `POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabricName}/config-deploy/{serialNumber}` on only the affected switches. `GET .../config-preview/{serialNumber}?forceShowRun=true`, per-switch deployer history, and live Po/vPC state establish convergence; HTTP 200 alone does not.
 
