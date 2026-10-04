@@ -16,6 +16,7 @@ DATA = {
 }
 STARTUP = ('hostname leaf1\n ip address 192.0.2.10/24\n'
            ' ip route 0.0.0.0/0 192.0.2.1\n')
+BOOT_STARTUP = STARTUP + 'boot nxos bootflash:/nxos-image.bin\n'
 
 
 class NxosInitTests(unittest.TestCase):
@@ -27,14 +28,90 @@ class NxosInitTests(unittest.TestCase):
             'vrf context management', 'ip route 0.0.0.0/0 192.0.2.1', 'exit',
         ])
         console = MagicMock(spec=NxosConsole)
-        console.command.side_effect = ['', 'bootflash:///nxos-image.bin'] + [''] * 11 + [STARTUP]
+        console.command.side_effect = ['', 'bootflash:///nxos-image.bin'] + [''] * 11 + [BOOT_STARTUP, BOOT_STARTUP]
         NxosConsole.initialize(console, commands)
         sent = [call.args[0] for call in console.command.call_args_list]
         self.assertEqual(sent[:3], ['terminal length 0', 'show version', 'configure terminal'])
         self.assertNotIn('boot nxos bootflash:nxos-image.bin', sent)
-        self.assertEqual(sent[-2:], ['copy running-config startup-config', 'show startup-config'])
+        self.assertEqual(sent[-3:], ['copy running-config startup-config',
+                                     'show startup-config',
+                                     'show running-config | include boot nxos'])
         self.assertTrue(all(call.kwargs.get('require_echo') is True
                             for call in console.command.call_args_list))
+
+    def test_missing_boot_image_is_set_only_after_management_save(self):
+        commands = bootstrap_commands(DATA)
+        console = MagicMock(spec=NxosConsole)
+        reads = iter((STARTUP, BOOT_STARTUP))
+        running_reads = iter(('', 'boot nxos bootflash:/nxos-image.bin'))
+        def respond(command, **kwargs):
+            if command == 'show version':
+                return 'bootflash:///nxos-image.bin'
+            if command == 'show startup-config':
+                return next(reads)
+            if command == 'show running-config | include boot nxos':
+                return next(running_reads)
+            return ''
+        console.command.side_effect = respond
+        NxosConsole.initialize(console, commands)
+        sent = [call.args[0] for call in console.command.call_args_list]
+        boot = 'boot nxos bootflash:nxos-image.bin'
+        self.assertEqual(sent.count(boot), 1)
+        self.assertLess(sent.index('copy running-config startup-config'), sent.index(boot))
+        self.assertEqual(sent.count('copy running-config startup-config'), 2)
+        boot_call = next(call for call in console.command.call_args_list
+                         if call.args[0] == boot)
+        self.assertEqual(boot_call.kwargs['timeout'], 120)
+        self.assertTrue(boot_call.kwargs['require_echo'])
+
+    def test_saved_boot_without_running_boot_is_reapplied(self):
+        console = MagicMock(spec=NxosConsole)
+        running_reads = iter(('', 'boot nxos bootflash:/nxos-image.bin'))
+        def respond(command, **kwargs):
+            if command == 'show version':
+                return 'bootflash:///nxos-image.bin'
+            if command == 'show startup-config':
+                return BOOT_STARTUP
+            if command == 'show running-config | include boot nxos':
+                return next(running_reads)
+            return ''
+        console.command.side_effect = respond
+        NxosConsole.initialize(console, bootstrap_commands(DATA))
+        sent = [call.args[0] for call in console.command.call_args_list]
+        self.assertIn('boot nxos bootflash:nxos-image.bin', sent)
+
+    def test_conflicting_saved_boot_image_never_overwritten(self):
+        console = MagicMock(spec=NxosConsole)
+        console.command.side_effect = lambda command, **kwargs: (
+            'bootflash:///nxos-image.bin' if command == 'show version' else
+            STARTUP + 'boot nxos bootflash:/other-image.bin\n'
+            if command == 'show startup-config' else
+            '' if command == 'show running-config | include boot nxos' else '')
+        with self.assertRaisesRegex(RuntimeError, 'conflicting boot image'):
+            NxosConsole.initialize(console, bootstrap_commands(DATA))
+        sent = [call.args[0] for call in console.command.call_args_list]
+        self.assertIn('copy running-config startup-config', sent)
+        self.assertNotIn('boot nxos bootflash:nxos-image.bin', sent)
+
+    def test_boot_command_timeout_keeps_prior_management_save(self):
+        console = MagicMock(spec=NxosConsole)
+        def respond(command, **kwargs):
+            if command == 'show version':
+                return 'bootflash:///nxos-image.bin'
+            if command == 'show startup-config':
+                return STARTUP
+            if command == 'show running-config | include boot nxos':
+                return ''
+            if command == 'boot nxos bootflash:nxos-image.bin':
+                raise RuntimeError('console timeout')
+            return ''
+        console.command.side_effect = respond
+        with self.assertRaisesRegex(RuntimeError, 'management was saved'):
+            NxosConsole.initialize(console, bootstrap_commands(DATA))
+        sent = [call.args[0] for call in console.command.call_args_list]
+        self.assertLess(sent.index('copy running-config startup-config'),
+                        sent.index('boot nxos bootflash:nxos-image.bin'))
+        self.assertEqual(sent.count('copy running-config startup-config'), 1)
 
     def test_running_image_mismatch_stops_before_configuration(self):
         console = MagicMock(spec=NxosConsole)

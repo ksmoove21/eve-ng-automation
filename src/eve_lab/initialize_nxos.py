@@ -56,8 +56,7 @@ class NxosConsole(Console):
         if len(boot_commands) != 1:
             raise ValueError('NX-OS bootstrap requires exactly one declared boot image')
         expected_image = boot_commands[0].split('bootflash:', 1)[1]
-        # EVE selects the active NX-OS image. NXOSv can stall on `boot nxos` while
-        # leaving the boot variable unset, so validate the running image only.
+        # Confirm the active image before changing any saved configuration.
         version = self.command('show version', timeout=120, require_echo=True)
         if not re.search(r'(?<![A-Za-z0-9_.-])' + re.escape(expected_image) +
                          r'(?![A-Za-z0-9_.-])', version):
@@ -81,3 +80,40 @@ class NxosConsole(Console):
             ('hostname ', 'ip address ', 'ip route 0.0.0.0/0 '))]
         if any(command not in startup for command in required):
             raise RuntimeError('NX-OS startup-config lacks declared management bootstrap')
+        # Management is already saved before the potentially slow NX-OSv boot
+        # command. Require both running and startup intent; `show boot variables`
+        # was empty on this image even when the startup line was present.
+        running_boot = self.command('show running-config | include boot nxos',
+                                    require_echo=True)
+        pattern = r'(?m)^\s*boot nxos bootflash:/?([^\s]+)\s*$'
+        saved_boot = re.findall(pattern, startup)
+        active_boot = re.findall(pattern, running_boot)
+        if saved_boot == [expected_image] and active_boot == [expected_image]:
+            return
+        if (saved_boot and saved_boot != [expected_image]
+                or active_boot and active_boot != [expected_image]
+                or re.search(r'(?m)^\s*boot nxos\b', startup) and not saved_boot
+                or re.search(r'(?m)^\s*boot nxos\b', running_boot) and not active_boot):
+            raise RuntimeError('NX-OS has a conflicting boot image')
+        self.command('configure terminal', require_echo=True)
+        try:
+            self.command(boot_commands[0], timeout=120, require_echo=True)
+        except RuntimeError as error:
+            raise RuntimeError('NX-OS boot image command did not complete; '
+                               'management was saved before this attempt') from error
+        self.command('end', require_echo=True)
+        saved = self.command('copy running-config startup-config', timeout=120,
+                             require_echo=True)
+        if re.search(r'%\s*(?:Invalid|Error|Failed)', saved, re.I):
+            raise RuntimeError('NX-OS did not save the declared boot image')
+        startup = self.command('show startup-config', timeout=120,
+                               require_echo=True)
+        running_boot = self.command('show running-config | include boot nxos',
+                                    require_echo=True)
+        if (not re.search(r'(?m)^\s*boot nxos bootflash:/?' +
+                          re.escape(expected_image) + r'\s*$', startup)
+                or not re.search(r'(?m)^\s*boot nxos bootflash:/?' +
+                                 re.escape(expected_image) + r'\s*$', running_boot)
+                or any(command not in startup for command in required)):
+            raise RuntimeError('NX-OS startup-config lacks the declared boot '
+                               'image or management bootstrap')
