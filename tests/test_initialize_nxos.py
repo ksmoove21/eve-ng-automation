@@ -11,18 +11,18 @@ class NxosInitTests(unittest.TestCase):
   self.assertEqual(commands,['hostname leaf1','interface mgmt0','ip address 192.0.2.10/24','no cdp enable','exit','boot nxos bootflash:nxos-image.bin','vrf context management','ip route 0.0.0.0/0 192.0.2.1','exit'])
   console=MagicMock(spec=NxosConsole); console.command.side_effect=['']*15 + ['hostname leaf1\n ip address 192.0.2.10/24\n ip route 0.0.0.0/0 192.0.2.1\n']
   NxosConsole.initialize(console,commands)
-  self.assertEqual([call.args[0] for call in console.command.call_args_list][:3],['terminal length 0','show boot variables','configure terminal'])
+  self.assertEqual([call.args[0] for call in console.command.call_args_list][:3],['terminal length 0','show startup-config | include boot','configure terminal'])
   self.assertEqual(console.command.call_args_list[-3].args[0],'terminal length 0')
   self.assertEqual(console.command.call_args_list[-2].args[0],'copy running-config startup-config')
   self.assertEqual(console.command.call_args_list[-1].args[0],'show startup-config')
   self.assertTrue(all(call.kwargs.get('require_echo') is True for call in console.command.call_args_list))
- def test_matching_boot_variable_is_not_reapplied(self):
+ def test_matching_saved_boot_image_is_not_reapplied(self):
   commands=bootstrap_commands(DATA)
   console=MagicMock(spec=NxosConsole)
-  console.command.side_effect=['','NXOS variable = bootflash:/nxos-image.bin'] + ['']*12 + ['hostname leaf1\n ip address 192.0.2.10/24\n ip route 0.0.0.0/0 192.0.2.1\n']
+  console.command.side_effect=['','boot nxos bootflash:/nxos-image.bin'] + ['']*12 + ['hostname leaf1\n ip address 192.0.2.10/24\n ip route 0.0.0.0/0 192.0.2.1\n']
   NxosConsole.initialize(console,commands)
   sent=[call.args[0] for call in console.command.call_args_list]
-  self.assertIn('show boot variables',sent)
+  self.assertIn('show startup-config | include boot',sent)
   self.assertNotIn('boot nxos bootflash:nxos-image.bin',sent)
   self.assertEqual(sent[-1],'show startup-config')
  def test_explicit_lacp_prerequisite(self):
