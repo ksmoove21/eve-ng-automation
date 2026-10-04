@@ -18,4 +18,3 @@ and role assignment must be captured before adding a reusable mutation path.
 The existing preflight must remain read-only until that mapping and a
 post-import identity/role check are proven. A switch must not be reported as
 managed merely because reachability succeeded.
-
