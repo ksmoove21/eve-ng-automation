@@ -175,7 +175,7 @@ A capability ceiling includes repeated misclassification of risk, failure to int
 For this trial:
 - Coordinator: GPT-5.6 Luna / Low for status, messaging, storyboard, and bookkeeping. Prefer Luna Medium/High before moving to Terra when deeper coordination reasoning is needed.
 - Hygiene: GPT-5.6 Terra / Medium for repository cleanup and maintenance. Prefer Terra High/XHigh before moving to Sol when cleanup requires deeper reasoning.
-- Runner: GPT-5.6 Sol / Medium for substantial live infrastructure lanes until a cheaper runner profile is field-proven. Prefer Sol High/XHigh before changing model tier for a hard lane.
+- Runner: start at GPT-5.6 Terra / Medium. Escalate an individual Runner only when its evidence shows the current step is insufficient: GPT-5.6 Terra / High -> GPT-5.6 Sol / Medium -> GPT-5.6 Sol / High. If GPT-6 Terra is actually exposed by the execution environment, continue GPT-6 Terra / Medium -> GPT-6 Terra / High -> GPT-6 Sol / Medium. Do not assume an unavailable model exists, and do not advance a different Runner merely because its peer needed escalation.
 - Root: parent-selected model for the sprint critical path; prefer reasoning-effort escalation before model-tier escalation when the current model remains appropriate.
 
 Do not keep a heavier model on a task solely because it was previously used there. Do not repeatedly retry the same failing task at the same model/reasoning setting. If a cheaper role proves sufficient, prefer it on future spawns. If a role stalls, return the problem to Root with evidence and recommend the next reasoning-effort step before recommending a model-tier change.
