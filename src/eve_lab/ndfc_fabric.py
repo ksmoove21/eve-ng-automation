@@ -48,8 +48,15 @@ def compile_fabric(intent, site="DC1"):
         raise ValueError(site + " infrastructure pools overlap")
     if fabric["vpc_peer_keepalive_option"] != "management":
         raise ValueError("NDFC 12.2.3 management vPC keepalive mapping is required")
-    if fabric["leaf_pre_interfaces_freeform"] != "feature dhcp\nservice dhcp":
-        raise ValueError(site + " leaf pre-interface DHCP feature intent is required")
+    dhcp_mode = fabric.get("tenant_dhcp_service")
+    if dhcp_mode == "disabled_static":
+        if fabric["leaf_pre_interfaces_freeform"] != "":
+            raise ValueError(site + " static tenant fabric cannot add leaf DHCP commands")
+    elif dhcp_mode in (None, "deferred_out_of_scope_for_dc1_sprint"):
+        if fabric["leaf_pre_interfaces_freeform"] != "feature dhcp\nservice dhcp":
+            raise ValueError(site + " leaf pre-interface DHCP feature intent is required")
+    else:
+        raise ValueError(site + " tenant DHCP service mode is unsupported")
     vnis = intent["tenants"]["vni_policy"]
     if vnis["l2_range"] != "20000-29999" or vnis["l3_range"] != "30000-39999":
         raise ValueError(site + " VNI ranges do not match owner intent")
@@ -92,7 +99,7 @@ def compile_fabric(intent, site="DC1"):
         "L3_PARTITION_ID_RANGE": vnis["l3_range"],
         "NETWORK_VLAN_RANGE": fabric["network_vlan_range"],
         "VPC_PEER_KEEP_ALIVE_OPTION": "management",
-        "ENABLE_TENANT_DHCP": "true",
+        "ENABLE_TENANT_DHCP": "false" if dhcp_mode == "disabled_static" else "true",
         "preInterfaceConfigLeaf": fabric["leaf_pre_interfaces_freeform"],
         "SPINE_COUNT": "2",
         "RR_COUNT": "2",
@@ -143,6 +150,28 @@ def _verify_fabric(item, desired):
             "NDFC fabric conflicts with declared NV pairs: " + ", ".join(mismatched))
 
 
+def _guarded_fabric_update(site, actual, desired):
+    """Return only the previously observed, owner-approved fabric migration."""
+    differing = {key for key, value in desired.items()
+                 if str(actual.get(key, "")).strip() != str(value).strip()}
+    if not differing:
+        return {}
+    if (site == "DC1" and differing == {"preInterfaceConfigLeaf"}
+            and str(actual.get("preInterfaceConfigLeaf", "")).strip() == "feature dhcp"
+            and desired["preInterfaceConfigLeaf"] == "feature dhcp\nservice dhcp"):
+        return {"preInterfaceConfigLeaf": desired["preInterfaceConfigLeaf"]}
+    static_fields = {"ENABLE_TENANT_DHCP", "preInterfaceConfigLeaf"}
+    if (site == "DC2" and differing <= static_fields
+            and desired["ENABLE_TENANT_DHCP"] == "false"
+            and desired["preInterfaceConfigLeaf"] == ""
+            and str(actual.get("ENABLE_TENANT_DHCP", "")).lower() in ("true", "false")
+            and str(actual.get("preInterfaceConfigLeaf", "")).strip()
+            in ("feature dhcp\nservice dhcp", "")):
+        return {key: desired[key] for key in differing}
+    raise NexusDashboardBrowserError(
+        "NDFC fabric conflicts with declared NV pairs: " + ", ".join(sorted(differing)))
+
+
 def ensure_fabric(intent, username, password, timeout=300, site="DC1"):
     """Create the selected site only when absent, then verify every declared NV pair."""
     name, desired = compile_fabric(intent, site)
@@ -174,32 +203,21 @@ def ensure_fabric(intent, username, password, timeout=300, site="DC1"):
                 if current.get("templateName") != "Easy_Fabric" or not isinstance(actual, dict):
                     raise NexusDashboardBrowserError(
                         "Existing NDFC fabric template or NV readback is unavailable")
-                differing = {key for key, value in desired.items()
-                             if str(actual.get(key, "")).strip() != str(value).strip()}
-                if not differing:
+                update = _guarded_fabric_update(site, actual, desired)
+                if not update:
                     return {"status": "already-configured", "fabric": name}
-                # This is the owner-approved R4 migration of the sole DHCP
-                # pre-interface field. Do not silently rewrite other fabric intent.
-                if (site != "DC1" or differing != {"preInterfaceConfigLeaf"}
-                        or str(actual.get("preInterfaceConfigLeaf", "")).strip()
-                        != "feature dhcp"):
-                    raise NexusDashboardBrowserError(
-                        "NDFC fabric conflicts with declared NV pairs: " +
-                        ", ".join(sorted(differing)))
-                status, response = _api(page, "PUT", endpoint, {
-                    "preInterfaceConfigLeaf": desired["preInterfaceConfigLeaf"]})
+                status, response = _api(page, "PUT", endpoint, update)
                 if status != 200:
                     raise NexusDashboardBrowserError(
-                        "NDFC fabric leaf freeform update failed with HTTP " +
+                        "NDFC fabric update failed with HTTP " +
                         str(status) + ": " + str(response)[:300])
                 observed = {}
                 def updated():
                     observed["fabric"] = _find_fabric(page, name)
                     return (observed["fabric"] is not None and
-                            observed["fabric"].get("nvPairs", {}).get(
-                                "preInterfaceConfigLeaf", "").strip() ==
-                            desired["preInterfaceConfigLeaf"])
-                _wait_for(page, updated, deadline, "NDFC leaf freeform readback")
+                            all(str(observed["fabric"].get("nvPairs", {}).get(key, "")).strip()
+                                == str(value).strip() for key, value in update.items()))
+                _wait_for(page, updated, deadline, "NDFC fabric update readback")
                 _verify_fabric(observed["fabric"], desired)
                 return {"status": "updated", "fabric": name}
             status, response = _api(page, "POST", endpoint, desired)

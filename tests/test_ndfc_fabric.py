@@ -3,7 +3,8 @@
 from copy import deepcopy
 import unittest
 
-from eve_lab.ndfc_fabric import compile_fabric
+from eve_lab.ndfc_fabric import _guarded_fabric_update, compile_fabric
+from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
 
 
 INTENT = {
@@ -41,6 +42,28 @@ class NdfcFabricTests(unittest.TestCase):
         self.assertEqual(nv["L3_PARTITION_ID_RANGE"], "30000-39999")
         self.assertEqual(nv["preInterfaceConfigLeaf"], "feature dhcp\nservice dhcp")
         self.assertNotIn("VRF_VLAN_RANGE", nv)
+
+    def test_static_dc2_disables_fabric_dhcp_and_allows_only_guarded_update(self):
+        intent = deepcopy(INTENT)
+        fabric = intent["ndfc_fabrics"][0]
+        fabric.update(site="DC2", name="SECOND-FABRIC", bgp_asn=65002,
+                      network_vlan_range="200-299", vrf_vlan_range="300-399",
+                      leaf_pre_interfaces_freeform="", tenant_dhcp_service="disabled_static")
+        intent["tenants"]["dc2"] = [{"vrf_vni": 30110, "vrf_vlan": 330,
+                                       "networks": [{"vni": 20110, "vlan": 210}]}]
+        _, desired = compile_fabric(intent, "DC2")
+        self.assertEqual(desired["ENABLE_TENANT_DHCP"], "false")
+        self.assertEqual(desired["preInterfaceConfigLeaf"], "")
+        actual = dict(desired, ENABLE_TENANT_DHCP="true",
+                      preInterfaceConfigLeaf="feature dhcp\nservice dhcp")
+        self.assertEqual(_guarded_fabric_update("DC2", actual, desired), {
+            "ENABLE_TENANT_DHCP": "false", "preInterfaceConfigLeaf": ""})
+        actual["BGP_AS"] = "65003"
+        with self.assertRaises(NexusDashboardBrowserError):
+            _guarded_fabric_update("DC2", actual, desired)
+        fabric["leaf_pre_interfaces_freeform"] = "feature dhcp"
+        with self.assertRaisesRegex(ValueError, "cannot add leaf DHCP"):
+            compile_fabric(intent, "DC2")
 
     def test_rejects_tenant_vni_outside_owner_range(self):
         intent = deepcopy(INTENT)

@@ -37,3 +37,13 @@ fields but no proven per-Network leaf DHCP server scope. A Network can retain
 report that Network's `dhcp_status` as `deferred` and do not claim lease service.
 Without the explicit marker, those commands stop before any API mutation.
 `dhcp: deferred_out_of_scope` remains supported.
+
+For a static-only tenant fabric, set `tenant_dhcp_service: disabled_static` and
+`leaf_pre_interfaces_freeform: ''`. The compiler maps these to
+`ENABLE_TENANT_DHCP=false` and an empty `preInterfaceConfigLeaf`. On an existing
+DC2 fabric, the reconciler accepts only the observed migration from DHCP enabled
+with `feature dhcp`/`service dhcp` to these two values. It uses the installed
+Easy_Fabric update API, verifies both NV fields, then requires a separate
+recalculation and preview review before switch deployment. Tenant Network
+creation never adds DHCP template parameters for
+`dhcp: deferred_out_of_scope`; endpoints use their declared static addresses.
