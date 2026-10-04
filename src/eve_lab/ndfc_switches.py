@@ -1,4 +1,4 @@
-"""Read-only NDFC switch discovery preflight for a declared DC1 fabric."""
+"""Read-only NDFC switch discovery preflight for a declared fabric."""
 
 import argparse
 import json
@@ -13,13 +13,17 @@ from .nexus_dashboard_browser import NexusDashboardBrowserError, _login, _spki_p
 
 
 def compile_switches(intent):
-    """Pair active DC1 switch names, management IPs, and declared NDFC roles."""
+    """Pair declared switch names, management IPs, and NDFC roles."""
     name, _ = compile_fabric(intent)
     fabric = next(item for item in intent["ndfc_fabrics"] if item["site"] == "DC1")
     active = set(intent["scope"]["activation_set"])
     assignments = intent["management"]["fabric_edge"]["assignments"]
+    try:
+        spines = fabric["spine_pair"]["nodes"]
+    except (KeyError, TypeError):
+        raise ValueError("DC1 fabric requires explicit spine_pair.nodes") from None
     groups = [
-        ("spine", ["N9K-Spine-1", "N9K-Spine-2"]),
+        ("spine", spines),
         ("leaf", fabric["regular_leaf_pair"]["nodes"]),
         ("border", fabric["border_leaf_pair"]["nodes"]),
         ("tor", fabric["tor_pair"]["nodes"]),
