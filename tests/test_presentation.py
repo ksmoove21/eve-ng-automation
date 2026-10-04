@@ -2,8 +2,11 @@ import copy
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from eve_lab.presentation import compiled_objects, reconcile_presentation, validate_presentation
+from eve_lab.deploy import apply
+from tests.test_deploy import FakeEve
 from eve_lab.topology import load_topology
 
 
@@ -101,18 +104,53 @@ class PresentationTests(unittest.TestCase):
         })
         self.assertEqual(len(client.objects), 1)
 
+    def test_hidden_networks_validate_names_and_topology_reference(self):
+        document = {"version": 1, "hidden_networks": ["CLOUD0-MGMT"]}
+        validate_presentation(document, network_names=["CLOUD0-MGMT"])
+        for invalid in ([""], ["CLOUD0-MGMT", "CLOUD0-MGMT"], "CLOUD0-MGMT"):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "hidden_networks"):
+                validate_presentation({**document, "hidden_networks": invalid})
+        with self.assertRaisesRegex(ValueError, "undeclared networks"):
+            validate_presentation(document, network_names=["other"])
+
+    def test_hidden_declared_network_apply_repeat_and_drift(self):
+        client = FakeEve()
+        topology = {
+            "name": "palo-lab", "remote_folder": "/",
+            "nodes": [{"name": "R1", "template": "c8000v", "type": "qemu",
+                       "image": "c8000v-17.15.06", "cpu": 4, "ethernet": 4}],
+            "networks": [{"name": "CLOUD0-MGMT", "type": "pnet1"}],
+            "links": [{"node": "R1", "interface": "Gi1", "network": "CLOUD0-MGMT"}],
+            "presentation": {"version": 1, "hidden_networks": ["CLOUD0-MGMT"]},
+        }
+        with patch("eve_lab.deploy.reconcile_presentation", return_value={"declared": 0, "matched": 0}):
+            result = apply(client, topology)
+            self.assertIn("hid declared network: CLOUD0-MGMT", result["changes"])
+            self.assertEqual(client.networks["1"]["visibility"], 0)
+            self.assertEqual(client.ports["1"]["7"]["network_id"], 1)
+            client.writes.clear()
+            self.assertEqual(apply(client, topology)["changes"], [])
+            self.assertEqual(client.writes, [])
+            client.networks["1"]["visibility"] = 1
+            result = apply(client, topology)
+            self.assertEqual(result["changes"], ["hid declared network: CLOUD0-MGMT"])
+            self.assertEqual(client.networks["1"]["visibility"], 0)
+
     def test_topology_loader_keeps_presentation_separate(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             lab = root / "labs" / "test"
             lab.mkdir(parents=True)
             (lab / "topology.yaml").write_text(
-                "name: test\nnodes: []\nnetworks: []\nlinks: []\n")
+                "name: test\nnodes: []\nnetworks:\n  - name: mgmt\n    type: pnet0\nlinks: []\n")
             (lab / "presentation.yaml").write_text(
-                "version: 1\nregions: []\nlabels: []\n")
+                "version: 1\nhidden_networks: [mgmt]\nregions: []\nlabels: []\n")
             loaded = load_topology(root, "test")
             self.assertEqual(loaded["presentation"], {
-                "version": 1, "regions": [], "labels": []})
+                "version": 1, "hidden_networks": ["mgmt"], "regions": [], "labels": []})
+            (lab / "presentation.yaml").write_text("version: 1\nhidden_networks: [missing]\n")
+            with self.assertRaisesRegex(ValueError, "undeclared networks"):
+                load_topology(root, "test")
 
 
 if __name__ == "__main__":

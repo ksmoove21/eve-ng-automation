@@ -268,6 +268,31 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(c.pending, '')
         self.assertEqual(ch.recv.call_count, 2)
 
+    def test_echo_correlation_ignores_delayed_previous_prompt(self):
+        c, ch = self.console([
+            'R0(config)#',  # Delayed redraw from the previous command.
+            'ip domain name example.com\nR0(config)#',
+        ])
+        c.pending = 'R0(config)#'
+        c.command('ip domain name example.com', require_echo=True)
+        self.assertEqual(ch.recv.call_count, 2)
+        ch.sendall.assert_called_once_with('ip domain name example.com\r')
+        self.assertEqual(c.prompt, 'R0(config)#')
+
+    def test_echo_correlation_keeps_rejection_detection(self):
+        c, _ = self.console([
+            'ip domain name example.com\n% Invalid input\nR0(config)#',
+        ])
+        with self.assertRaisesRegex(RuntimeError, 'rejected'):
+            c.command('ip domain name example.com', require_echo=True)
+
+    def test_init_can_require_each_command_echo(self):
+        c = Console(MagicMock())
+        c.command = MagicMock(return_value='[OK]\n')
+        c.initialize(['ip domain name example.com'], require_echo=True)
+        self.assertTrue(all(call.kwargs.get('require_echo') is True
+                            for call in c.command.call_args_list))
+
     def test_backup_strips_echo_and_checks_complete(self):
         c, _ = self.console(['terminal length 0\nR0#',
                             'more system:running-config\nUsing 99 out of 999 bytes\nhostname R0\n!\nend\nR0#'])

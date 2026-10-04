@@ -5,6 +5,7 @@ import time
 import sys
 
 from .client import EveAPIError
+from .satellite import inspect_image
 from .presentation import reconcile_presentation
 from .topology import expand_links, interface_key, validate
 
@@ -226,7 +227,7 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     result = {**topology}
     result['nodes'] = []
     declared = {node['name'] for node in topology['nodes']}
-    fields = ('name', 'template', 'type', 'image', 'cpu', 'ram', 'ethernet', 'console', 'left', 'top', 'icon', 'cpulimit')
+    fields = ('name', 'template', 'type', 'image', 'cpu', 'ram', 'ethernet', 'console', 'left', 'top', 'icon', 'cpulimit', 'sat')
     for desired in topology['nodes'] + [nodes[name] for name in sorted(active - declared)]:
         name = desired['name']
         result['nodes'].append({key: nodes[name][key] for key in fields if key in nodes[name]}
@@ -260,9 +261,21 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     return result, ready_direct, deferred
 
 
-def apply(client, topology, prune=True):
+def apply(client, topology, prune=True, root=None, server_name="default", image_inspector=inspect_image):
     validate(topology)
     topology, direct = expand_links(topology)
+    placement_requirements = {
+        node['name']: {key: node[key] for key in ('satellite', 'required_storage_gib', 'required_image_disks', 'required_image_disk_names') if key in node}
+        for node in topology['nodes'] if 'satellite' in node
+    }
+    # Placement policy is controller-side metadata. EVE persists the selected
+    # satellite as ``sat`` and has no storage-reservation field.
+    topology = {**topology, 'nodes': [
+        {**{key: value for key, value in node.items()
+            if key not in ('satellite', 'required_storage_gib', 'required_image_disks', 'required_image_disk_names')},
+         **({'sat': node['satellite']} if 'satellite' in node else {})}
+        for node in topology['nodes']
+    ]}
     path = lab_path(topology)
     folder = topology.get("remote_folder", "/").rstrip("/")
     folder_missing = False
@@ -292,9 +305,10 @@ def apply(client, topology, prune=True):
         for node in topology['nodes']]}
     # Preflight templates/images and network types before creating anything.
     payloads = {}
+    placements = {}
+    cluster = client.request('GET', 'cluster') if placement_requirements else {}
+    inspected_images = {}
     for node in topology["nodes"]:
-        if prune and node["name"] in nodes and str(nodes[node["name"]].get("status")) != "0":
-            continue
         template = client.request("GET", "list/templates/" + quote(node["template"], safe=""))
         if template.get("type") != node["type"]:
             raise ValueError(f"Template type does not match {node['name']}")
@@ -303,6 +317,54 @@ def apply(client, topology, prune=True):
             raise ValueError(f"Image {node['image']} is not available for {node['template']}")
         if 'icon' in node and node['icon'] not in options.get('icon', {}).get('list', {}):
             raise ValueError(f"Icon {node['icon']} is not available for {node['template']}")
+        if node['name'] in placement_requirements:
+            requirement = placement_requirements[node['name']]
+            satellite_id = node['sat']
+            candidates = [item for item in cluster.values() if isinstance(item, dict)
+                          and item.get('id') == satellite_id]
+            if len(candidates) != 1:
+                raise RuntimeError(f"Requested satellite {satellite_id} for {node['name']} is not present in EVE cluster inventory")
+            satellite = candidates[0]
+            if satellite.get('name') == 'master' or satellite_id == 0:
+                raise RuntimeError(f"Requested placement for {node['name']} resolves to EVE manager; satellite placement is required")
+            if satellite.get('online') != 1:
+                raise RuntimeError(f"Requested satellite {satellite.get('name', satellite_id)} for {node['name']} is offline")
+            if str(satellite_id) not in options.get('sat', {}).get('list', {}):
+                raise RuntimeError(f"EVE template {node['template']} does not offer satellite {satellite_id} for {node['name']}")
+            required_ram_kib = node.get('ram', 0) * 1024
+            if satellite.get('live_ram') is None or int(satellite['live_ram']) < required_ram_kib:
+                raise RuntimeError(f"Satellite {satellite.get('name', satellite_id)} lacks {node.get('ram')} MiB free RAM for {node['name']}")
+            if satellite.get('cpu') is None or int(satellite['cpu']) < node.get('cpu', 0):
+                raise RuntimeError(f"Satellite {satellite.get('name', satellite_id)} lacks {node.get('cpu')} vCPU capacity for {node['name']}")
+            available_kib = int(satellite.get('disk', 0)) - int(satellite.get('disk_usage', 0))
+            storage_gib = requirement.get('required_storage_gib')
+            if storage_gib is not None and available_kib < storage_gib * 1024 * 1024:
+                raise RuntimeError(f"Satellite {satellite.get('name', satellite_id)} lacks {storage_gib} GiB free storage for {node['name']}")
+            placements[node['name']] = {
+                'satellite_id': satellite_id,
+                'satellite': satellite.get('name'),
+                'available_ram_mib': int(satellite['live_ram']) // 1024,
+                'available_storage_gib': available_kib // (1024 * 1024),
+            }
+            if root is None:
+                raise RuntimeError('Satellite placement requires a workspace root so configured EVE SSH can preflight its image')
+            required_names = requirement.get('required_image_disk_names')
+            expected_disks = requirement.get('required_image_disks', len(required_names) if required_names else 1)
+            image_key = (satellite.get('name'), node['image'], expected_disks,
+                         tuple(required_names) if required_names else None)
+            if image_key not in inspected_images:
+                inspected_images[image_key] = image_inspector(
+                    root, server_name, satellite.get('name'), node['image'], expected_disks,
+                    satellite_key=satellite.get('pubkey'), **({'required_names': required_names}
+                    if required_names else {}))
+            readiness = inspected_images[image_key]
+            placements[node['name']]['image_readiness'] = readiness
+            if readiness.get('status') != 'READY':
+                raise RuntimeError(
+                    f"Satellite {satellite.get('name', satellite_id)} image {node['image']} is "
+                    f"{readiness.get('status', 'INVALID')}: {readiness.get('reason', 'no readiness evidence')}")
+        if prune and node["name"] in nodes and str(nodes[node["name"]].get("status")) != "0":
+            continue
         defaults = {key: option["value"] for key, option in options.items()
                     if "value" in option and key != "uuid"}
         payloads[node["name"]] = {
@@ -322,7 +384,7 @@ def apply(client, topology, prune=True):
         for desired in topology[kind]:
             if desired["name"] in existing:
                 actual = existing[desired["name"]]
-                resources = {key: desired[key] for key in ("cpu", "ram", "ethernet", "console", "left", "top", "icon", "cpulimit")
+                resources = {key: desired[key] for key in ("cpu", "ram", "ethernet", "console", "left", "top", "icon", "cpulimit", "sat")
                              if kind == "nodes" and key in desired
                              and str(desired[key]) != str(actual.get(key))}
                 if kind == "networks":
@@ -452,14 +514,19 @@ def apply(client, topology, prune=True):
             nodes = named(client, path + "/nodes")
             networks = named(client, path + "/networks")
         check_direct_bridges(client, path, direct, nodes, networks)
-        for name, _ in direct:
-            network = networks[name]
+        hidden_names = (topology.get("presentation") or {}).get("hidden_networks", [])
+        for name in [name for name, _ in direct] + hidden_names:
+            network = networks.get(name)
+            if network is None:
+                raise RuntimeError(f"Declared hidden network disappeared: {name}")
             if str(network.get("visibility", 1)) != "0":
                 client.request("PUT", f"{path}/networks/{network['id']}", {"visibility": 0})
-                changes.append(f"hid direct-link bridge: {name}")
+                changes.append(
+                    f"hid {'declared network' if name in hidden_names else 'direct-link bridge'}: {name}"
+                )
                 updated = named(client, path + "/networks")
                 if name not in updated or str(updated[name].get("visibility")) != "0":
-                    raise RuntimeError(f"Server did not hide direct-link bridge {name}")
+                    raise RuntimeError(f"Server did not hide network {name}")
         # Direct links are topology semantics. EVE requires an exclusive bridge
         # record as runtime backing, but every such record must remain hidden so
         # the native canvas presents one device-to-device cable.
@@ -469,6 +536,11 @@ def apply(client, topology, prune=True):
                            or str(final_networks[name].get("visibility", 1)) != "0"]
         if visible_backing:
             raise RuntimeError(f"Direct-link backing networks are not hidden: {visible_backing}")
+        visible_declared = [name for name in hidden_names
+                            if name not in final_networks
+                            or str(final_networks[name].get("visibility", 1)) != "0"]
+        if visible_declared:
+            raise RuntimeError(f"Declared hidden networks are not hidden: {visible_declared}")
         presentation_report = reconcile_presentation(client, path, topology.get("presentation"), changes)
     except (RuntimeError, ValueError) as error:
         raise RuntimeError(
@@ -476,6 +548,7 @@ def apply(client, topology, prune=True):
             "No rollback performed; inspect the lab and rerun after resolving the error."
         ) from error
     return {"lab": topology["name"], "path": path, "changes": changes, "deferred": deferred,
+            "placement": placements,
             "presentation": {"direct_links": len(direct),
                              "backing_networks_hidden": len(direct),
                              "objects": presentation_report},

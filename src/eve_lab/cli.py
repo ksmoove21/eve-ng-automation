@@ -20,6 +20,7 @@ from .securecrt import generate as generate_securecrt
 from .session_discovery import discover as discover_sessions
 from .dhcp import clear as clear_dhcp, report as report_dhcp, update_dns as update_dhcp_dns, update as update_dhcp
 from .deploy import apply, delete, lab_status, lifecycle, plan
+from .selected_start import start_selected
 from .live_guard import enforce_live_guard
 from .sdwan_intent import load_and_compile as compile_sdwan
 from .sdwan_factory import preflight as preflight_sdwan_factory, run_factory
@@ -153,7 +154,7 @@ def main():
         if name in ("plan", "apply", "start", "validate"):
             command.add_argument("--scenario", help="Load labs/<lab>/scenarios/<name>.yaml while retaining the same remote lab identity")
         if name == "start":
-            command.add_argument("--node", help="Start only this remote node by exact name")
+            command.add_argument("--node", action="append", help="Start only named remote nodes; repeat for a set")
         if name == "stop":
             command.description = "Stop every node in the remote lab, regardless of local node/link edits."
             command.add_argument("--node", help="Stop only this remote node by exact name")
@@ -244,7 +245,7 @@ def main():
                 client.login(server["username"], server["password"])
             try:
                 if args.command == "apply":
-                    result = apply(client, topology, prune=args.prune)
+                    result = apply(client, topology, prune=args.prune, root=args.root, server_name=args.server)
                 elif args.command == "sdwan-control-init":
                     result = initialize_control(
                         client, topology, args.root, args.server, args.node,
@@ -291,8 +292,11 @@ def main():
                     result = delete(client, topology)
                 elif args.command == "validate":
                     result = validate_lab(client, topology, args.root, args.server, args.timeout)
-                elif args.command in ("start", "stop"):
-                    result = lifecycle(client, topology, args.command, node_name=getattr(args, 'node', None))
+                elif args.command == "start":
+                    result = (start_selected(client, topology, args.node) if args.node
+                              else lifecycle(client, topology, "start"))
+                elif args.command == "stop":
+                    result = lifecycle(client, topology, "stop", node_name=args.node)
                 elif args.command == "status" and topology:
                     result = lab_status(client, topology)
                 else:

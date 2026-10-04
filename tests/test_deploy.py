@@ -29,7 +29,13 @@ class FakeEve:
         if path.startswith("list/templates/"):
             return {"type": "iol" if path.endswith("/iol") else "qemu", "options": {
                 "image": {"list": self.images}, "ram": {"value": 6144},
-                "cpu": {"value": 2}, "ethernet": {"value": 4}}}
+                "cpu": {"value": 2}, "ethernet": {"value": 4},
+                "sat": {"value": "-1", "list": {"-1": "any", "0": "master", "1": "satellite-1"}}}}
+        if path == "cluster":
+            return {"1": {"id": 0, "name": "master", "online": 1, "cpu": 16, "live_ram": 131072,
+                           "disk": 104857600, "disk_usage": 0},
+                    "2": {"id": 1, "name": "satellite-1", "online": 1, "cpu": 16, "live_ram": 131072,
+                           "disk": 104857600, "disk_usage": 0}}
         if path == "list/networks":
             return {"pnet1": "Cloud1", "bridge": "bridge"}
         if path == "folders/":
@@ -135,6 +141,74 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(self.client.nodes["1"]["cpulimit"], 1)
         self.assertFalse(self.client.writes)
 
+    def test_satellite_placement_preflight_and_persistence(self):
+        topology = copy.deepcopy(self.topology)
+        topology['nodes'][0].update(satellite=1, required_storage_gib=50, required_image_disks=2)
+        inspected = []
+        def image_inspector(root, server_name, satellite, image, disks, satellite_key=None):
+            inspected.append((root, server_name, satellite, image, disks, satellite_key))
+            return {'status': 'READY', 'reason': 'stable'}
+        result = apply(self.client, topology, root=Path('.'), image_inspector=image_inspector)
+        self.assertEqual(self.client.nodes['1']['sat'], 1)
+        self.assertEqual(result['placement']['R1']['satellite'], 'satellite-1')
+        self.assertEqual(result['placement']['R1']['image_readiness']['status'], 'READY')
+        self.assertEqual(inspected[0][2:], ('satellite-1', 'c8000v-17.15.06', 2, None))
+        self.client.nodes['1']['status'] = 0
+        apply(self.client, topology, root=Path('.'), image_inspector=image_inspector)
+        self.assertEqual(self.client.nodes['1']['sat'], 1)
+
+    def test_satellite_named_disks_are_preflight_only(self):
+        topology = copy.deepcopy(self.topology)
+        names = ["virtioa.qcow2", "virtiob.qcow2"]
+        topology["nodes"][0].update(
+            satellite=1, required_image_disk_names=names)
+        inspected = []
+        def image_inspector(root, server_name, satellite, image, disks,
+                            satellite_key=None, required_names=None):
+            inspected.append((disks, required_names))
+            return {"status": "READY", "reason": "stable"}
+        apply(self.client, topology, root=Path("."), image_inspector=image_inspector)
+        self.assertEqual(inspected, [(2, names)])
+        self.assertNotIn("required_image_disk_names", self.client.nodes["1"])
+        self.assertNotIn("required_image_disks", self.client.nodes["1"])
+
+    def test_satellite_disk_names_reject_unsafe_or_inconsistent_intent(self):
+        for names in ([], ["virtioa.qcow2", "virtioa.qcow2"],
+                      ["../virtioa.qcow2"], ["virtioa.img"], [1]):
+            with self.subTest(names=names):
+                topology = copy.deepcopy(self.topology)
+                topology["nodes"][0].update(
+                    satellite=1, required_image_disk_names=names)
+                with self.assertRaisesRegex(ValueError, "required_image_disk_names"):
+                    validate(topology)
+        topology = copy.deepcopy(self.topology)
+        topology["nodes"][0]["required_image_disk_names"] = ["virtioa.qcow2"]
+        with self.assertRaisesRegex(ValueError, "requires satellite placement"):
+            validate(topology)
+        topology = copy.deepcopy(self.topology)
+        topology["nodes"][0].update(
+            satellite=1, required_image_disks=1,
+            required_image_disk_names=["virtioa.qcow2", "virtiob.qcow2"])
+        with self.assertRaisesRegex(ValueError, "must match"):
+            validate(topology)
+
+    def test_satellite_image_not_ready_prevents_writes(self):
+        topology = copy.deepcopy(self.topology)
+        topology['nodes'][0].update(satellite=1, required_storage_gib=50)
+        with self.assertRaisesRegex(RuntimeError, 'COPYING/UNSTABLE'):
+            apply(self.client, topology, root=Path('.'),
+                  image_inspector=lambda *args, **kwargs: {'status': 'COPYING/UNSTABLE', 'reason': 'metadata changed'})
+        self.assertEqual(self.client.writes, [])
+
+    def test_satellite_placement_rejects_offline_or_insufficient_hosts(self):
+        topology = copy.deepcopy(self.topology)
+        topology['nodes'][0].update(satellite=1, required_storage_gib=101)
+        with self.assertRaisesRegex(RuntimeError, 'lacks 101 GiB'):
+            apply(self.client, topology)
+        topology['nodes'][0]['satellite'] = 2
+        with self.assertRaisesRegex(RuntimeError, 'not present'):
+            apply(self.client, topology)
+
     def test_topology_accepts_native_iol_nodes(self):
         topology = copy.deepcopy(self.topology)
         topology['nodes'][0].update(template='iol', type='iol', image='iol-xe-l3-17.16.01a.bin')
@@ -148,6 +222,7 @@ class DeploymentTests(unittest.TestCase):
 
     def test_interface_keys_normalize_iol_and_ios_abbreviations(self):
         self.assertEqual(interface_key('Ethernet0/0'), interface_key('e0/0'))
+        self.assertEqual(interface_key('eth0'), interface_key('e0'))
         self.assertEqual(interface_key('FastEthernet0/1'), interface_key('Fa0/1'))
         self.assertEqual(interface_key('GigabitEthernet1'), interface_key('Gi1'))
 

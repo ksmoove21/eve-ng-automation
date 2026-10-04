@@ -166,16 +166,45 @@ view.
 Explicitly declared networks represent intentional shared/multiaccess or
 infrastructure semantics such as Cloud0/pnet, an explicitly shared LAN segment,
 or another human-declared common medium. They must not be used as an
-implementation shortcut for point-to-point node links. This follows the same topology-versus-presentation separation used by
-EVE-IaC; Git intent describes nodes, networks, and links while presentation
+implementation shortcut for point-to-point node links. The optional
+`hidden_networks` list in `presentation.yaml` may hide a named declared network
+on the native canvas without changing its attachments or semantic status.
+This follows the same topology-versus-presentation separation used by EVE-IaC; Git intent describes nodes, networks, and links while presentation
 metadata controls how those objects are rendered. Optional regions and labels
 belong in `labs/<lab>/presentation.yaml`; when that file exists, the reconciler
 owns the lab's EVE text objects and prunes undeclared ones.
+
+A site activation set is a selection of declared nodes, separate from topology
+construction. The selected-start path must validate the entire set against live
+remote names and node states before starting any member; omitted nodes stay
+stopped. Repeated `eve start <lab> --node NAME` options express the set through
+the reusable CLI.
 
 Do not derive or invent design intent merely because a device can support it.
 
 Exact image names are deployment inputs. Preflight must fail clearly when a
 requested image is unavailable rather than silently selecting a different image.
+
+A QEMU node assigned to a satellite declares its positive `satellite` ID.
+`required_storage_gib` declares the required free satellite storage and
+`required_image_disks` declares the exact expected QCOW2 disk count (default
+one when omitted). Optional `required_image_disk_names` declares the required
+QCOW2 basenames; when set, stable extra QCOW2 files are permitted, and the
+required count must equal the name-list length if both fields are present.
+Before any deployment writes, the reconciler checks EVE
+cluster capacity and uses the configured manager SSH transport for a read-only
+inspection of that selected satellite's image directory. It returns structured
+`READY`, `COPYING/UNSTABLE`, `MISSING`, or `INVALID` evidence from bounded file
+metadata, `qemu-img info`, disk-layout, and relevant writer-process checks. It
+does not checksum, copy, repair, or alter satellite images. A manager hostname
+lookup may fall back to the EVE inventory's WireGuard public-key mapping, still
+under strict SSH host-key checking.
+Satellite preflight deliberately does not require a local `pnet0`, OVS bridge,
+or a static VXLAN device. Those are not generic cluster prerequisites: EVE Pro
+creates the lab-specific plumbing through its native manager/satellite control
+plane. A failed native satellite sync/start must be reported as such with its
+structured evidence; the engine must not attempt to recreate cluster bridges,
+WireGuard, tunnels, or host networking.
 
 Canvas layout is declarative when coordinates are provided. Do not treat visual
 placement as authoritative runtime-only state.
@@ -283,10 +312,20 @@ For Cisco IOS XE:
 - the engine owns entering/exiting configuration mode
 - the engine owns credential/VTY bootstrap where currently implemented
 - the engine owns configuration save verification
+- an adapter may require each submitted command's own console echo before
+  accepting the next prompt when delayed prompt redraws can mask a missed
+  command; verify required running/operational state after the save
 - do not require init files to contain interactive commands such as
   `configure terminal`, `write memory`, or `copy run start`
 
 Device-specific logic should remain isolated from generic topology logic.
+
+For Nexus Dashboard, environment-specific bootstrap addresses and external
+service-IP pools live in private initialization intent. Schema v2 derives
+MANAGEMENT and DATA pools from declared counts. Schema v3 accepts explicit
+address lists when the operator owns reserved ranges. The platform adapter
+validates subnet membership, uniqueness, and exclusions before any guest
+mutation; it must not silently replace declared addresses with derived ones.
 
 Do not log secrets or full device configurations in errors.
 
