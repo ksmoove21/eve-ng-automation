@@ -12,10 +12,10 @@ INTENT = {
         "mode": "Data Center VXLAN EVPN", "bgp_asn": 65001,
         "replication": "ingress", "multicast_replication": "disabled",
         "infrastructure_pools": {
-            "underlay_links": "10.240.100.0/24",
-            "loopbacks": "10.240.101.0/24",
-            "vpc_peer_keepalive": "10.240.102.0/24",
-            "anycast_vtep": "10.240.103.0/24",
+            "underlay_links": "10.10.100.0/24",
+            "loopbacks": "10.10.101.0/24",
+            "vpc_peer_keepalive": "10.10.102.0/24",
+            "anycast_vtep": "10.10.103.0/24",
         },
         "switch_import": {"greenfield": True, "preserve_config": False},
         "network_vlan_range": "100-199",
@@ -34,9 +34,9 @@ class NdfcFabricTests(unittest.TestCase):
         name, nv = compile_fabric(INTENT)
         self.assertEqual(name, "DC1-VXLAN-EVPN")
         self.assertEqual(nv["REPLICATION_MODE"], "Ingress")
-        self.assertEqual(nv["SUBNET_RANGE"], "10.240.100.0/24")
-        self.assertEqual(nv["LOOPBACK0_IP_RANGE"], "10.240.101.0/24")
-        self.assertEqual(nv["LOOPBACK1_IP_RANGE"], "10.240.103.0/24")
+        self.assertEqual(nv["SUBNET_RANGE"], "10.10.100.0/24")
+        self.assertEqual(nv["LOOPBACK0_IP_RANGE"], "10.10.101.0/24")
+        self.assertEqual(nv["LOOPBACK1_IP_RANGE"], "10.10.103.0/24")
         self.assertEqual(nv["L2_SEGMENT_ID_RANGE"], "20000-29999")
         self.assertEqual(nv["L3_PARTITION_ID_RANGE"], "30000-39999")
         self.assertEqual(nv["preInterfaceConfigLeaf"], "feature dhcp\nservice dhcp")
