@@ -232,6 +232,102 @@ def test_dc2_import_reconciles_only_exact_inventory(monkeypatch):
         ndfc_import.import_switches(intent, "user", "secret", site="DC2")
 
 
+def test_staged_ndfc_cli_forwards_deferred_member(tmp_path, monkeypatch, capsys):
+    from eve_lab import ndfc_import, ndfc_roles
+
+    intent, _ = _fixture()
+    path = tmp_path / "intent.yaml"
+    path.write_text(yaml.safe_dump(intent))
+    calls = []
+    for module, method in ((ndfc_import, "import_switches"),
+                           (ndfc_roles, "ensure_switch_roles")):
+        monkeypatch.setattr(module, "_environment", lambda *_: {
+            "CISCO_USERNAME": "user", "CISCO_PASSWORD": "placeholder"})
+        monkeypatch.setattr(module, method,
+                            lambda *args: (calls.append(args[-1]), {"status": "ok"})[1])
+        monkeypatch.setattr(sys, "argv", [method, str(path), "--site", "DC2",
+                                             "--defer", "S4"])
+        module.main()
+    assert calls == [["S4"], ["S4"]]
+    assert capsys.readouterr().out.count('"status": "ok"') == 2
+
+
+def test_dc2_staged_import_and_roles_add_later_member_without_duplicates(monkeypatch):
+    from eve_lab import ndfc_import, ndfc_roles
+
+    intent, _ = _fixture()
+    intent["management"]["nd"] = {"address": "192.0.2.1/24"}
+    _, switches = compile_switches(intent, "DC2")
+    by_ip = {item["ip"]: item for item in switches}
+    rows = []
+    calls = []
+    _fake_browser(monkeypatch)
+    for module in (ndfc_import, ndfc_roles):
+        monkeypatch.setattr(module, "_spki_pin", lambda address: "pin")
+        monkeypatch.setattr(module, "_login", lambda *a: None)
+        monkeypatch.setattr(module, "_inventory", lambda *a: rows)
+        monkeypatch.setattr(module, "_wait_for",
+                            lambda page, ready, deadline, label: assert_ready(ready))
+
+    def import_api(page, method, endpoint, payload):
+        calls.append((endpoint.rsplit("/", 1)[-1], payload["seedIP"]))
+        if endpoint.endswith("test-reachability"):
+            return 200, [{"ipaddr": ip, "sysName": by_ip[ip]["name"],
+                          "serialNumber": "SERIAL-" + by_ip[ip]["name"],
+                          "deviceIndex": "INDEX-" + by_ip[ip]["name"],
+                          "platform": "N9K", "version": "10.5",
+                          "reachable": True, "auth": True, "valid": True,
+                          "selectable": True}
+                         for ip in payload["seedIP"].split(",")]
+        assert endpoint.endswith("discover")
+        rows.extend({"logicalName": item["sysName"],
+                     "ipAddress": item["ipaddr"],
+                     "serialNumber": item["serialNumber"],
+                     "switchRole": "unknown"}
+                    for item in payload["switches"])
+        return 200, {}
+
+    monkeypatch.setattr(ndfc_import, "_api", import_api)
+    first = ndfc_import.import_switches(
+        intent, "user", "secret", site="DC2", defer=("S4",))
+    assert (first["imported_count"], first["observed_count"]) == (7, 7)
+    assert "192.0.2.11" not in calls[0][1]
+    assert ndfc_import.import_switches(
+        intent, "user", "secret", site="DC2", defer=("S4",))["status"] == "already-imported"
+
+    posted = []
+    roles = {"spine": "spine", "leaf": "leaf",
+             "border": "border gateway", "tor": "tor"}
+    by_name = {item["name"]: item for item in switches}
+    def role_api(page, method, endpoint, payload):
+        posted.extend(payload)
+        for change in payload:
+            row = next(item for item in rows
+                       if item["serialNumber"] == change["serialNumber"])
+            row["switchRole"] = change["role"]
+        return 200, {}
+    monkeypatch.setattr(ndfc_roles, "_api", role_api)
+    assert ndfc_roles.ensure_switch_roles(
+        intent, "user", "secret", site="DC2", defer=("S4",))["changed"] == 7
+    assert len(posted) == 7
+    assert all(item["logicalName"] != "S4" for item in rows)
+
+    second = ndfc_import.import_switches(intent, "user", "secret", site="DC2")
+    assert (second["imported_count"], second["observed_count"]) == (1, 8)
+    assert calls[-2][1] == by_name["S4"]["ip"]
+    assert ndfc_roles.ensure_switch_roles(
+        intent, "user", "secret", site="DC2")["changed"] == 1
+    assert posted[-1] == {"serialNumber": "SERIAL-S4", "role": roles["spine"]}
+    assert ndfc_import.import_switches(intent, "user", "secret", site="DC2")["status"] == "already-imported"
+    with pytest.raises(ValueError, match="Deferred switches"):
+        ndfc_import.import_switches(intent, "user", "secret", site="DC2", defer=("other",))
+    rows.append({"logicalName": "FOREIGN", "ipAddress": "192.0.2.200",
+                 "serialNumber": "X"})
+    from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
+    with pytest.raises(NexusDashboardBrowserError, match="differs"):
+        ndfc_import.import_switches(intent, "user", "secret", site="DC2")
+
+
 def test_dc2_roles_post_only_differing_serial(monkeypatch):
     from eve_lab import ndfc_roles
 

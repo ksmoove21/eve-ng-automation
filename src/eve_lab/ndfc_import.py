@@ -24,11 +24,35 @@ def _inventory(page, endpoint):
     return items
 
 
-def import_switches(intent, username, password, timeout=600, site="DC1"):
-    """Discover only exact, manageable site targets; preserve-config is disabled."""
+def _selected_switches(intent, site, defer):
+    fabric, declared = compile_switches(intent, site)
+    deferred = tuple(defer)
+    names = {item["name"] for item in declared}
+    if (len(set(deferred)) != len(deferred) or not set(deferred) <= names
+            or len(deferred) == len(declared)):
+        raise ValueError("Deferred switches must be unique declared names and leave a target")
+    selected = [item for item in declared if item["name"] not in deferred]
+    return fabric, declared, selected
+
+
+def _checked_inventory(items, declared):
+    desired = {item["name"]: item for item in declared}
+    by_name = {item.get("logicalName"): item for item in items
+               if isinstance(item, dict)}
+    if (len(by_name) != len(items) or not set(by_name) <= set(desired)
+            or any(item.get("ipAddress") != desired[name]["ip"]
+                   or not item.get("serialNumber")
+                   for name, item in by_name.items())):
+        raise NexusDashboardBrowserError(
+            "NDFC fabric inventory differs from exact declared switches")
+    return by_name
+
+
+def import_switches(intent, username, password, timeout=600, site="DC1", defer=()):
+    """Discover selected declared switches; later runs add missing members only."""
     from playwright.sync_api import sync_playwright
 
-    name, desired = compile_switches(intent, site)
+    name, declared, selected = _selected_switches(intent, site, defer)
     profile = next(item for item in intent["ndfc_fabrics"] if item["site"] == site)
     if profile["switch_import"] != {"greenfield": True, "preserve_config": False}:
         raise ValueError(site + " import must be greenfield with Preserve Config NO")
@@ -44,21 +68,14 @@ def import_switches(intent, username, password, timeout=600, site="DC1"):
             page.goto("https://" + address + "/", wait_until="domcontentloaded",
                       timeout=30000)
             _login(page, username, password, max(1, deadline - time.monotonic()))
-            existing = _inventory(page, endpoint)
-            if existing:
-                by_name = {item.get("logicalName"): item for item in existing}
-                if (len(existing) == len(desired) and
-                        set(by_name) == {item["name"] for item in desired} and
-                        all(by_name[item["name"]].get("ipAddress") == item["ip"]
-                            and by_name[item["name"]].get("serialNumber")
-                            for item in desired)):
-                    return {"status": "already-imported", "fabric": name,
-                            "declared_count": len(desired),
-                            "observed_count": len(existing)}
-                raise NexusDashboardBrowserError(
-                    "NDFC fabric inventory differs from exact declared switches")
+            existing = _checked_inventory(_inventory(page, endpoint), declared)
+            pending = [item for item in selected if item["name"] not in existing]
+            if not pending:
+                return {"status": "already-imported", "fabric": name,
+                        "declared_count": len(declared),
+                        "observed_count": len(existing)}
             request = {
-                "seedIP": ",".join(item["ip"] for item in desired),
+                "seedIP": ",".join(item["ip"] for item in pending),
                 "username": username,
                 "password": password,
                 "switches": [],
@@ -71,11 +88,11 @@ def import_switches(intent, username, password, timeout=600, site="DC1"):
                     "NDFC reachability preflight failed with HTTP " + str(status))
             by_ip = {item.get("ipaddr"): item for item in candidates
                      if isinstance(item, dict)}
-            if set(by_ip) != {item["ip"] for item in desired}:
+            if set(by_ip) != {item["ip"] for item in pending}:
                 raise NexusDashboardBrowserError(
                     "NDFC reachability returned unexpected management IPs")
             imports = []
-            for item in desired:
+            for item in pending:
                 observed = by_ip[item["ip"]]
                 if (observed.get("sysName") != item["name"]
                         or not observed.get("serialNumber")
@@ -96,22 +113,22 @@ def import_switches(intent, username, password, timeout=600, site="DC1"):
                 raise NexusDashboardBrowserError(
                     "NDFC greenfield switch import failed with HTTP " +
                     str(status) + ": " + str(response)[:300])
+            expected = {**{name: item["serialNumber"]
+                           for name, item in existing.items()},
+                        **{item["name"]: by_ip[item["ip"]]["serialNumber"]
+                           for item in pending}}
             observed = {}
             def ready():
                 observed["inventory"] = _inventory(page, endpoint)
-                by_name = {item.get("logicalName"): item
-                           for item in observed["inventory"]}
-                return (len(observed["inventory"]) == len(desired) and
-                        set(by_name) == {item["name"] for item in desired} and
-                        all(by_name[item["name"]].get("ipAddress") == item["ip"]
-                            and by_name[item["name"]].get("serialNumber") ==
-                            by_ip[item["ip"]]["serialNumber"]
-                            for item in desired))
-            _wait_for(page, ready, deadline, "NDFC eight-switch import readback")
+                by_name = _checked_inventory(observed["inventory"], declared)
+                return (set(by_name) == set(expected) and
+                        all(by_name[item]["serialNumber"] == serial
+                            for item, serial in expected.items()))
+            _wait_for(page, ready, deadline, "NDFC selected switch import readback")
             return {
-                "status": "imported",
-                "fabric": name,
-                "declared_count": len(desired),
+                "status": "imported", "fabric": name,
+                "declared_count": len(declared),
+                "imported_count": len(pending),
                 "observed_count": len(observed["inventory"]),
             }
         finally:
@@ -127,6 +144,8 @@ def main():
     parser.add_argument("intent", type=Path)
     parser.add_argument("--site", choices=("DC1", "DC2"), default="DC1")
     parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--defer", action="append", default=[],
+                        help="Declared switch to add on a later run")
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
     env = _environment(Path.cwd())
@@ -134,7 +153,7 @@ def main():
     if not username or not password:
         raise ValueError("Set CISCO_USERNAME and CISCO_PASSWORD in EVE_ENV_FILE")
     print(json.dumps(import_switches(
-        intent, username, password, args.timeout, args.site)))
+        intent, username, password, args.timeout, args.site, args.defer)))
 
 
 if __name__ == "__main__":

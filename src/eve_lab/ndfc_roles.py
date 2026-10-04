@@ -10,7 +10,7 @@ import yaml
 
 from .config import _environment
 from .ndfc_fabric import _BASE, _FABRICS, _api
-from .ndfc_switches import compile_switches
+from .ndfc_import import _selected_switches, _checked_inventory
 from .nexus_dashboard_browser import (
     NexusDashboardBrowserError, _login, _spki_pin, _wait_for,
 )
@@ -30,13 +30,13 @@ def _inventory(page, fabric):
     return body
 
 
-def ensure_switch_roles(intent, username, password, timeout=300, site="DC1"):
-    """Assign only declared identities whose current NDFC roles differ."""
+def ensure_switch_roles(intent, username, password, timeout=300, site="DC1", defer=()):
+    """Assign declared roles to selected imported switches, preserving other rows."""
     from playwright.sync_api import sync_playwright
 
-    fabric, switches = compile_switches(intent, site)
+    fabric, declared, selected = _selected_switches(intent, site, defer)
     address = intent["management"]["nd"]["address"].split("/")[0]
-    desired = {item["name"]: item for item in switches}
+    desired = {item["name"]: item for item in selected}
     deadline = time.monotonic() + timeout
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -48,35 +48,35 @@ def ensure_switch_roles(intent, username, password, timeout=300, site="DC1"):
                       timeout=30000)
             _login(page, username, password, timeout)
             observed = _inventory(page, fabric)
-            by_name = {item.get("logicalName"): item for item in observed}
-            if set(by_name) != set(desired) or len(observed) != len(desired):
+            by_name = _checked_inventory(observed, declared)
+            if not set(desired) <= set(by_name):
                 raise NexusDashboardBrowserError(
-                    "NDFC role preflight inventory differs from declared switches")
+                    "NDFC role preflight inventory lacks selected declared switches")
             changes = []
             for name, target in desired.items():
                 item = by_name[name]
-                if (item.get("ipAddress") != target["ip"]
-                        or not item.get("serialNumber")):
-                    raise NexusDashboardBrowserError(
-                        "NDFC role preflight identity differs for " + name)
                 role = _ROLE_NAMES[target["role"]]
                 if item.get("switchRole") != role:
                     changes.append({"serialNumber": item["serialNumber"], "role": role})
             if not changes:
-                return {"status": "already-configured", "fabric": fabric, "count": len(desired)}
+                return {"status": "already-configured", "fabric": fabric,
+                        "count": len(desired)}
             status, response = _api(page, "POST", _ROLES, changes)
             if status != 200:
                 raise NexusDashboardBrowserError(
                     "NDFC switch role assignment failed with HTTP " +
                     str(status) + ": " + str(response)[:300])
+            initial_names = set(by_name)
             def ready():
                 items = _inventory(page, fabric)
-                return (len(items) == len(desired) and
-                        {item.get("logicalName") for item in items} == set(desired) and
-                        all(item.get("switchRole") == _ROLE_NAMES[desired[item["logicalName"]]["role"]]
-                            for item in items))
-            _wait_for(page, ready, deadline, "NDFC declared switch roles")
-            return {"status": "configured", "fabric": fabric, "changed": len(changes)}
+                by_name = _checked_inventory(items, declared)
+                return (set(by_name) == initial_names and
+                        all(by_name[name].get("switchRole") ==
+                            _ROLE_NAMES[target["role"]]
+                            for name, target in desired.items()))
+            _wait_for(page, ready, deadline, "NDFC selected switch roles")
+            return {"status": "configured", "fabric": fabric,
+                    "changed": len(changes)}
         finally:
             browser.close()
 
@@ -86,13 +86,15 @@ def main():
     parser.add_argument("intent", type=Path)
     parser.add_argument("--site", choices=("DC1", "DC2"), default="DC1")
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--defer", action="append", default=[],
+                        help="Declared switch to configure on a later run")
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
     env = _environment(Path.cwd())
     username, password = env.get("CISCO_USERNAME"), env.get("CISCO_PASSWORD")
     if not username or not password:
         raise ValueError("Set CISCO_USERNAME and CISCO_PASSWORD in EVE_ENV_FILE")
-    print(json.dumps(ensure_switch_roles(intent, username, password, args.timeout, args.site)))
+    print(json.dumps(ensure_switch_roles(intent, username, password, args.timeout, args.site, args.defer)))
 
 
 if __name__ == "__main__":
