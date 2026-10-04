@@ -190,6 +190,15 @@ actively running, the coordinator may do a lightweight reconciliation at about
 15-minute intervals if kept active for that purpose. Silence is preferred when
 nothing changed.
 
+Owner-gated work is an exception to ordinary quiet-state reporting. If any active
+lane cannot continue without owner authorization or a concrete owner decision,
+Coordinator must immediately put an `ATTENTION: OWNER ACTION REQUIRED` block at
+the top of the active status artifact with the start time, blocked lane, exact
+decision needed, and whether offline work continues. Root and status monitors
+must treat that marker as the highest-priority sprint state and must not classify
+the affected worker as idle or stalled. Clear it only after a newer explicit
+owner directive resolves the gate, then retain the historical checkpoint below.
+
 Spawn the project-scoped `hygiene` agent only for a bounded repository-hygiene pass at a meaningful milestone/closeout checkpoint or when material branch, checkpoint, documentation, or artifact drift is detected. Close it when the pass completes. Do not keep Hygiene resident merely because a concurrency slot is available; preserve that slot for a genuinely ready Runner lane.
 
 Examples for the current sprint:
