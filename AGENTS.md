@@ -254,6 +254,32 @@ input. RDP remains single-user per node.
 
 When a runner finishes or blocks, Root either assigns the next ready task in that lane, transfers ownership, or closes the runner. Do not keep idle runners alive merely because the concurrency cap permits them.
 
+## Direct-link topology invariant
+
+When lab intent declares a point-to-point cable between two node interfaces, encode it as a direct `from`/`to` link and preserve that same point-to-point semantic in EVE.
+
+Do not model a point-to-point cable by attaching multiple nodes to a declared shared bridge/network. Declared EVE network objects are reserved for intentional shared/multiaccess or infrastructure networks such as Cloud0/pnet and other explicitly shared segments.
+
+If EVE requires a backing bridge for a direct cable, it is adapter-private: exactly one direct link, exactly two endpoints, hidden from the native canvas/status network list, and never shared with another cable.
+
+## EVE integration toolbox
+
+For EVE-NG topology, lifecycle, placement, and runtime operations, treat the
+available integrations as a toolbox rather than a fixed precedence chain.
+
+Before adding custom EVE-specific Python, check whether the operation is already
+handled cleanly by the native EVE API, EVE-IAC, or a suitable SDK/library.
+Compose those integrations when useful. Use EVE-host SSH only for host-level
+operations, image/runtime handling, or diagnostics that genuinely require host
+access.
+
+Python remains the orchestration, policy, reconciliation, normalization, and
+validation layer. Do not reimplement EVE platform behavior without evidence that
+the existing integration surfaces leave a real capability gap.
+
+The durable engineering details live in
+[STRUCTURE.md](docs/architecture/STRUCTURE.md).
+
 ## EVE CPU Limit runtime policy
 
 QEMU nodes created or reconciled by this automation must have EVE-NG CPU Limit

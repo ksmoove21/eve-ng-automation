@@ -151,11 +151,17 @@ the selected state through the same reconciler and retains the topology `name`,
 so scenarios do not create separate permanent EVE labs.
 
 Direct links are topology semantics, separate from EVE presentation and runtime
-storage. The EVE adapter may materialize an exclusive hidden bridge record when
-the platform requires a `network_id`, but that record is adapter-private: it is
-not a declared network, must have exactly the two declared endpoints, must stay
-hidden on the native EVE canvas, and must not appear as a cloud/network in the
-semantic status view.
+storage. A point-to-point cable between two node interfaces **must** be declared
+with direct `from`/`to` link syntax and must remain semantically point-to-point
+in EVE. Do not replace or coalesce direct cables into a declared shared bridge
+merely because EVE internally connects interfaces through network records.
+
+The EVE adapter may materialize an exclusive hidden bridge record when the
+platform requires a `network_id`, but that record is adapter-private: it belongs
+to exactly one declared direct link, must have exactly the two declared
+endpoints, must stay hidden on the native EVE canvas, must not be reused by
+another cable, and must not appear as a cloud/network in the semantic status
+view.
 
 Runtime backing identity is **endpoint-first**. If EVE already contains one
 exclusive two-endpoint bridge whose exact node/interface pair matches a declared
@@ -170,7 +176,10 @@ runtime backing unstitched. A repair may use the supported single-network
 current bridge options and two-port map, then verify saved endpoint readback
 and runtime connectivity for that same link before continuing.
 
-Explicitly declared networks remain topology objects. The optional
+Explicitly declared networks represent intentional shared/multiaccess or
+infrastructure semantics such as Cloud0/pnet, an explicitly shared LAN segment,
+or another human-declared common medium. They must not be used as an
+implementation shortcut for point-to-point node links. The optional
 `hidden_networks` list in `presentation.yaml` may hide named declared
 networks on the native canvas without changing their attachments or semantic
 status. This follows the same topology-versus-presentation separation used by
@@ -216,6 +225,49 @@ WireGuard, tunnels, or host networking.
 
 Canvas layout is declarative when coordinates are provided. Do not treat visual
 placement as authoritative runtime-only state.
+
+## EVE integration surfaces
+
+EVE-NG interaction is intentionally multi-surface. The engine should use the
+best available supported integration for the operation rather than assuming all
+EVE behavior must be implemented directly in custom Python.
+
+Available surfaces include:
+
+- the native EVE API;
+- EVE-IAC where its declarative topology/lifecycle behavior reduces custom
+  plumbing or improves execution efficiency;
+- suitable SDKs/libraries when they provide a cleaner supported contract for a
+  specific EVE capability;
+- narrowly scoped EVE-host SSH for host-level operations, image/runtime
+  handling, or diagnostics that genuinely require host access.
+
+There is no mandatory API-versus-EVE-IAC ordering. A workflow may compose
+multiple surfaces when that produces the cleanest deterministic result.
+
+Before implementing new EVE-specific Python:
+
+1. inspect the native EVE API capability already available to the engine;
+2. inspect EVE-IAC and any suitable maintained SDK/library for the requested
+   operation;
+3. reuse or compose those integrations when they reduce custom implementation
+   without weakening safety, desired-state reconciliation, or evidence;
+4. add custom Python only for a real capability gap, normalization boundary,
+   orchestration policy, safety requirement, or reusable behavior that the
+   integration surfaces do not provide.
+
+Python remains the orchestration and policy layer. It owns dependency ordering,
+desired-state reconciliation policy, normalization, guards, evidence, and
+validation. It should not duplicate EVE platform behavior merely because doing
+so is possible.
+
+When a custom path or EVE-host SSH is required, record the concrete capability
+gap in the applicable platform/operation evidence so future work does not repeat
+the same investigation.
+
+Guest/device interaction is a separate lifecycle concern. Console, guest SSH,
+NETCONF, browser automation, and vendor APIs should still be selected according
+to the guest/platform lifecycle state.
 
 ## Reconciliation behavior
 
