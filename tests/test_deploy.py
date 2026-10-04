@@ -487,7 +487,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in result["networks"].values()], ["mgmt"])
         self.assertEqual(result["links"], topology["links"])
         self.assertEqual(result["runtime_backing"],
-                         {"direct_link_networks": 1, "all_hidden": True})
+                         {"direct_link_networks": 1, "all_hidden": True,
+                          "runtime_name_aliases": {}})
 
     def test_direct_link_reuses_visible_bridge_without_rewiring(self):
         topology = self.direct_topology()
@@ -496,6 +497,42 @@ class DeploymentTests(unittest.TestCase):
         self.client.writes.clear()
         apply(self.client, topology)
         self.assertEqual(self.client.writes, [("PUT", "labs/palo-lab.unl/networks/1", {"visibility": 0})])
+
+    def test_direct_link_reuses_exact_two_endpoint_bridge_with_historical_name(self):
+        topology = self.direct_topology()
+        apply(self.client, topology)
+        self.client.networks["1"]["name"] = "legacy-direct-link"
+        self.client.writes.clear()
+
+        result = apply(self.client, topology)
+
+        self.assertEqual(len(self.client.networks), 1)
+        self.assertEqual(self.client.networks["1"]["name"], "legacy-direct-link")
+        self.assertEqual(self.client.networks["1"]["visibility"], 0)
+        self.assertEqual(
+            result["presentation"]["runtime_name_aliases"],
+            {"cable": "legacy-direct-link"},
+        )
+        self.assertFalse(any(method == "POST" and path.endswith("/networks")
+                             for method, path, _ in self.client.writes))
+
+        status = lab_status(self.client, topology)
+        self.assertEqual(status["networks"], {})
+        self.assertEqual(status["links"], topology["links"])
+        self.assertEqual(
+            status["runtime_backing"]["runtime_name_aliases"],
+            {"cable": "legacy-direct-link"},
+        )
+
+    def test_direct_link_endpoint_alias_rejects_ambiguous_duplicate_backing(self):
+        topology = self.direct_topology()
+        apply(self.client, topology)
+        self.client.networks["1"]["name"] = "legacy-a"
+        self.client.networks["2"] = {
+            **self.client.networks["1"], "id": 1, "name": "legacy-b"
+        }
+        with self.assertRaisesRegex(RuntimeError, "matches multiple runtime backing networks"):
+            apply(self.client, topology)
 
     def test_direct_link_rejects_shared_bridge(self):
         topology = self.direct_topology()

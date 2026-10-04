@@ -155,7 +155,16 @@ storage. The EVE adapter may materialize an exclusive hidden bridge record when
 the platform requires a `network_id`, but that record is adapter-private: it is
 not a declared network, must have exactly the two declared endpoints, must stay
 hidden on the native EVE canvas, and must not appear as a cloud/network in the
-semantic status view. Explicitly declared networks remain topology objects. The optional
+semantic status view.
+
+Runtime backing identity is **endpoint-first**. If EVE already contains one
+exclusive two-endpoint bridge whose exact node/interface pair matches a declared
+direct link, the reconciler should reuse that backing object even when its
+historical runtime name differs from the current Git link name. Name drift must
+not create a duplicate cable. Multiple runtime bridges claiming the same exact
+endpoint pair are ambiguous drift and must fail closed for operator review.
+
+Explicitly declared networks remain topology objects. The optional
 `hidden_networks` list in `presentation.yaml` may hide named declared
 networks on the native canvas without changing their attachments or semantic
 status. This follows the same topology-versus-presentation separation used by
