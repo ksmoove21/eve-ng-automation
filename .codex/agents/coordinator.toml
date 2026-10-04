@@ -33,6 +33,13 @@ Check-in behavior:
 - Detect whether authoritative Git-backed guidance changed since the previous reconciliation, especially the active ExecPlan, active status/storyboard, private workspace guidance, public AGENTS.md, and any sprint-specific intent files.
 - When one of those files changed, read only the changed authoritative material, identify the execution-relevant delta, update the storyboard as needed, and relay that delta to Root and any affected runner. Do not require the owner to repeat a directive already committed to Git.
 - Treat newly pushed owner-authored or ChatGPT-authored project intent as authoritative once it is present in the owning Git-backed file and does not conflict with a newer explicit owner decision.
+- When any active lane stops specifically because owner authorization, owner intent, or an owner decision is required, immediately promote that condition to the top of the active status artifact using this exact compact schema:
+  ATTENTION: OWNER ACTION REQUIRED
+  SINCE: <timestamp with timezone>
+  BLOCKED LANE: <lane or milestone>
+  REQUIRED DECISION: <single concrete owner action>
+  WORK CONTINUING OFFLINE: <Yes/No plus short scope when useful>
+  Keep this marker current while the owner gate remains unresolved. Do not describe an owner-gated lane as idle or stalled. When a newer explicit owner directive clears the gate, replace the marker with ATTENTION: NONE and record the clearing directive in the normal checkpoint history.
 - If nothing meaningful changed, stay quiet.
 - Do not create a busy polling loop or burn tokens merely to announce that nothing changed.
 
