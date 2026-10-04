@@ -1,4 +1,4 @@
-"""Deploy exact declared DC1 NDFC switches and require per-switch convergence."""
+"""Deploy exact declared site NDFC switches and require per-switch convergence."""
 
 import argparse
 import json
@@ -62,15 +62,15 @@ def _raise_new_deployment_failure(history, baseline, name):
             "NDFC per-switch deploy failed for " + name + ": " + detail[:300])
 
 
-def deploy_switches(intent, username, password, names=None, timeout=300):
+def deploy_switches(intent, username, password, names=None, timeout=300, site="DC1"):
     """Use Cisco's per-switch deploy API; HTTP success alone is insufficient."""
     from playwright.sync_api import sync_playwright
 
-    fabric, desired = compile_switches(intent)
+    fabric, desired = compile_switches(intent, site)
     by_name = {item["name"]: item for item in desired}
     selected = names or list(by_name)
     if len(selected) != len(set(selected)) or set(selected) - set(by_name):
-        raise ValueError("Switch selection must contain unique declared DC1 names")
+        raise ValueError("Switch selection must contain unique declared " + site + " names")
     endpoint = _FABRICS + "/" + quote(fabric, safe="")
     address = intent["management"]["nd"]["address"].split("/")[0]
     results = []
@@ -87,7 +87,7 @@ def deploy_switches(intent, username, password, names=None, timeout=300):
             observed = {item.get("logicalName"): item for item in inventory}
             if len(inventory) != len(by_name) or set(observed) != set(by_name):
                 raise NexusDashboardBrowserError(
-                    "NDFC deploy preflight inventory differs from DC1 intent")
+                    "NDFC deploy preflight inventory differs from " + site + " intent")
             for name, wanted in by_name.items():
                 item = observed[name]
                 if item.get("ipAddress") != wanted["ip"] or not item.get("serialNumber"):
@@ -128,6 +128,7 @@ def deploy_switches(intent, username, password, names=None, timeout=300):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
+    parser.add_argument("--site", choices=("DC1", "DC2"), default="DC1")
     parser.add_argument("--node", action="append", dest="names")
     parser.add_argument("--timeout", type=int, default=300)
     args = parser.parse_args()
@@ -136,7 +137,7 @@ def main():
     username, password = env.get("CISCO_USERNAME"), env.get("CISCO_PASSWORD")
     if not username or not password:
         raise ValueError("Set CISCO_USERNAME and CISCO_PASSWORD in EVE_ENV_FILE")
-    deploy_switches(intent, username, password, args.names, args.timeout)
+    deploy_switches(intent, username, password, args.names, args.timeout, args.site)
 
 
 if __name__ == "__main__":

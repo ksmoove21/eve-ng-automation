@@ -264,3 +264,11 @@ def test_dc2_roles_post_only_differing_serial(monkeypatch):
 
 def assert_ready(ready):
     assert ready()
+
+
+def test_dc2_switch_deploy_rejects_cross_site_selection_before_api():
+    from eve_lab.ndfc_switch_deploy import deploy_switches
+
+    intent, _ = _fixture()
+    with pytest.raises(ValueError, match="declared DC2"):
+        deploy_switches(intent, "user", "secret", names=["S1"], site="DC2")
