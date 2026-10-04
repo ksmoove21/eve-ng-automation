@@ -82,6 +82,22 @@ private workspace with `--root`. Environment values take precedence over the
 private workspace's `.env`, preserving independent sessions even when workers
 share the same lab workspace.
 
+### Shared-lab runtime readback
+
+In one EVE-Pro shared lab, two API users read the same lab UUID and exact node
+UUIDs but received different `status` and `sat` fields for nodes started by
+the other user. The manager still had live QEMU processes for nodes that one
+user's API reported stopped. A normal exact-node EVE stop through the user
+session that reported those nodes running cleared the processes; direct host
+process termination was unnecessary.
+
+For shared labs, do not infer guest absence from one account's stopped status.
+Compare exact lab/node UUIDs, inspect the supported runtime or narrow host
+process evidence when permitted, and use the account with the running view for
+normal lifecycle reconciliation. Verify QEMU exit before changing placement or
+links. This is an observed behavior, not an assumption that every EVE version
+or shared-lab setup behaves the same way.
+
 ## TLS
 
 TLS verification should remain enabled. If an EVE deployment uses a privately
