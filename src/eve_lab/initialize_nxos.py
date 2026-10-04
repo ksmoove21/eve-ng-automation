@@ -51,8 +51,20 @@ def load_bootstrap(path):
 class NxosConsole(Console):
     """NX-OS configuration-mode initialization; credentials are shared CISCO_* values."""
     def initialize(self, commands, username=None, password=None):
+        self.command('terminal length 0', require_echo=True)
+        boot_state = self.command('show boot variables', require_echo=True)
+        if re.search(r'%\s*(?:Invalid|Error|Failed)', boot_state, re.I):
+            raise RuntimeError('NX-OS boot variables are unavailable')
+        boot_commands = [command for command in commands if command.startswith('boot nxos bootflash:')]
+        if len(boot_commands) != 1:
+            raise ValueError('NX-OS bootstrap requires exactly one boot image')
+        expected_image = boot_commands[0].split('bootflash:', 1)[1]
+        boot_matches = re.search(r'(?<![A-Za-z0-9_.-])' + re.escape(expected_image) +
+                                 r'(?![A-Za-z0-9_.-])', boot_state) is not None
         self.command('configure terminal', require_echo=True)
         for index, command in enumerate(commands, start=1):
+            if command == boot_commands[0] and boot_matches:
+                continue
             try:
                 self.command(command, require_echo=True)
             except RuntimeError as error:
