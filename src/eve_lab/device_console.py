@@ -419,39 +419,57 @@ class Console:
             'Console login failed after prompt sequence: ' +
             ','.join(prompt_trace))
 
-    def command(self, command, timeout=60):
+    def command(self, command, timeout=60, require_echo=False):
+        if require_echo:
+            # A delayed prompt from the previous operation is not proof that
+            # this command ran. Correlate its own echoed line before accepting
+            # the next prompt, and discard any old buffered prompt first.
+            self.pending = ''
+        deadline = time.monotonic() + timeout
         self.send(command)
-        output, match = self.expect(_PRIVILEGED_PROMPT, timeout, latest=True, redisplay=True)
-        if re.search(r'^%\s*(?:Invalid|Incomplete|Ambiguous|Error|Authorization|Access denied)', output, re.M | re.I):
+        echoed = ''
+        if require_echo:
+            echoed, _ = self.expect(
+                r'(?m)^[ \t]*(?:[\w.()/:-]+[>#])?[ \t]*' + re.escape(command) + r'[ \t]*$',
+                timeout=timeout, latest=True)
+        output, match = self.expect(
+            _PRIVILEGED_PROMPT, max(.1, deadline - time.monotonic()),
+            latest=True, redisplay=True)
+        response = echoed + output
+        if re.search(r'^%\s*(?:Invalid|Incomplete|Ambiguous|Error|Authorization|Access denied)', response, re.M | re.I):
             raise RuntimeError('Cisco rejected a command; inspect the console (output omitted)')
         self.prompt = match.group().strip()
-        lines = output[:match.start()].splitlines()
+        lines = (echoed + output[:match.start()]).splitlines()
         if lines and lines[0].strip() == command:
             lines.pop(0)
         return '\n'.join(lines).strip() + '\n'
 
-    def initialize(self, commands, username=None, password=None):
+    def initialize(self, commands, username=None, password=None, require_echo=False):
         if username is not None:
             if not re.fullmatch(r'[A-Za-z0-9_.-]+', username):
                 raise ValueError('Invalid Cisco username')
             if not password or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in password):
                 raise ValueError('Cisco init password must be a nonempty CLI token')
-        self.command('configure terminal')
+        send_command = (
+            (lambda value, **options: self.command(value, require_echo=True, **options))
+            if require_echo else self.command
+        )
+        send_command('configure terminal')
         for index, command in enumerate(commands, start=1):
             try:
-                self.command(command)
+                send_command(command)
             except RuntimeError as error:
                 raise RuntimeError(f'Cisco configuration command {index} failed: {error}') from error
-        self.command('end')
+        send_command('end')
         if username is not None:
             # Return to global configuration even if the file ends in a submode.
-            self.command('configure terminal')
-            self.command(f'username {username} privilege 15 password 0 {password}')
-            self.command('line vty 0 4')
-            self.command('login local')
-            self.command('transport input ssh')
-            self.command('end')
-        saved = self.command('write memory', timeout=120)
+            send_command('configure terminal')
+            send_command(f'username {username} privilege 15 password 0 {password}')
+            send_command('line vty 0 4')
+            send_command('login local')
+            send_command('transport input ssh')
+            send_command('end')
+        saved = send_command('write memory', timeout=120)
         if '[OK]' not in saved:
             raise RuntimeError('Device did not confirm write memory; inspect startup-config')
 

@@ -13,6 +13,9 @@ class NxosInitTests(unittest.TestCase):
   NxosConsole.initialize(console,commands)
   self.assertEqual([call.args[0] for call in console.command.call_args_list][0],'configure terminal')
   self.assertEqual(console.command.call_args_list[-1].args[0],'copy running-config startup-config')
+ def test_explicit_lacp_prerequisite(self):
+  self.assertEqual(bootstrap_commands({**DATA, 'enable_lacp': True})[-1], 'feature lacp')
+  with self.assertRaises(ValueError): bootstrap_commands({**DATA, 'enable_lacp': 'true'})
  def test_missing_or_malformed_intent_fails(self):
   for data in ({}, {**DATA,'management_prefix_length':0}, {**DATA,'management_interface':'mgmt0;reload'}, {**DATA,'extra':'x'}):
    with self.subTest(data=data):

@@ -14,7 +14,7 @@ def interface_key(name: str) -> str:
     aliases = (
         (r"^(gigabitethernet|gi|g)(?=\d)", "gi"),
         (r"^(fastethernet|fa|f)(?=\d)", "fa"),
-        (r"^(ethernet|et|e)(?=\d)", "e"),
+        (r"^(ethernet|eth|et|e)(?=\d)", "e"),
     )
     for pattern, replacement in aliases:
         key = re.sub(pattern, replacement, key)
@@ -75,11 +75,16 @@ def validate(topology: dict):
     for field in ("nodes", "networks", "links"):
         if not isinstance(topology.get(field), list):
             raise ValueError(f"Topology {field} must be a list")
-    validate_presentation(topology.get("presentation"))
+    validate_presentation(
+        topology.get("presentation"),
+        network_names=[network.get("name") for network in topology["networks"]
+                       if isinstance(network, dict)],
+    )
     topology, _ = expand_links(topology)
     validate_folder(topology.get("remote_folder", "/"))
     allowed = {
-        "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top", "icon"},
+        "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top", "icon",
+                  "satellite", "required_storage_gib", "required_image_disks", "required_image_disk_names"},
         "networks": {"name", "type", "left", "top"},
         "links": {"node", "interface", "network"},
     }
@@ -110,6 +115,27 @@ def validate(topology: dict):
         for field in ("cpu", "ram", "ethernet"):
             if field in node and (type(node[field]) is not int or node[field] < 1):
                 raise ValueError(f"{node['name']}: {field} must be a positive integer")
+        if "satellite" in node and (type(node["satellite"]) is not int or node["satellite"] < 1):
+            raise ValueError(f"{node['name']}: satellite must be a positive EVE satellite ID; manager placement is not allowed")
+        if "required_storage_gib" in node and (
+                type(node["required_storage_gib"]) is not int or node["required_storage_gib"] < 1):
+            raise ValueError(f"{node['name']}: required_storage_gib must be a positive integer")
+        if "required_image_disks" in node and (
+                type(node["required_image_disks"]) is not int or node["required_image_disks"] < 1):
+            raise ValueError(f"{node['name']}: required_image_disks must be a positive integer")
+        if "required_image_disk_names" in node:
+            if "satellite" not in node:
+                raise ValueError(f"{node['name']}: required_image_disk_names requires satellite placement")
+            disk_names = node["required_image_disk_names"]
+            if (not isinstance(disk_names, list) or not disk_names
+                    or any(not isinstance(name, str)
+                           or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*\.qcow2", name)
+                           for name in disk_names)
+                    or len(set(disk_names)) != len(disk_names)):
+                raise ValueError(f"{node['name']}: required_image_disk_names must be unique QCOW2 basenames")
+            if ("required_image_disks" in node
+                    and node["required_image_disks"] != len(disk_names)):
+                raise ValueError(f"{node['name']}: required_image_disks must match required_image_disk_names")
     endpoints = set()
     for link in topology["links"]:
         if any(not isinstance(link.get(field), str) or not link[field] for field in allowed["links"]):

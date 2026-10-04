@@ -14,10 +14,21 @@ from . import iosxe_ipsec
 from .deploy import lab_path, named
 from .device_console import Console, credentials
 from .palo_ssh import management_targets, connect_palo
+from .satellite import console_command, resolve_satellite_target, satellite_member
 from .initialize_nxos import NxosConsole, load_bootstrap as load_nxos_bootstrap
 from .initialize_cat9kv import (
     Cat9kvConsole, TEMPLATE as CAT9KV_TEMPLATE,
     load_bootstrap as load_cat9kv_bootstrap, runtime_secrets as cat9kv_secrets,
+)
+from .initialize_nexus_dashboard import (
+    NexusDashboardConsole, TEMPLATE as NEXUS_DASHBOARD_TEMPLATE,
+    load_bootstrap as load_nexus_dashboard_bootstrap,
+    management_https_ready as nexus_dashboard_https_ready,
+)
+from .nexus_dashboard_browser import (
+    bringup as nexus_dashboard_bringup,
+    configure_external_ips as nexus_dashboard_external_ips,
+    configure_fabric_controller as nexus_dashboard_fabric_controller,
 )
 from .sdwan_intent import load_and_compile as compile_sdwan
 from .topology import load_topology
@@ -228,23 +239,24 @@ def config_commands(path, template):
     return commands
 
 
-def _open_telnet_console(ssh, port):
+def _open_telnet_console(ssh, port, satellite_target=None):
     channel = ssh.get_transport().open_session(timeout=10)
     channel.get_pty(term='vt100', width=512, height=1000)
-    channel.exec_command('telnet 127.0.0.1 ' + str(port))
-    # The EVE host shell can accept bytes before the telnet client has attached
-    # them to QEMU. Give the local handshake a bounded moment so prompt
-    # redisplay/input cannot be lost during one-shot bootstrap interactions.
+    command = ('telnet 127.0.0.1 ' + str(port) if satellite_target is None
+               else console_command(satellite_target, port))
+    channel.exec_command(command)
+    # The manager shell can accept bytes before local or satellite telnet has
+    # attached to QEMU. Avoid losing one-shot bootstrap input on either path.
     time.sleep(1)
     return channel
 
 
-def _reacquire_cat9kv(ssh, port, login, intent, timeout):
+def _reacquire_cat9kv(ssh, port, login, intent, timeout, satellite_target=None):
     """Acquire a fresh console after reload using bounded readiness polling."""
     deadline = time.monotonic() + timeout
     last_error = None
     while time.monotonic() < deadline:
-        channel = _open_telnet_console(ssh, port)
+        channel = _open_telnet_console(ssh, port, satellite_target)
         console = Cat9kvConsole(
             channel, boot_timeout=max(1, deadline - time.monotonic()))
         try:
@@ -278,6 +290,9 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
         if node_name not in nodes:
             raise ValueError('Node not found: ' + node_name)
         nodes = {node_name: nodes[node_name]}
+    cluster = (client.request('GET', 'cluster')
+               if any(str(node.get('sat', '')).isdigit() and int(node.get('sat')) > 0
+                      for node in nodes.values()) else {})
     result = {'lab': topology['name'], 'check': check, 'planned': [], 'completed': [], 'skipped': [], 'failed': [],
               'interface_status': {}, 'lifecycle': {}, 'reloaded': [], 'warnings': []}
     pending = []
@@ -299,7 +314,7 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
             else None)
         address = targets.get(name) if template in ('paloalto', 'panorama') else None
         reason = None
-        if template not in (IOS_TEMPLATES + (CAT9KV_TEMPLATE, 'nxosv9k', 'nxosv9k-9300v', 'paloalto', 'panorama')):
+        if template not in (IOS_TEMPLATES + (CAT9KV_TEMPLATE, NEXUS_DASHBOARD_TEMPLATE, 'nxosv9k', 'nxosv9k-9300v', 'paloalto', 'panorama')):
             reason = 'Unsupported init template: ' + str(template)
         elif not telnet_console_url(node) and node.get('console') != 'telnet' and not address:
             reason = 'Console type ' + str(node.get('console')) + ' is unsupported; init requires a working Telnet serial console'
@@ -311,7 +326,8 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
             compiled_commands is None and template in IOS_TEMPLATES
             and (base / (name + '-init.yaml')).is_file())
         yaml_init = iosxe_ipsec_profile or template in (
-            'nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE)
+            'nxosv9k', 'nxosv9k-9300v', CAT9KV_TEMPLATE,
+            NEXUS_DASHBOARD_TEMPLATE)
         path = (intent_path if compiled_commands is not None else
                 (base / (name + ('-init.yaml' if yaml_init else '-init.cfg'))).resolve())
         if not reason and compiled_commands is None and (
@@ -328,6 +344,8 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
             commands = load_nxos_bootstrap(path)
         elif template == CAT9KV_TEMPLATE:
             commands = load_cat9kv_bootstrap(path, root)
+        elif template == NEXUS_DASHBOARD_TEMPLATE:
+            commands = load_nexus_dashboard_bootstrap(path)
         elif iosxe_ipsec_profile:
             commands = iosxe_ipsec.render(iosxe_ipsec.load_profile(path), root)
         else:
@@ -348,18 +366,23 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
             raise ValueError('No Telnet console URL advertised for ' + name)
         if str(node.get('status')) == '0':
             raise ValueError('Start ' + name + ' with eve start before initialization')
+        satellite = None
+        satellite_id = node.get('sat')
+        if not address and str(satellite_id).isdigit() and int(satellite_id) > 0:
+            satellite = satellite_member(cluster, int(satellite_id))
         result['planned'].append({'node': name, 'template': template, 'file': str(path),
                                   'transport': 'ssh' if address else 'telnet',
-                                  'management_ip': address, 'port': 22 if address else url.port})
-        pending.append((name, template, 22 if address else url.port, commands))
+                                  'management_ip': address, 'port': 22 if address else url.port,
+                                  'satellite': satellite.get('name') if satellite else None})
+        pending.append((name, template, 22 if address else url.port, commands, satellite))
     if check or not pending:
         return result
     server = load_server(root, server_name, auth='ssh')
     # Validate all credentials before touching devices.
     logins = {template: credentials(root, prefix='PALO' if template in ('paloalto', 'panorama') else 'CISCO')
-              for _, template, _, _ in pending}
+              for _, template, _, _, _ in pending}
     cat9kv_snmp = {name: cat9kv_secrets(intent, root)
-                   for name, template, _, intent in pending
+                   for name, template, _, intent, _ in pending
                    if template == CAT9KV_TEMPLATE}
     ssh = paramiko.SSHClient()
     try:
@@ -368,35 +391,60 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                     username=server['ssh_username'], password=server['ssh_password'],
                     timeout=10, auth_timeout=10, banner_timeout=10,
                     allow_agent=False, look_for_keys=False)
-        for name, template, port, commands in pending:
+        satellite_targets = {}
+        for name, template, port, commands, satellite in pending:
             channel = None
             device = None
             print(f'Waiting for {name} console (up to {timeout}s per prompt)...', file=sys.stderr, flush=True)
             try:
                 login = logins[template]
+                if (template == NEXUS_DASHBOARD_TEMPLATE
+                        and nexus_dashboard_https_ready(commands)):
+                    lifecycle = nexus_dashboard_bringup(
+                        commands, login[0], login[1], timeout=timeout)
+                    if lifecycle["status"] == "ready-or-post-bringup":
+                        lifecycle["external_ips"] = nexus_dashboard_external_ips(
+                            commands, login[0], login[1], timeout=timeout)
+                        lifecycle["fabric_controller"] = nexus_dashboard_fabric_controller(
+                            commands, login[0], login[1], timeout=timeout)
+                    result['lifecycle'][name] = lifecycle
+                    result['completed'].append(name)
+                    continue
+                satellite_target = None
+                if satellite:
+                    key = (satellite['name'], satellite.get('pubkey'))
+                    if key not in satellite_targets:
+                        satellite_targets[key] = resolve_satellite_target(ssh, satellite)
+                    satellite_target = satellite_targets[key]
                 if template in ('paloalto', 'panorama') and targets.get(name):
                     device, channel = connect_palo(ssh, targets[name], login[0], login[1], timeout)
                 else:
-                    channel = _open_telnet_console(ssh, port)
+                    channel = _open_telnet_console(ssh, port, satellite_target)
                 console_type = {'paloalto': PaloConsole if targets.get(name) else PaloSerialConsole,
                                 'panorama': PanoramaConsole, 'nxosv9k': NxosConsole,
                                 'nxosv9k-9300v': NxosConsole,
-                                CAT9KV_TEMPLATE: Cat9kvConsole}.get(template, Console)
+                                CAT9KV_TEMPLATE: Cat9kvConsole,
+                                NEXUS_DASHBOARD_TEMPLATE: NexusDashboardConsole}.get(template, Console)
                 console = console_type(channel, boot_timeout=timeout)
-                if template == 'panorama' or (template == 'paloalto' and not targets.get(name)):
+                if template == NEXUS_DASHBOARD_TEMPLATE:
+                    pass
+                elif template == 'panorama' or (template == 'paloalto' and not targets.get(name)):
                     console.login(*login, auto_factory=not bool(targets.get(name)))
                 else:
                     console.login(*login)
                 if template == 'c8000v' and (base / (name + '-init.yaml')).is_file():
                     if iosxe_ipsec.prepare_license(console):
                         channel.close()
-                        channel = _open_telnet_console(ssh, port)
+                        channel = _open_telnet_console(ssh, port, satellite_target)
                         console = Console(channel, boot_timeout=timeout)
                         console.login(*login)
                         iosxe_ipsec.verify_license(console)
                         result['reloaded'].append(name)
                 print('Applying init to ' + name + '...', file=sys.stderr, flush=True)
-                if template == CAT9KV_TEMPLATE:
+                if template == NEXUS_DASHBOARD_TEMPLATE:
+                    lifecycle = console.initialize(commands, password=login[1])
+                    result['lifecycle'][name] = lifecycle
+                elif template == CAT9KV_TEMPLATE:
                     snmp_ro, snmp_rw = cat9kv_snmp[name]
                     lifecycle = console.initialize(
                         commands, username=login[0], password=login[1],
@@ -408,7 +456,7 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
                         print('Waiting for ' + name + ' after license reload...',
                               file=sys.stderr, flush=True)
                         channel, console, active = _reacquire_cat9kv(
-                            ssh, port, login, commands, timeout)
+                            ssh, port, login, commands, timeout, satellite_target)
                         lifecycle['license_active'] = active
                         result['reloaded'].append(name)
                 else:

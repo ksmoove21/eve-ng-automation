@@ -9,6 +9,12 @@ description = "Shared EVE-NG tooling and independent lab definitions"
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0,<7", "paramiko>=3.5,<5"]
 
+[project.optional-dependencies]
+nexus-dashboard = [
+    "cryptography>=41",
+    "playwright>=1.48,<2",
+]
+
 [project.scripts]
 eve = "eve_lab.cli:main"
 

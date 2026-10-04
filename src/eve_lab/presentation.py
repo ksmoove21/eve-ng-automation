@@ -30,13 +30,22 @@ def _color(item, field, default):
     return value.lower()
 
 
-def validate_presentation(document):
+def validate_presentation(document, network_names=None):
     if document is None:
         return
-    if not isinstance(document, dict) or set(document) - {"version", "regions", "labels"}:
-        raise ValueError("presentation.yaml supports only version, regions, and labels")
+    if not isinstance(document, dict) or set(document) - {"version", "regions", "labels", "hidden_networks"}:
+        raise ValueError("presentation.yaml supports only version, regions, labels, and hidden_networks")
     if document.get("version") != 1:
         raise ValueError("presentation.yaml version must be 1")
+    hidden = document.get("hidden_networks", [])
+    if not isinstance(hidden, list) or any(
+        not isinstance(name, str) or not name.strip() for name in hidden
+    ) or len(hidden) != len(set(hidden)):
+        raise ValueError("presentation hidden_networks must be unique nonempty network names")
+    if network_names is not None:
+        unknown = sorted(set(hidden) - set(network_names))
+        if unknown:
+            raise ValueError(f"presentation hidden_networks reference undeclared networks: {unknown}")
     names = set()
     for kind, allowed in (("regions", _REGION_FIELDS), ("labels", _LABEL_FIELDS)):
         items = document.get(kind, [])
