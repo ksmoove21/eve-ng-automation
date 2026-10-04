@@ -42,7 +42,7 @@ class InitTests(unittest.TestCase):
     @patch('eve_lab.initialize.compile_sdwan')
     def test_compiled_sdwan_ios_operations_override_generated_config_files(
             self, compile_sdwan, load_topology):
-        (self.root / 'labs/test/intent.yaml').write_text('version: 1\n')
+        (self.root / 'labs/test/intent.yaml').write_text('control_plane: {}\n')
         (self.base / 'R0-init.cfg').unlink()
         self.nodes['7']['template'] = 'iol'
         compile_sdwan.return_value = {
@@ -60,6 +60,20 @@ class InitTests(unittest.TestCase):
             str(self.root / 'labs/test/intent.yaml'))
         load_topology.assert_called_once_with(self.root, 'test')
         compile_sdwan.assert_called_once()
+
+    @patch('eve_lab.initialize.compile_sdwan')
+    def test_non_sdwan_intent_does_not_block_nxos_init(self, compile_sdwan):
+        (self.root / 'labs/test/intent.yaml').write_text('scope: {site: DC2}\n')
+        (self.base / 'R0-init.cfg').unlink()
+        (self.base / 'R0-init.yaml').write_text(
+            'hostname: R0\nmanagement_interface: mgmt0\n'
+            'management_address: 192.0.2.10\nmanagement_prefix_length: 24\n'
+            'management_gateway: 192.0.2.1\nboot_image: nxos.bin\n')
+        self.nodes['7']['template'] = 'nxosv9k'
+        result = self.run_init(check=True)
+        self.assertEqual(result['skipped'], [])
+        self.assertEqual([row['node'] for row in result['planned']], ['R0'])
+        compile_sdwan.assert_not_called()
 
     def test_native_iol_blank_console_uses_advertised_telnet_url(self):
         self.nodes['7'].update(template='iol', console='')

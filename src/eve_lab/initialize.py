@@ -8,6 +8,7 @@ from urllib.parse import quote
 from urllib.parse import urlsplit
 
 import paramiko
+import yaml
 
 from .config import load_server
 from . import iosxe_ipsec
@@ -300,9 +301,16 @@ def initialize(client, topology, root, server_name, node_name=None, check=False,
     intent_path = (Path(root) / 'labs' / topology['name'] / 'intent.yaml').resolve()
     compiled_operations = {}
     if intent_path.is_file():
-        declared_topology = load_topology(Path(root), topology['name'])
-        compiled_operations = compile_sdwan(
-            Path(root), topology['name'], declared_topology)['node_operations']
+        declared_intent = yaml.safe_load(intent_path.read_text())
+        if not isinstance(declared_intent, dict):
+            raise ValueError('Lab intent must be a mapping')
+        # Only Catalyst SD-WAN intent needs compiled console operations. Shared
+        # filenames such as intent.yaml also belong to other lab platforms.
+        if set(declared_intent) & {
+                'control_plane', 'transport_fabrics', 'organization_name', 'edges'}:
+            declared_topology = load_topology(Path(root), topology['name'])
+            compiled_operations = compile_sdwan(
+                Path(root), topology['name'], declared_topology)['node_operations']
     for name, node in nodes.items():
         template = node.get('template')
         compiled = compiled_operations.get(name)
