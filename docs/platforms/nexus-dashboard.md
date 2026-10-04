@@ -308,4 +308,3 @@ release notes, and relevant vendor guidance, then run a bounded live probe.
 Syntax/prerequisite discovery is implementation work rather than an owner
 decision. Reconcile validated version-specific findings back into this platform
 document so future sprints do not repeat the same discovery.
-
