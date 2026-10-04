@@ -1,4 +1,4 @@
-"""Import the declared DC1 switches into NDFC after exact identity preflight."""
+"""Import the declared site switches into NDFC after exact identity preflight."""
 
 import argparse
 import json
@@ -24,14 +24,14 @@ def _inventory(page, endpoint):
     return items
 
 
-def import_dc1_switches(intent, username, password, timeout=600):
-    """Discover only exact, manageable DC1 targets; preserve-config is disabled."""
+def import_switches(intent, username, password, timeout=600, site="DC1"):
+    """Discover only exact, manageable site targets; preserve-config is disabled."""
     from playwright.sync_api import sync_playwright
 
-    name, desired = compile_switches(intent)
-    profile = next(item for item in intent["ndfc_fabrics"] if item["site"] == "DC1")
+    name, desired = compile_switches(intent, site)
+    profile = next(item for item in intent["ndfc_fabrics"] if item["site"] == site)
     if profile["switch_import"] != {"greenfield": True, "preserve_config": False}:
-        raise ValueError("DC1 import must be greenfield with Preserve Config NO")
+        raise ValueError(site + " import must be greenfield with Preserve Config NO")
     address = intent["management"]["nd"]["address"].split("/")[0]
     endpoint = _FABRICS + "/" + quote(name, safe="")
     deadline = time.monotonic() + timeout
@@ -46,8 +46,17 @@ def import_dc1_switches(intent, username, password, timeout=600):
             _login(page, username, password, max(1, deadline - time.monotonic()))
             existing = _inventory(page, endpoint)
             if existing:
+                by_name = {item.get("logicalName"): item for item in existing}
+                if (len(existing) == len(desired) and
+                        set(by_name) == {item["name"] for item in desired} and
+                        all(by_name[item["name"]].get("ipAddress") == item["ip"]
+                            and by_name[item["name"]].get("serialNumber")
+                            for item in desired)):
+                    return {"status": "already-imported", "fabric": name,
+                            "declared_count": len(desired),
+                            "observed_count": len(existing)}
                 raise NexusDashboardBrowserError(
-                    "NDFC fabric inventory is nonempty; inspect before any further import")
+                    "NDFC fabric inventory differs from exact declared switches")
             request = {
                 "seedIP": ",".join(item["ip"] for item in desired),
                 "username": username,
@@ -90,7 +99,14 @@ def import_dc1_switches(intent, username, password, timeout=600):
             observed = {}
             def ready():
                 observed["inventory"] = _inventory(page, endpoint)
-                return len(observed["inventory"]) == len(desired)
+                by_name = {item.get("logicalName"): item
+                           for item in observed["inventory"]}
+                return (len(observed["inventory"]) == len(desired) and
+                        set(by_name) == {item["name"] for item in desired} and
+                        all(by_name[item["name"]].get("ipAddress") == item["ip"]
+                            and by_name[item["name"]].get("serialNumber") ==
+                            by_ip[item["ip"]]["serialNumber"]
+                            for item in desired))
             _wait_for(page, ready, deadline, "NDFC eight-switch import readback")
             return {
                 "status": "imported",
@@ -102,9 +118,14 @@ def import_dc1_switches(intent, username, password, timeout=600):
             browser.close()
 
 
+# Preserve the original DC1 entry point for existing callers.
+import_dc1_switches = import_switches
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
+    parser.add_argument("--site", choices=("DC1", "DC2"), default="DC1")
     parser.add_argument("--timeout", type=int, default=600)
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
@@ -112,8 +133,8 @@ def main():
     username, password = env.get("CISCO_USERNAME"), env.get("CISCO_PASSWORD")
     if not username or not password:
         raise ValueError("Set CISCO_USERNAME and CISCO_PASSWORD in EVE_ENV_FILE")
-    print(json.dumps(import_dc1_switches(
-        intent, username, password, args.timeout)))
+    print(json.dumps(import_switches(
+        intent, username, password, args.timeout, args.site)))
 
 
 if __name__ == "__main__":

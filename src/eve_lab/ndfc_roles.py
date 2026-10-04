@@ -1,4 +1,4 @@
-"""Assign declared DC1 NDFC switch roles after exact inventory preflight."""
+"""Assign declared site NDFC switch roles after exact inventory preflight."""
 
 import argparse
 import json
@@ -30,11 +30,11 @@ def _inventory(page, fabric):
     return body
 
 
-def ensure_switch_roles(intent, username, password, timeout=300):
+def ensure_switch_roles(intent, username, password, timeout=300, site="DC1"):
     """Assign only declared identities whose current NDFC roles differ."""
     from playwright.sync_api import sync_playwright
 
-    fabric, switches = compile_switches(intent)
+    fabric, switches = compile_switches(intent, site)
     address = intent["management"]["nd"]["address"].split("/")[0]
     desired = {item["name"]: item for item in switches}
     deadline = time.monotonic() + timeout
@@ -84,6 +84,7 @@ def ensure_switch_roles(intent, username, password, timeout=300):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("intent", type=Path)
+    parser.add_argument("--site", choices=("DC1", "DC2"), default="DC1")
     parser.add_argument("--timeout", type=int, default=300)
     args = parser.parse_args()
     intent = yaml.safe_load(args.intent.read_text())
@@ -91,7 +92,7 @@ def main():
     username, password = env.get("CISCO_USERNAME"), env.get("CISCO_PASSWORD")
     if not username or not password:
         raise ValueError("Set CISCO_USERNAME and CISCO_PASSWORD in EVE_ENV_FILE")
-    print(json.dumps(ensure_switch_roles(intent, username, password, args.timeout)))
+    print(json.dumps(ensure_switch_roles(intent, username, password, args.timeout, args.site)))
 
 
 if __name__ == "__main__":

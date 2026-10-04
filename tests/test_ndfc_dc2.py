@@ -194,3 +194,73 @@ def test_dc2_fabric_leaf_dhcp_requires_explicit_deferral_before_api():
     ]:
         with pytest.raises(ValueError, match="dhcp_deployment: deferred"):
             operation()
+
+
+def _fake_browser(monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    import playwright.sync_api
+
+    page = SimpleNamespace(goto=lambda *a, **kw: None)
+    browser = SimpleNamespace(new_page=lambda: page, close=lambda: None)
+    runtime = SimpleNamespace(chromium=SimpleNamespace(launch=lambda **kw: browser))
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright",
+                        lambda: nullcontext(runtime))
+
+
+def test_dc2_import_reconciles_only_exact_inventory(monkeypatch):
+    from eve_lab import ndfc_import
+    from eve_lab.nexus_dashboard_browser import NexusDashboardBrowserError
+
+    intent, _ = _fixture()
+    intent["management"]["nd"] = {"address": "192.0.2.1/24"}
+    _, switches = compile_switches(intent, "DC2")
+    _fake_browser(monkeypatch)
+    monkeypatch.setattr(ndfc_import, "_spki_pin", lambda address: "pin")
+    monkeypatch.setattr(ndfc_import, "_login", lambda *a: None)
+    rows = [{"logicalName": row["name"], "ipAddress": row["ip"],
+             "serialNumber": "S" + str(i)}
+            for i, row in enumerate(switches)]
+    monkeypatch.setattr(ndfc_import, "_inventory", lambda *a: rows)
+    monkeypatch.setattr(ndfc_import, "_api", lambda *a: pytest.fail(
+        "exact inventory must not be imported again"))
+    result = ndfc_import.import_switches(intent, "user", "secret", site="DC2")
+    assert result["status"] == "already-imported"
+    assert result["fabric"] == "SECOND-FABRIC"
+    rows[0]["ipAddress"] = "192.0.2.200"
+    with pytest.raises(NexusDashboardBrowserError, match="differs"):
+        ndfc_import.import_switches(intent, "user", "secret", site="DC2")
+
+
+def test_dc2_roles_post_only_differing_serial(monkeypatch):
+    from eve_lab import ndfc_roles
+
+    intent, _ = _fixture()
+    intent["management"]["nd"] = {"address": "192.0.2.1/24"}
+    _, switches = compile_switches(intent, "DC2")
+    _fake_browser(monkeypatch)
+    monkeypatch.setattr(ndfc_roles, "_spki_pin", lambda address: "pin")
+    monkeypatch.setattr(ndfc_roles, "_login", lambda *a: None)
+    roles = {"spine": "spine", "leaf": "leaf",
+             "border": "border gateway", "tor": "tor"}
+    rows = [{"logicalName": row["name"], "ipAddress": row["ip"],
+             "serialNumber": "S" + str(i), "switchRole": roles[row["role"]]}
+            for i, row in enumerate(switches)]
+    rows[0]["switchRole"] = "leaf"
+    monkeypatch.setattr(ndfc_roles, "_inventory", lambda *a: rows)
+    sent = []
+    def api(page, method, endpoint, payload):
+        sent.append((method, endpoint, payload))
+        rows[0]["switchRole"] = "spine"
+        return 200, {}
+    monkeypatch.setattr(ndfc_roles, "_api", api)
+    monkeypatch.setattr(ndfc_roles, "_wait_for",
+                        lambda page, ready, deadline, label: assert_ready(ready))
+    result = ndfc_roles.ensure_switch_roles(intent, "user", "secret", site="DC2")
+    assert result["changed"] == 1
+    assert sent == [("POST", ndfc_roles._ROLES,
+                     [{"serialNumber": "S0", "role": "spine"}])]
+
+
+def assert_ready(ready):
+    assert ready()

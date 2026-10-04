@@ -10,7 +10,8 @@ python -m eve_lab.ndfc_tenant_api <lab>/intent.yaml --site DC2 --check
 ```
 
 After reviewing those offline results, use the same site option with the
-applicable live commands: `ndfc_fabric` to reconcile the fabric,
+applicable live commands: `ndfc_fabric` to reconcile the fabric, `ndfc_import` to import exact
+switch identities, `ndfc_roles` to assign roles,
 `ndfc_tenant_api --attach` to stage attachments and host access policies, and
 `ndfc_tenant_api --deploy` to deploy the selected site's tenant resources.
 The tenant command reads `topology.yaml` beside the intent for attachment and
