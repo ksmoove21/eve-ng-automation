@@ -58,6 +58,7 @@ class NxosConsole(Console):
             except RuntimeError as error:
                 raise RuntimeError(f"NX-OS configuration command {index} failed: {error}") from error
         self.command('end', require_echo=True)
+        self.command('terminal length 0', require_echo=True)
         saved = self.command('copy running-config startup-config', timeout=120,
                              require_echo=True)
         if re.search(r'%\s*(?:Invalid|Error|Failed)', saved, re.I):
