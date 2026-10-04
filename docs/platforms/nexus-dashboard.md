@@ -1,17 +1,34 @@
 # Nexus Dashboard / Fabric Controller
 
-## Active in-place handoff checkpoint
+## Observed 3.2.2m / NDFC 12.2.3 recovery
 
-This is an unfinished sprint checkpoint captured on 2026-10-01. Preserve the
-running discovery appliance and continue from this state.
+The 3.2.2m appliance and its NDFC 12.2.3 service are live-tested in the EVE
+QEMU lab. One long-running guest stopped answering on management and emitted no
+serial text even though EVE and QMP still reported QEMU running. A normal,
+exact-node EVE stop/start, without a wipe, restored the serial login prompt and
+management HTTPS/SSH.
+
+The documented ND management-routes GET recovered from HTTP 500 to 200 before
+the NDFC fabrics and Easy_Fabric template GETs recovered from HTTP 500 to 200.
+Treat these API readbacks as separate service-readiness gates before a fabric
+mutation. After both NDFC GETs returned 200, the reusable DC2 Easy_Fabric
+reconciliation returned `already-configured`; the selected fabric's switch
+inventory GET returned 200 with zero switches. This is one observed recovery,
+not a rule to restart every guest that returns HTTP 500.
+
+## Historical 3.2.1i handoff checkpoint
+
+This section records an unfinished 2026-10-01 sprint and is retained as
+historical version-specific evidence. Its appliance and satellite state is not
+the current 3.2.2m lab state.
 
 ## Live target and release
 
 - **LIVE-TESTED:** EVE template `nd`, image `nd-9.3.2.1c`.
 - **LIVE-TESTED:** the appliance serial setup utility identifies the release as
   **Nexus Dashboard 3.2.1i**. The EVE image suffix is not the appliance release.
-- **VERSION-GATED / FIELD-TEST REQUIRED:** Nexus Dashboard 3.2.2m has not been
-  installed or live-tested.
+- **HISTORICAL NOTE:** This 2026-10-01 checkpoint preceded the later live-tested
+  3.2.2m/NDFC 12.2.3 cycle described above.
 - **LIVE-TESTED:** `ND-01` is running (`status: 2`) in disposable lab
   `nexus-dashboard-disposable` on `eve-sat03` (satellite ID 3), with 16 vCPU,
   65536 MiB RAM, two NICs, `cpulimit=0`, and image `nd-9.3.2.1c`.
