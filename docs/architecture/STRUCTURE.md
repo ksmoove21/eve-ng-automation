@@ -169,7 +169,7 @@ or another human-declared common medium. They must not be used as an
 implementation shortcut for point-to-point node links. The optional
 `hidden_networks` list in `presentation.yaml` may hide a named declared network
 on the native canvas without changing its attachments or semantic status.
-This follows the same topology-versus-presentation separation used byEVE-IaC; Git intent describes nodes, networks, and links while presentation
+This follows the same topology-versus-presentation separation used by EVE-IaC; Git intent describes nodes, networks, and links while presentation
 metadata controls how those objects are rendered. Optional regions and labels
 belong in `labs/<lab>/presentation.yaml`; when that file exists, the reconciler
 owns the lab's EVE text objects and prunes undeclared ones.
