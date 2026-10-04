@@ -529,7 +529,7 @@ class DeploymentTests(unittest.TestCase):
         apply(self.client, topology)
         self.client.networks["1"]["name"] = "legacy-a"
         self.client.networks["2"] = {
-            **self.client.networks["1"], "id": 2, "name": "legacy-b"
+            **self.client.networks["1"], "id": 1, "name": "legacy-b"
         }
         with self.assertRaisesRegex(RuntimeError, "matches multiple runtime backing networks"):
             apply(self.client, topology)
