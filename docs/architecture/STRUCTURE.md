@@ -164,6 +164,12 @@ historical runtime name differs from the current Git link name. Name drift must
 not create a duplicate cable. Multiple runtime bridges claiming the same exact
 endpoint pair are ambiguous drift and must fail closed for operator review.
 
+On EVE Pro, saving a node attachment may leave the corresponding direct-link
+runtime backing unstitched. A repair may use the supported single-network
+`network/manage` operation only after exact Git endpoint preflight. Preserve the
+current bridge options and two-port map, then verify saved endpoint readback
+and runtime connectivity for that same link before continuing.
+
 Explicitly declared networks remain topology objects. The optional
 `hidden_networks` list in `presentation.yaml` may hide named declared
 networks on the native canvas without changing their attachments or semantic
