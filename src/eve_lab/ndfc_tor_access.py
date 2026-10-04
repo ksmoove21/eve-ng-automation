@@ -12,7 +12,7 @@ _TEMPLATE = _BASE + "/configtemplate/rest/config/templates/int_access_host"
 _METADATA = {"PRIORITY", "POLICY_ID", "POLICY_DESC", "GF", "FABRIC_NAME"}
 
 
-def _rows(page):
+def _rows(page, targets):
     status, body = _api(page, "GET", _INTERFACE)
     if status != 200 or not isinstance(body, list):
         raise NexusDashboardBrowserError("NDFC interface list is unavailable")
@@ -24,6 +24,8 @@ def _rows(page):
             if not isinstance(item, dict):
                 raise NexusDashboardBrowserError("NDFC interface list has invalid row")
             key = item.get("serialNumber"), item.get("ifName")
+            if key not in targets:
+                continue
             if key in rows:
                 raise NexusDashboardBrowserError("NDFC interface list duplicates " + str(key))
             rows[key] = group.get("policy"), item.get("nvPairs")
@@ -62,7 +64,7 @@ def reconcile_access_ports(page, access_ports, serials):
     required = {"SERIAL_NUMBER", "INTF_NAME", "ACCESS_VLAN", "ADMIN_STATE"}
     if not required <= fields or template.get("templateSubType") != "INTERFACE_ETHERNET":
         raise NexusDashboardBrowserError("NDFC int_access_host template is incompatible")
-    rows = _rows(page)
+    rows = _rows(page, targets)
     requests = []
     for key, vlan in targets.items():
         policy, nv = rows.get(key, (None, None))
@@ -97,9 +99,9 @@ def reconcile_access_ports(page, access_ports, serials):
             raise NexusDashboardBrowserError(
                 "NDFC host access policy update failed for " + str(key) +
                 " with HTTP " + str(status) + ": " + str(body)[:200])
-        _wait_for(page, lambda: _is_access(_rows(page), key, targets[key]),
+        _wait_for(page, lambda: _is_access(_rows(page, targets), key, targets[key]),
                   time.monotonic() + 30, "NDFC host access policy readback")
-    _verify(_rows(page), targets)
+    _verify(_rows(page, targets), targets)
     return {"ports": len(targets), "policies_reconciled": len(requests)}
 
 
@@ -111,13 +113,14 @@ def _is_access(rows, key, vlan):
 
 def verify_access_ports(page, access_ports, serials):
     """Require all declared host ports to have the exact staged access policy."""
-    _verify(_rows(page), _targets(access_ports, serials))
+    targets = _targets(access_ports, serials)
+    _verify(_rows(page, targets), targets)
 
 
 def deploy_access_ports(page, fabric, access_ports, serials, username):
     """Deploy only declared host interfaces and require exact convergence."""
     targets = _targets(access_ports, serials)
-    _verify(_rows(page), targets)
+    _verify(_rows(page, targets), targets)
     endpoint = _BASE + "/lan-fabric/rest/control/fabrics/" + quote(fabric, safe="")
     pending = []
     baselines = {}
@@ -160,5 +163,5 @@ def deploy_access_ports(page, fabric, access_ports, serials, username):
             return not (remaining & target_ports) and success
         _wait_for(page, converged, time.monotonic() + 300,
                   "NDFC tenant host access deployment " + serial)
-    _verify(_rows(page), targets)
+    _verify(_rows(page, targets), targets)
     return {"ports": len(targets), "interfaces_deployed": len(pending)}

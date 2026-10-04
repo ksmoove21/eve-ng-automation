@@ -483,11 +483,13 @@ def main():
         print(json.dumps(compiled, indent=2))
         return
     env = _environment(Path.cwd())
-    username = env.get("NDFC_RUNNER_USERNAME")
-    password = env.get("NDFC_RUNNER_PASSWORD")
+    credential_prefix = "CISCO" if args.deploy else "NDFC_RUNNER"
+    username = env.get(credential_prefix + "_USERNAME")
+    password = env.get(credential_prefix + "_PASSWORD")
     if not username or not password:
         raise ValueError(
-            "Set NDFC_RUNNER_USERNAME and NDFC_RUNNER_PASSWORD in EVE_ENV_FILE")
+            "Set " + credential_prefix + "_USERNAME and " +
+            credential_prefix + "_PASSWORD in EVE_ENV_FILE")
     if args.attach and args.deploy:
         parser.error("Select only one of --attach or --deploy")
     topology = (yaml.safe_load(args.intent.with_name("topology.yaml").read_text())

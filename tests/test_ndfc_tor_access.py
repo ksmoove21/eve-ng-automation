@@ -217,3 +217,19 @@ def test_reconcile_creates_missing_endpoint_policy_without_touching_uplink(monke
     assert writes[0][0] == "POST"
     assert writes[0][1]["interfaces"][0]["ifName"] == "Ethernet1/3"
     assert groups[0]["interfaces"][0]["ifName"] == "Ethernet1/1"
+
+
+def test_interface_rows_ignore_unrelated_duplicates_but_reject_target_duplicate(monkeypatch):
+    groups = [{"policy": "loopback", "interfaces": [
+        {"serialNumber": "OTHER", "ifName": "loopback1", "nvPairs": {}}]},
+        {"policy": "loopback", "interfaces": [
+            {"serialNumber": "OTHER", "ifName": "loopback1", "nvPairs": {}}]},
+        {"policy": "int_trunk_host", "interfaces": [
+            {"serialNumber": "TOR1", "ifName": "Ethernet1/3", "nvPairs": {}}]}]
+    monkeypatch.setattr(api, "_api", lambda *_: (200, groups))
+    target = {("TOR1", "Ethernet1/3"): "110"}
+    assert api._rows(None, target) == {
+        ("TOR1", "Ethernet1/3"): ("int_trunk_host", {})}
+    groups.append(deepcopy(groups[-1]))
+    with pytest.raises(NexusDashboardBrowserError, match="duplicates"):
+        api._rows(None, target)
