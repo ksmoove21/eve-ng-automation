@@ -15,7 +15,7 @@ Git direct link. Git link names and EVE display names can differ; select both
 the Git link and the observed EVE network ID. The default command is read-only:
 
 ```text
-python -m eve_lab.network_manage <lab>/topology.yaml --root <workspace> --link DC1-BL1-PA1 --id 23
+python -m eve_lab.network_manage <lab>/topology.yaml --root <workspace> --link <git-link-name> --id <eve-network-id>
 ```
 
 After explicit authorization for the disposable lab action, add `--apply` for
