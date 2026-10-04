@@ -51,13 +51,20 @@ def load_bootstrap(path):
 class NxosConsole(Console):
     """NX-OS configuration-mode initialization; credentials are shared CISCO_* values."""
     def initialize(self, commands, username=None, password=None):
-        self.command('configure terminal')
+        self.command('configure terminal', require_echo=True)
         for index, command in enumerate(commands, start=1):
             try:
-                self.command(command)
+                self.command(command, require_echo=True)
             except RuntimeError as error:
                 raise RuntimeError(f"NX-OS configuration command {index} failed: {error}") from error
-        self.command('end')
-        saved = self.command('copy running-config startup-config', timeout=120)
+        self.command('end', require_echo=True)
+        saved = self.command('copy running-config startup-config', timeout=120,
+                             require_echo=True)
         if re.search(r'%\s*(?:Invalid|Error|Failed)', saved, re.I):
             raise RuntimeError('NX-OS did not confirm copy running-config startup-config')
+        startup = self.command('show startup-config', timeout=120,
+                               require_echo=True)
+        required = [command for command in commands if command.startswith(
+            ('hostname ', 'ip address ', 'ip route 0.0.0.0/0 '))]
+        if any(command not in startup for command in required):
+            raise RuntimeError('NX-OS startup-config lacks declared management bootstrap')
