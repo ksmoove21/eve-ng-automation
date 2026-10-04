@@ -157,6 +157,85 @@ def direct_bridge_is_exact(name, attachments, nodes, networks, node_ports):
     return len(expected) == 2 and actual == expected
 
 
+def adopt_direct_bridge_aliases(client, path, topology, direct, nodes, networks):
+    """Reuse exact two-endpoint backing bridges even when their runtime names drift.
+
+    Direct-link names are presentation/runtime metadata; endpoint identity is the
+    stronger invariant.  Historical hidden bridge names must not cause a second
+    backing network to be created for the same declared cable.
+    """
+    if not direct or not nodes or not networks:
+        return topology, direct, {}
+
+    node_ports = {node["name"]: interfaces(client, path, node)
+                  for node in nodes.values()}
+    endpoints_by_network = {}
+    for node in nodes.values():
+        for ident, port in node_ports[node["name"]].items():
+            network_id = str(port.get("network_id", 0))
+            if network_id not in ("0", "", "None"):
+                endpoints_by_network.setdefault(network_id, set()).add((node["id"], ident))
+
+    direct_names = {name for name, _ in direct}
+    explicit_names = {network["name"] for network in topology["networks"]} - direct_names
+    aliases = {}
+    claimed = set()
+
+    for desired_name, attachments in direct:
+        if desired_name in networks:
+            continue
+        expected = set()
+        for link in attachments:
+            if link["node"] not in nodes:
+                expected = set()
+                break
+            node = nodes[link["node"]]
+            ident, _ = resolve(node_ports[node["name"]], link["interface"])
+            expected.add((node["id"], ident))
+        if len(expected) != 2:
+            continue
+
+        matches = []
+        for runtime_name, network in networks.items():
+            if runtime_name in explicit_names or runtime_name in direct_names or runtime_name in claimed:
+                continue
+            if network.get("type") != "bridge":
+                continue
+            if endpoints_by_network.get(str(network["id"]), set()) == expected:
+                matches.append(runtime_name)
+
+        if len(matches) > 1:
+            raise RuntimeError(
+                f"Direct link {desired_name} matches multiple runtime backing networks: {sorted(matches)}")
+        if len(matches) == 1:
+            aliases[desired_name] = matches[0]
+            claimed.add(matches[0])
+
+    if not aliases:
+        return topology, direct, {}
+
+    remapped = {
+        **topology,
+        "networks": [
+            {**network, "name": aliases.get(network["name"], network["name"])}
+            for network in topology["networks"]
+        ],
+        "links": [
+            {**link, "network": aliases.get(link["network"], link["network"])}
+            for link in topology["links"]
+        ],
+    }
+    remapped_direct = [
+        (
+            aliases.get(name, name),
+            [{**link, "network": aliases.get(link["network"], link["network"])}
+             for link in attachments],
+        )
+        for name, attachments in direct
+    ]
+    return remapped, remapped_direct, aliases
+
+
 def prune_objects(client, path, topology, changes):
     """Remove undeclared objects only after the desired topology was applied."""
     nodes = named(client, path + "/nodes")
@@ -294,6 +373,8 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
         exists = False
     nodes = named(client, path + "/nodes") if exists else {}
     networks = named(client, path + "/networks") if exists else {}
+    topology, direct, direct_aliases = adopt_direct_bridge_aliases(
+        client, path, topology, direct, nodes, networks)
     deferred = []
     if prune:
         topology, direct, deferred = preserve_active(client, path, topology, direct, nodes, networks)
@@ -551,6 +632,7 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
             "placement": placements,
             "presentation": {"direct_links": len(direct),
                              "backing_networks_hidden": len(direct),
+                             "runtime_name_aliases": direct_aliases,
                              "objects": presentation_report},
             "message": "Applied safe changes; deferred objects left unchanged" if deferred else ("Applied; no nodes started" if changes else "Already matches; no changes")}
 
@@ -688,10 +770,14 @@ def stop_all(client, topology, node_name=None):
 
 def lab_status(client, topology):
     path = lab_path(topology)
-    nodes = client.request("GET", path + "/nodes")
+    raw_nodes = client.request("GET", path + "/nodes")
     runtime_networks = indexed(client.request("GET", path + "/networks"))
-    _, direct = expand_links(topology)
-    backing_names = {name for name, _ in direct}
+    expanded, semantic_direct = expand_links(topology)
+    nodes = named(client, path + "/nodes")
+    networks = named(client, path + "/networks")
+    _, runtime_direct, aliases = adopt_direct_bridge_aliases(
+        client, path, expanded, semantic_direct, nodes, networks)
+    backing_names = {name for name, _ in runtime_direct}
     presentation_networks = {
         ident: network for ident, network in runtime_networks.items()
         if network.get("name") not in backing_names
@@ -700,16 +786,17 @@ def lab_status(client, topology):
         {"name": name,
          "from": {"node": attachments[0]["node"], "interface": attachments[0]["interface"]},
          "to": {"node": attachments[1]["node"], "interface": attachments[1]["interface"]}}
-        for name, attachments in direct
+        for name, attachments in semantic_direct
     ]
     backing = [network for network in runtime_networks.values()
                if network.get("name") in backing_names]
-    return {"lab": topology["name"], "nodes": nodes,
+    return {"lab": topology["name"], "nodes": raw_nodes,
             "networks": presentation_networks, "links": direct_links,
             "runtime_backing": {
                 "direct_link_networks": len(backing),
-                "all_hidden": len(backing) == len(direct) and all(
+                "all_hidden": len(backing) == len(runtime_direct) and all(
                     str(network.get("visibility", 1)) == "0" for network in backing),
+                "runtime_name_aliases": aliases,
             }}
 
 
