@@ -155,7 +155,8 @@ def test_dc2_live_cli_dispatch_uses_selected_site_without_network(
     monkeypatch.setattr(ndfc_fabric, "_environment", lambda *_: {
         "CISCO_USERNAME": "user", "CISCO_PASSWORD": "placeholder"})
     monkeypatch.setattr(ndfc_tenant_api, "_environment", lambda *_: {
-        "NDFC_RUNNER_USERNAME": "user", "NDFC_RUNNER_PASSWORD": "placeholder"})
+        "NDFC_RUNNER_USERNAME": "user", "NDFC_RUNNER_PASSWORD": "placeholder",
+        "CISCO_USERNAME": "admin", "CISCO_PASSWORD": "admin-placeholder"})
     calls = []
     monkeypatch.setattr(ndfc_fabric, "ensure_fabric", lambda *args: (
         calls.append(("fabric", args[-1])), {"fabric": "SECOND-FABRIC"})[1])
