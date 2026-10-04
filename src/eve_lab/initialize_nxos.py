@@ -52,25 +52,25 @@ class NxosConsole(Console):
     """NX-OS configuration-mode initialization; credentials are shared CISCO_* values."""
     def initialize(self, commands, username=None, password=None):
         self.command('terminal length 0', require_echo=True)
-        boot_state = self.command('show startup-config | include boot', require_echo=True)
-        if re.search(r'%\s*(?:Invalid|Error|Failed)', boot_state, re.I):
-            raise RuntimeError('NX-OS saved boot configuration is unavailable')
         boot_commands = [command for command in commands if command.startswith('boot nxos bootflash:')]
         if len(boot_commands) != 1:
-            raise ValueError('NX-OS bootstrap requires exactly one boot image')
+            raise ValueError('NX-OS bootstrap requires exactly one declared boot image')
         expected_image = boot_commands[0].split('bootflash:', 1)[1]
-        boot_matches = re.search(r'(?m)^\s*boot nxos bootflash:/?' +
-                                 re.escape(expected_image) + r'\s*$', boot_state) is not None
+        # EVE selects the active NX-OS image. NXOSv can stall on `boot nxos` while
+        # leaving the boot variable unset, so validate the running image only.
+        version = self.command('show version', timeout=120, require_echo=True)
+        if not re.search(r'(?<![A-Za-z0-9_.-])' + re.escape(expected_image) +
+                         r'(?![A-Za-z0-9_.-])', version):
+            raise RuntimeError('NX-OS running image differs from declared boot image')
         self.command('configure terminal', require_echo=True)
         for index, command in enumerate(commands, start=1):
-            if command == boot_commands[0] and boot_matches:
+            if command == boot_commands[0]:
                 continue
             try:
                 self.command(command, require_echo=True)
             except RuntimeError as error:
                 raise RuntimeError(f"NX-OS configuration command {index} failed: {error}") from error
         self.command('end', require_echo=True)
-        self.command('terminal length 0', require_echo=True)
         saved = self.command('copy running-config startup-config', timeout=120,
                              require_echo=True)
         if re.search(r'%\s*(?:Invalid|Error|Failed)', saved, re.I):
