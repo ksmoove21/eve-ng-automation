@@ -37,3 +37,16 @@ GET /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/tor/fabrics/{fabricName
 After Save, verify the exact `torPairs[].leafSNs` and ToR parent leaf serials; the tested readback reported `Already paired with (...)` and populated `leafSNs` while its `enable` field remained `false`. Verify generated parent Po and child member policies against the physical link map before deployment.
 
 The installed fabric recalculate endpoint is `POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabricName}/config-save`. For a scoped follow-on deployment, use `POST /appcenter/cisco/ndfc/api/v1/lan-fabric/rest/control/fabrics/{fabricName}/config-deploy/{serialNumber}` on only the affected switches. `GET .../config-preview/{serialNumber}?forceShowRun=true`, per-switch deployer history, and live Po/vPC state establish convergence; HTTP 200 alone does not.
+
+## Reusable command
+
+Run `python -m eve_lab.ndfc_tor_pairing <intent.yaml> --site DC2 --check`
+to validate the selected leaf/ToR pair and four declared direct links without
+NDFC access. Omit `--check` to save the association. The command reads
+`topology.yaml` beside the intent file by default; `--topology` selects a
+different topology path. It verifies the four imported switch identities and
+roles, existing leaf and ToR vPC pairs, and the installed six-ID proposal
+before POST. It treats `leafSNs: null` as unpaired even if the GUI row reports
+`enable: true`; saved association requires exact composite leaf and ToR parent
+serial readback. Recalculate, scoped deploy, and operational Po/vPC checks
+remain separate.
