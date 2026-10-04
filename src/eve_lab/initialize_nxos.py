@@ -83,7 +83,7 @@ class NxosConsole(Console):
         # Management is already saved before the potentially slow NX-OSv boot
         # command. Require both running and startup intent; `show boot variables`
         # was empty on this image even when the startup line was present.
-        running_boot = self.command('show running-config | include boot nxos',
+        running_boot = self.command('show running-config',
                                     require_echo=True)
         pattern = r'(?m)^\s*boot nxos bootflash:/?([^\s]+)\s*$'
         saved_boot = re.findall(pattern, startup)
@@ -108,7 +108,7 @@ class NxosConsole(Console):
             raise RuntimeError('NX-OS did not save the declared boot image')
         startup = self.command('show startup-config', timeout=120,
                                require_echo=True)
-        running_boot = self.command('show running-config | include boot nxos',
+        running_boot = self.command('show running-config',
                                     require_echo=True)
         if (not re.search(r'(?m)^\s*boot nxos bootflash:/?' +
                           re.escape(expected_image) + r'\s*$', startup)

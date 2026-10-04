@@ -35,7 +35,7 @@ class NxosInitTests(unittest.TestCase):
         self.assertNotIn('boot nxos bootflash:nxos-image.bin', sent)
         self.assertEqual(sent[-3:], ['copy running-config startup-config',
                                      'show startup-config',
-                                     'show running-config | include boot nxos'])
+                                     'show running-config'])
         self.assertTrue(all(call.kwargs.get('require_echo') is True
                             for call in console.command.call_args_list))
 
@@ -49,7 +49,7 @@ class NxosInitTests(unittest.TestCase):
                 return 'bootflash:///nxos-image.bin'
             if command == 'show startup-config':
                 return next(reads)
-            if command == 'show running-config | include boot nxos':
+            if command == 'show running-config':
                 return next(running_reads)
             return ''
         console.command.side_effect = respond
@@ -72,7 +72,7 @@ class NxosInitTests(unittest.TestCase):
                 return 'bootflash:///nxos-image.bin'
             if command == 'show startup-config':
                 return BOOT_STARTUP
-            if command == 'show running-config | include boot nxos':
+            if command == 'show running-config':
                 return next(running_reads)
             return ''
         console.command.side_effect = respond
@@ -86,7 +86,7 @@ class NxosInitTests(unittest.TestCase):
             'bootflash:///nxos-image.bin' if command == 'show version' else
             STARTUP + 'boot nxos bootflash:/other-image.bin\n'
             if command == 'show startup-config' else
-            '' if command == 'show running-config | include boot nxos' else '')
+            '' if command == 'show running-config' else '')
         with self.assertRaisesRegex(RuntimeError, 'conflicting boot image'):
             NxosConsole.initialize(console, bootstrap_commands(DATA))
         sent = [call.args[0] for call in console.command.call_args_list]
@@ -100,7 +100,7 @@ class NxosInitTests(unittest.TestCase):
                 return 'bootflash:///nxos-image.bin'
             if command == 'show startup-config':
                 return STARTUP
-            if command == 'show running-config | include boot nxos':
+            if command == 'show running-config':
                 return ''
             if command == 'boot nxos bootflash:nxos-image.bin':
                 raise RuntimeError('console timeout')

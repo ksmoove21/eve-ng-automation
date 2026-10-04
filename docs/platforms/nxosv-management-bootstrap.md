@@ -22,3 +22,9 @@ persistence.
 the correct boot line, so it is not the idempotence check. NDFC config-save
 requires the boot variable on imported NX-OS 10.5.2 switches; saved
 startup-config and a later successful reload are the relevant proof gates.
+
+On the installed NX-OSv 10.5(2) CLI, `show running-config | include boot nxos`
+returns `% Invalid command at '^' marker` because the unquoted multiword
+filter is rejected. The initializer reads `show running-config` and parses the
+exact boot line locally instead; it never treats a rejected show command as
+proof that the boot variable is absent.
