@@ -163,4 +163,3 @@ def test_pair_cli_check_selects_dc2_without_live_access(tmp_path, monkeypatch, c
     result = json.loads(capsys.readouterr().out)
     assert result["fabric"] == "SECOND-FABRIC"
     assert len(result["pairs"]) == 3
-
