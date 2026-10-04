@@ -422,7 +422,7 @@ class NexusDashboardInitTests(unittest.TestCase):
                 {"1": {"name": "ND-01", "template": "nd", "status": 2,
                        "console": "telnet", "url": "telnet://eve.test:48469",
                        "sat": 3}},
-                {"3": {"id": 3, "name": "eve-sat03", "online": 1}},
+                {"3": {"id": 3, "name": "satellite-3", "online": 1}},
             ]
             result = initialize(client, {"name": "test"}, root, "default")
         self.assertEqual(result["completed"], ["ND-01"])
@@ -450,12 +450,12 @@ class NexusDashboardInitTests(unittest.TestCase):
                 {"1": {"name": "ND-01", "template": "nd", "status": 2,
                        "console": "telnet", "url": "telnet://eve.test:48469",
                        "sat": 3}},
-                {"3": {"id": 3, "name": "eve-sat03", "online": 1}},
+                {"3": {"id": 3, "name": "satellite-3", "online": 1}},
             ]
             result = initialize(
                 client, {"name": "test"}, root, "default", check=True)
             self.assertEqual(result["planned"][0]["template"], "nd")
-            self.assertEqual(result["planned"][0]["satellite"], "eve-sat03")
+            self.assertEqual(result["planned"][0]["satellite"], "satellite-3")
             self.assertTrue(result["planned"][0]["file"].endswith("-init.yaml"))
             ssh.assert_not_called()
 
