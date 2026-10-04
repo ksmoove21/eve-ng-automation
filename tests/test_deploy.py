@@ -30,11 +30,11 @@ class FakeEve:
             return {"type": "iol" if path.endswith("/iol") else "qemu", "options": {
                 "image": {"list": self.images}, "ram": {"value": 6144},
                 "cpu": {"value": 2}, "ethernet": {"value": 4},
-                "sat": {"value": "-1", "list": {"-1": "any", "0": "master", "1": "eve-sat01"}}}}
+                "sat": {"value": "-1", "list": {"-1": "any", "0": "master", "1": "satellite-1"}}}}
         if path == "cluster":
             return {"1": {"id": 0, "name": "master", "online": 1, "cpu": 16, "live_ram": 131072,
                            "disk": 104857600, "disk_usage": 0},
-                    "2": {"id": 1, "name": "eve-sat01", "online": 1, "cpu": 16, "live_ram": 131072,
+                    "2": {"id": 1, "name": "satellite-1", "online": 1, "cpu": 16, "live_ram": 131072,
                            "disk": 104857600, "disk_usage": 0}}
         if path == "list/networks":
             return {"pnet1": "Cloud1", "bridge": "bridge"}
@@ -150,9 +150,9 @@ class DeploymentTests(unittest.TestCase):
             return {'status': 'READY', 'reason': 'stable'}
         result = apply(self.client, topology, root=Path('.'), image_inspector=image_inspector)
         self.assertEqual(self.client.nodes['1']['sat'], 1)
-        self.assertEqual(result['placement']['R1']['satellite'], 'eve-sat01')
+        self.assertEqual(result['placement']['R1']['satellite'], 'satellite-1')
         self.assertEqual(result['placement']['R1']['image_readiness']['status'], 'READY')
-        self.assertEqual(inspected[0][2:], ('eve-sat01', 'c8000v-17.15.06', 2, None))
+        self.assertEqual(inspected[0][2:], ('satellite-1', 'c8000v-17.15.06', 2, None))
         self.client.nodes['1']['status'] = 0
         apply(self.client, topology, root=Path('.'), image_inspector=image_inspector)
         self.assertEqual(self.client.nodes['1']['sat'], 1)
