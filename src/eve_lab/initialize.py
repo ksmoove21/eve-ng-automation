@@ -35,7 +35,7 @@ from .sdwan_intent import load_and_compile as compile_sdwan
 from .topology import load_topology
 
 
-IOS_TEMPLATES = ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol', 'viosl2')
+IOS_TEMPLATES = ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol', 'vios', 'viosl2')
 
 
 def telnet_console_url(node):

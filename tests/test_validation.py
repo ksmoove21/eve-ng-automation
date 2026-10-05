@@ -1,10 +1,14 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from eve_lab.validation import _checks, _interface_check, _ping_check
+from eve_lab.validation import PLATFORMS, _checks, _interface_check, _ping_check
+from eve_lab import validation_iosxe
 
 
 class ValidationTests(unittest.TestCase):
+    def test_vios_uses_the_existing_ios_validation_adapter(self):
+        self.assertIs(PLATFORMS['vios'], validation_iosxe)
+
     def test_check_schema_accepts_interface_and_ping(self):
         checks = _checks({"validation": [
             {"name": "r1-gi1", "type": "interface", "node": "R1",

@@ -46,6 +46,12 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(console.prompt, 'router#')
         self.assertEqual([c.args[0] for c in console.send.call_args_list], ['', 'enable', 'secret'])
 
+    def test_vios_uses_cisco_enable_login(self):
+        console = self.console(['router>', 'Password:', 'router#'])
+        login(console, 'vios', ['admin', 'password', 'secret'])
+        self.assertEqual(console.prompt, 'router#')
+        self.assertEqual([c.args[0] for c in console.send.call_args_list], ['', 'enable', 'secret'])
+
     @patch('eve_lab.session_discovery.paramiko.SSHClient')
     @patch('eve_lab.session_discovery.credentials', return_value=['admin', 'password', 'secret'])
     @patch('eve_lab.session_discovery.login')

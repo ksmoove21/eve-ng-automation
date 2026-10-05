@@ -31,7 +31,7 @@ class InitTests(unittest.TestCase):
         ssh.assert_not_called()
 
     def test_ios_family_templates_reuse_the_cisco_console_path(self):
-        for template in ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol', 'viosl2'):
+        for template in ('c8000v', 'csr1000v', 'csr1000vng', 'isrv', 'iol', 'vios', 'viosl2'):
             with self.subTest(template=template):
                 self.nodes['7']['template'] = template
                 result = self.run_init(check=True)
