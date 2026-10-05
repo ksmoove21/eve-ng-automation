@@ -199,6 +199,19 @@ Icons must be basenames; environment-specific selections belong in private lab
 intent. Network icon persistence was field-tested through the EVE Pro 7.2.0-4
 native API.
 
+Native cable color, subnet-label text, and line geometry are interface-level
+presentation metadata, separate from bridge attachments. The reusable
+`eve_lab.connection_styles.reconcile_connection_styles` helper resolves semantic
+node/interface or named-network endpoints against the native `/topology`
+response and writes only `/nodes/{id}/style`, using the native GUI payload.
+It requires a stopped lab, checks all requested cables before mutation, and
+verifies style readback and unchanged connection membership. Private connection
+style manifests belong with private lab reference evidence; this helper is an
+explicit presentation operation, separate from ordinary topology apply.
+The native style API was field-tested on EVE Pro 7.2.0-4. Preserve reference
+labels verbatim; missing subnet values require authoritative intent rather than
+invented addressing.
+
 A site activation set is a selection of declared nodes, separate from topology
 construction. The selected-start path must validate the entire set against live
 remote names and node states before starting any member; omitted nodes stay
