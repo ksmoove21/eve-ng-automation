@@ -9,9 +9,9 @@ interrupt_message = true
 description = "Bounded execution runner for independent infrastructure or repository work while Root owns the sprint critical path."
 config_file = "agents/runner.toml"
 
-[agents.coordinator]
-description = "Low-cost sprint control tower and scribe for storyboard, handoffs, ownership, and Git-visible checkpoints."
-config_file = "agents/coordinator.toml"
+[agents.scribe]
+description = "Low-cost sprint control tower and durable synchronization scribe for storyboard, handoffs, ownership, and Git-visible checkpoints."
+config_file = "agents/scribe.toml"
 
 [agents.hygiene]
 description = "On-demand repository hygiene specialist for checkpoint cleanup, stale-state reconciliation, documentation organization, and low-risk maintenance."
