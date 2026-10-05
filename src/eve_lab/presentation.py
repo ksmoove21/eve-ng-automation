@@ -142,6 +142,8 @@ def reconcile_presentation(client, path, document, changes):
     if document is None:
         return {"declared": 0, "matched": 0}
     validate_presentation(document)
+    if "regions" not in document and "labels" not in document:
+        return {"declared": 0, "matched": 0}
     endpoint = path + "/textobjects"
     current = _indexed(client.request("GET", endpoint))
     by_name = {}

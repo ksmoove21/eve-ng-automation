@@ -52,6 +52,34 @@ class PresentationTests(unittest.TestCase):
             }],
         }
 
+    def test_hidden_networks_preserve_unmanaged_duplicate_annotations(self):
+        client = FakeTextObjects()
+        client.objects = {
+            "1": {"id": 1, "name": "legacy", "data": "first"},
+            "2": {"id": 2, "name": "legacy", "data": "second"},
+        }
+        before = copy.deepcopy(client.objects)
+        changes = []
+        result = reconcile_presentation(
+            client, "labs/test.unl",
+            {"version": 1, "hidden_networks": ["management"]}, changes,
+        )
+        self.assertEqual(result, {"declared": 0, "matched": 0})
+        self.assertEqual(client.objects, before)
+        self.assertEqual(client.writes, [])
+        self.assertEqual(changes, [])
+
+    def test_explicit_empty_annotations_prune_managed_objects(self):
+        client = FakeTextObjects()
+        client.objects = {"1": {"id": 1, "name": "legacy"}}
+        changes = []
+        result = reconcile_presentation(
+            client, "labs/test.unl", {"version": 1, "regions": [], "labels": []}, changes,
+        )
+        self.assertEqual(result, {"declared": 0, "matched": 0})
+        self.assertEqual(client.objects, {})
+        self.assertEqual(changes, ["pruned presentation object: legacy"])
+
     def test_compile_validates_and_escapes(self):
 
         document = self.document()

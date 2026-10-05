@@ -1399,8 +1399,10 @@ Keep visual annotations separate from topology semantics in
 `labs/<lab>/presentation.yaml`. Version 1 supports declarative `regions` and
 `labels` and `hidden_networks`; applying the lab reconciles annotations to
 native EVE text objects and hides the named declared networks on the canvas.
-Hidden networks retain their attachments and remain in semantic status. When the
-file exists, undeclared text objects are pruned. Node coordinates and icons stay
+Hidden networks retain their attachments and remain in semantic status. Declaring
+`regions` or `labels` reconciles text objects and prunes undeclared annotations;
+explicit empty arrays clear them. A file containing only `hidden_networks`
+preserves existing annotations. Node coordinates and icons stay
 in `topology.yaml`, while adapter-private bridges for direct links remain hidden.
 
 ```yaml

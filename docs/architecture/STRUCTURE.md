@@ -188,8 +188,10 @@ metadata controls how those objects are rendered. For native EVE Pro canvas
 hiding, cloud (`pnetN`) networks use `hideme=1` readback while direct-link
 backing bridges use `visibility=0`; the cloud `visibility` value can remain `1`
 when its icon is hidden. Optional regions and labels
-belong in `labs/<lab>/presentation.yaml`; when that file exists, the reconciler
-owns the lab's EVE text objects and prunes undeclared ones.
+belong in `labs/<lab>/presentation.yaml`; explicitly declaring either collection
+gives the reconciler ownership of the lab's EVE text objects, including pruning
+undeclared objects. Explicit empty collections clear annotations. A document
+containing only network visibility metadata preserves native text objects.
 
 A site activation set is a selection of declared nodes, separate from topology
 construction. The selected-start path must validate the entire set against live
