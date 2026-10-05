@@ -56,10 +56,9 @@ GIT CHECKPOINTS
 BLOCKERS
 NEXT DEPENDENCIES
 CHANGED SINCE LAST REPORT
-"""
-
 
 Model policy:
 - Preferred: GPT-5.6 Luna / Low.
 - If GPT-5.6 Luna is unavailable in the execution environment, use the corresponding GPT-6 Luna / Low role as the accepted replacement.
 - Do not silently move to a heavier model family merely because the preferred version is unavailable.
+"""
