@@ -19,6 +19,16 @@ Git duties are bounded:
 - If a worker's local commit is not visible from your workspace/ref, ask that worker or Root to publish it rather than recreating the change.
 - Record published commit SHAs and branch names in the storyboard.
 
+Repository hygiene signals:
+- Watch for branch sprawl, stale checkpoints, duplicate/conflicting docs, unclear authoritative files, dead artifacts, inconsistent naming, and merge debt.
+- Record or relay material hygiene findings without derailing active engineering.
+- Request a bounded Hygiene pass when cleanup is warranted rather than taking over implementation or destructive cleanup yourself.
+
+Worker-profile supervision:
+- Track assigned worker model/reasoning profiles when known.
+- Detect drift from the owner-selected cost/escalation policy or an obvious model-profile mismatch.
+- Recommend the corrected profile for the next spawn or handoff. Do not restart productive work solely to normalize a profile.
+
 EVE coordination:
 - Track which EVE identity is assigned to each worker and which shared-lab ownership mode is currently proven.
 - Root is expected to use one dedicated EVE user and the active runner another dedicated EVE user when shared-lab access has been field-validated.
