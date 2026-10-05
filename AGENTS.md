@@ -94,7 +94,7 @@ actual disposable lab.
 A bounded syntax, command-prerequisite, API-shape, or exact-version question is
 normal implementation work, not an owner decision by itself. Resolve it through
 focused research and, when useful, delegate the read-only research question to
-the Coordinator/scribe while the implementation worker continues its owned lane.
+the Scribe while the implementation worker continues its owned lane.
 Escalate only when the evidence exposes a real architectural choice, requires
 authority outside the active scope, or no supported path remains after reasonable
 research and field validation.
@@ -152,9 +152,9 @@ Spend context on evidence that changes implementation decisions.
 - Keep sprint prompts task-specific. Standing architecture, repository, safety, and autonomy rules belong in checked-in guidance rather than being repeated verbatim in every prompt.
 - If the client supports context compaction or summarization, use it only after current state and important evidence are durable in the repository or sprint artifacts.
 
-## Nexus Dashboard subagent runner trial
+## Multi-agent orchestration
 
-This branch is testing bounded Codex subagents as parallel execution runners. It is an experiment for the active Nexus Dashboard/NDFC DC1 sprint, not yet a durable project-wide convention.
+Bounded Codex subagents are a durable project-wide orchestration capability for significant multi-hour or multi-lane sprints. Root retains the sprint critical path; Scribe provides coordination and durable synchronization; Runner owns bounded independent execution lanes; Hygiene performs on-demand repository cleanup.
 
 The primary/root agent owns the sprint, critical path, integration decisions, acceptance criteria, and the troubleshooting context of the problem it is actively working. Use the project-scoped `runner` agent for substantial independent work lanes that would otherwise make Root leave that critical path. Start with one runner. Additional agents may be added only when a distinct ready lane exists. The branch configuration caps concurrent spawned threads at three, excluding Root.
 
@@ -173,26 +173,26 @@ Use this escalation order by default:
 A capability ceiling includes repeated misclassification of risk, failure to integrate required cross-system evidence, circular retries despite increased reasoning, inability to make a material engineering judgment safely, or another demonstrated limitation that more reasoning depth on the same model is unlikely to fix.
 
 For this trial:
-- Coordinator: GPT-5.6 Luna / Low for status, messaging, storyboard, and bookkeeping. Prefer Luna Medium/High before moving to Terra when deeper coordination reasoning is needed.
+- Scribe: prefer GPT-5.6 Luna / Low for status, messaging, storyboard, synchronization, and bookkeeping. If GPT-5.6 Luna is unavailable, GPT-6 Luna / Low is the accepted replacement. Prefer more reasoning on the selected low-cost Scribe model before moving to a heavier model family.
 - Hygiene: GPT-5.6 Terra / Medium for on-demand repository cleanup and maintenance at milestone/closeout checkpoints or when material drift is detected. Prefer Terra High/XHigh before moving to Sol when cleanup requires deeper reasoning.
 - Runner: start at GPT-5.6 Terra / Medium. Escalate an individual Runner only when its evidence shows the current step is insufficient: GPT-5.6 Terra / High -> GPT-5.6 Sol / Medium -> GPT-5.6 Sol / High. If GPT-6 Terra is actually exposed by the execution environment, continue GPT-6 Terra / Medium -> GPT-6 Terra / High -> GPT-6 Sol / Medium. Do not assume an unavailable model exists, and do not advance a different Runner merely because its peer needed escalation.
 - Root: parent-selected model for the sprint critical path; prefer reasoning-effort escalation before model-tier escalation when the current model remains appropriate.
 
 Do not keep a heavier model on a task solely because it was previously used there. Do not repeatedly retry the same failing task at the same model/reasoning setting. If a cheaper role proves sufficient, prefer it on future spawns. If a role stalls, return the problem to Root with evidence and recommend the next reasoning-effort step before recommending a model-tier change.
 
-Spawn the project-scoped `coordinator` agent when beginning the multi-agent trial.
-The coordinator is GPT-5.6 Luna / Low and acts only as control tower/scribe. It
+Spawn the project-scoped `scribe` agent by default for significant multi-hour or multi-agent sprints.
+The scribe is GPT-5.6 Luna / Low and acts only as control tower/scribe. It
 maintains the private sprint storyboard, tracks worker/resource/EVE ownership,
 records Git-visible checkpoints, and relays dependency-changing handoffs between
 Root and runners. It does not perform network engineering, use EVE, or operate
 device consoles. Prefer event-driven worker updates; while the sprint is
-actively running, the coordinator may do a lightweight reconciliation at about
+actively running, the scribe may do a lightweight reconciliation at about
 15-minute intervals if kept active for that purpose. Silence is preferred when
 nothing changed.
 
 Owner-gated work is an exception to ordinary quiet-state reporting. If any active
 lane cannot continue without owner authorization or a concrete owner decision,
-Coordinator must immediately put an `ATTENTION: OWNER ACTION REQUIRED` block at
+Scribe must immediately put an `ATTENTION: OWNER ACTION REQUIRED` block at
 the top of the active status artifact with the start time, blocked lane, exact
 decision needed, and whether offline work continues. Root and status monitors
 must treat that marker as the highest-priority sprint state and must not classify
@@ -215,7 +215,7 @@ Never share one EVE username across concurrent agents.
 
 For this trial, Root and the active runner should use distinct EVE identities.
 Root retains its assigned EVE user; the runner uses the separate runner EVE user.
-The coordinator never authenticates to EVE.
+The scribe never authenticates to EVE.
 
 EVE Pro documents shared labs/projects and parallel Telnet/VNC consoles across
 users. Treat that as DOCUMENTED but FIELD-TEST REQUIRED for this automation
@@ -238,7 +238,7 @@ through the supported EVE interface without session or ownership problems:
 - Concurrent control-plane use is allowed only on separately owned resources;
   do not issue competing lifecycle mutations against the same node or topology
   object.
-- The coordinator/storyboard records EVE identity assignment, node ownership,
+- The scribe/storyboard records EVE identity assignment, node ownership,
   and any lifecycle handoff that changes who may mutate a resource.
 
 The EVE control plane does not globally serialize guest work. EVE documents
