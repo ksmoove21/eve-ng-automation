@@ -1357,7 +1357,8 @@ links:
 Use the image directory's basename: `/opt/unetlab/addons/qemu/c8000v-17.15.06`
 becomes `c8000v-17.15.06`. `cpu` is the vCPU count, `ethernet` is the Ethernet
 interface count, and optional `ram` is RAM in MB. Optional node fields also include
-`console`, `left`, and `top`; networks accept optional `left` and `top` positions.
+`console`, `left`, and `top`; networks accept optional `left`, `top`, and `icon`
+fields to preserve native canvas placement and icon selection.
 After editing `cpu` or `ram`, run `eve stop <lab>` and `eve apply <lab>` to update
 existing nodes, then `eve start <lab>` when ready. Ethernet interface counts can also be increased on stopped nodes. QEMU counts can decrease with pruning enabled after removing YAML links to the
 ports being removed. Other node types require manual downsizing.

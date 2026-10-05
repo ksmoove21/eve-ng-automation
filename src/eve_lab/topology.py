@@ -85,7 +85,7 @@ def validate(topology: dict):
     allowed = {
         "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top", "icon",
                   "satellite", "required_storage_gib", "required_image_disks", "required_image_disk_names"},
-        "networks": {"name", "type", "left", "top"},
+        "networks": {"name", "type", "left", "top", "icon"},
         "links": {"node", "interface", "network"},
     }
     for kind, fields in allowed.items():
@@ -104,10 +104,11 @@ def validate(topology: dict):
             if item["name"] in names[kind]:
                 raise ValueError(f"Duplicate {kind} name: {item['name']}")
             names[kind].add(item["name"])
-    for node in topology["nodes"]:
+    for node in topology["nodes"] + topology["networks"]:
         if "icon" in node and (not isinstance(node["icon"], str) or not node["icon"].strip()
                                or any(c in node["icon"] for c in ("/", "\\", "\n", "\r"))):
             raise ValueError("icon must be an EVE icon basename")
+    for node in topology["nodes"]:
         if node["type"] not in ("qemu", "iol"):
             raise ValueError("Deployment currently supports QEMU and IOL nodes only")
         if "/" in node["image"] or "\\" in node["image"]:

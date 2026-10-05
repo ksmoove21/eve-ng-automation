@@ -325,7 +325,7 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     desired_networks = {network['name']: dict(network) for network in topology['networks']}
     for name in sorted(live_networks):
         if name not in desired_networks:
-            desired_networks[name] = {key: networks[name][key] for key in ('name', 'type', 'left', 'top') if key in networks[name]}
+            desired_networks[name] = {key: networks[name][key] for key in ('name', 'type', 'left', 'top', 'icon') if key in networks[name]}
             deferred.append({'kind': 'network', 'name': name, 'reason': 'Deletion would disconnect a running node'})
         elif desired_networks[name]['type'] != networks[name]['type']:
             desired_networks[name]['type'] = networks[name]['type']
@@ -480,7 +480,7 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
                              if kind == "nodes" and key in desired
                              and str(desired[key]) != str(actual.get(key))}
                 if kind == "networks":
-                    resources = {key: desired[key] for key in ("type", "left", "top")
+                    resources = {key: desired[key] for key in ("type", "left", "top", "icon")
                                  if key in desired and str(desired[key]) != str(actual.get(key))}
                     if resources:
                         if not prune and any(str(node.get("status")) != "0" for node in nodes.values()):

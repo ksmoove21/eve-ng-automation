@@ -709,10 +709,10 @@ class DeploymentTests(unittest.TestCase):
     def test_apply_updates_network_settings(self):
         apply(self.client, self.topology)
         network = self.topology['networks'][0]
-        network.update(type='bridge', left=300, top=350)
+        network.update(type='bridge', left=300, top=350, icon='Server.svg')
         apply(self.client, self.topology)
         actual = next(iter(self.client.networks.values()))
-        for key in ('type', 'left', 'top'):
+        for key in ('type', 'left', 'top', 'icon'):
             self.assertEqual(actual[key], network[key])
         self.assertEqual(apply(self.client, self.topology)['changes'], [])
 

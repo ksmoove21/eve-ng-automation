@@ -193,6 +193,12 @@ gives the reconciler ownership of the lab's EVE text objects, including pruning
 undeclared objects. Explicit empty collections clear annotations. A document
 containing only network visibility metadata preserves native text objects.
 
+Declared network `icon`, `left`, and `top` fields reconcile native EVE canvas
+metadata alongside network type, with readback and running-node safeguards.
+Icons must be basenames; environment-specific selections belong in private lab
+intent. Network icon persistence was field-tested through the EVE Pro 7.2.0-4
+native API.
+
 A site activation set is a selection of declared nodes, separate from topology
 construction. The selected-start path must validate the entire set against live
 remote names and node states before starting any member; omitted nodes stay
