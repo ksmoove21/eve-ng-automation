@@ -28,10 +28,10 @@ class NxosInitTests(unittest.TestCase):
             'vrf context management', 'ip route 0.0.0.0/0 192.0.2.1', 'exit',
         ])
         console = MagicMock(spec=NxosConsole)
-        console.command.side_effect = ['', 'bootflash:///nxos-image.bin'] + [''] * 11 + [BOOT_STARTUP, BOOT_STARTUP]
+        console.command.side_effect = ['', '', 'bootflash:///nxos-image.bin'] + [''] * 11 + [BOOT_STARTUP, BOOT_STARTUP]
         NxosConsole.initialize(console, commands)
         sent = [call.args[0] for call in console.command.call_args_list]
-        self.assertEqual(sent[:3], ['terminal length 0', 'show version', 'configure terminal'])
+        self.assertEqual(sent[:4], ['terminal length 0', 'terminal width 511', 'show version', 'configure terminal'])
         self.assertNotIn('boot nxos bootflash:nxos-image.bin', sent)
         self.assertEqual(sent[-3:], ['copy running-config startup-config',
                                      'show startup-config',
@@ -115,11 +115,11 @@ class NxosInitTests(unittest.TestCase):
 
     def test_running_image_mismatch_stops_before_configuration(self):
         console = MagicMock(spec=NxosConsole)
-        console.command.side_effect = ['', 'bootflash:///wrong-image.bin']
+        console.command.side_effect = ['', '', 'bootflash:///wrong-image.bin']
         with self.assertRaisesRegex(RuntimeError, 'running image differs'):
             NxosConsole.initialize(console, bootstrap_commands(DATA))
         self.assertEqual([call.args[0] for call in console.command.call_args_list],
-                         ['terminal length 0', 'show version'])
+                         ['terminal length 0', 'terminal width 511', 'show version'])
 
     def test_explicit_lacp_prerequisite(self):
         self.assertEqual(bootstrap_commands({**DATA, 'enable_lacp': True})[-1], 'feature lacp')
@@ -142,13 +142,13 @@ class NxosInitTests(unittest.TestCase):
                             'management_gateway: 192.0.2.1\nboot_image: nxos-image.bin\n')
             self.assertEqual(load_bootstrap(path), bootstrap_commands(DATA))
         console = MagicMock(spec=NxosConsole)
-        console.command.side_effect = ['', 'bootflash:///nxos-image.bin'] + [''] * 10 + ['% Error']
+        console.command.side_effect = ['', '', 'bootflash:///nxos-image.bin'] + [''] * 10 + ['% Error']
         with self.assertRaises(RuntimeError):
             NxosConsole.initialize(console, bootstrap_commands(DATA))
 
     def test_missing_startup_route_fails_even_when_copy_prompt_returns(self):
         console = MagicMock(spec=NxosConsole)
-        console.command.side_effect = ['', 'bootflash:///nxos-image.bin'] + [''] * 12 + [
+        console.command.side_effect = ['', '', 'bootflash:///nxos-image.bin'] + [''] * 12 + [
             'hostname leaf1\n ip address 192.0.2.10/24\n']
         with self.assertRaisesRegex(RuntimeError, 'startup-config lacks'):
             NxosConsole.initialize(console, bootstrap_commands(DATA))

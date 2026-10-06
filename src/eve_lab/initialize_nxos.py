@@ -52,6 +52,7 @@ class NxosConsole(Console):
     """NX-OS configuration-mode initialization; credentials are shared CISCO_* values."""
     def initialize(self, commands, username=None, password=None):
         self.command('terminal length 0', require_echo=True)
+        self.command('terminal width 511', require_echo=True)
         boot_commands = [command for command in commands if command.startswith('boot nxos bootflash:')]
         if len(boot_commands) != 1:
             raise ValueError('NX-OS bootstrap requires exactly one declared boot image')
