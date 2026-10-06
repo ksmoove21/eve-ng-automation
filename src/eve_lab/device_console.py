@@ -454,6 +454,10 @@ class Console:
             (lambda value, **options: self.command(value, require_echo=True, **options))
             if require_echo else self.command
         )
+        if require_echo:
+            # IOS truncates/redraws long input at its configured terminal width.
+            # Prepare EXEC display before requiring complete configuration echoes.
+            send_command('terminal width 512')
         send_command('configure terminal')
         for index, command in enumerate(commands, start=1):
             try:

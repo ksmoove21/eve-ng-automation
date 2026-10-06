@@ -292,6 +292,15 @@ class ConsoleTests(unittest.TestCase):
         c.initialize(['ip domain name example.com'], require_echo=True)
         self.assertTrue(all(call.kwargs.get('require_echo') is True
                             for call in c.command.call_args_list))
+        self.assertEqual([call.args[0] for call in c.command.call_args_list[:2]],
+                         ['terminal width 512', 'configure terminal'])
+
+    def test_echo_init_stops_before_config_if_terminal_setup_fails(self):
+        c = Console(MagicMock())
+        c.command = MagicMock(side_effect=RuntimeError('Cisco rejected a command'))
+        with self.assertRaisesRegex(RuntimeError, 'rejected'):
+            c.initialize(['hostname R0'], require_echo=True)
+        c.command.assert_called_once_with('terminal width 512', require_echo=True)
 
     def test_backup_strips_echo_and_checks_complete(self):
         c, _ = self.console(['terminal length 0\nR0#',

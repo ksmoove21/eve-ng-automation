@@ -45,3 +45,10 @@ annotation on the remote PE next hop. The route parser accepts that exact
 annotation and retains those addresses as `global_next_hops`; unknown scopes
 and incomplete descriptors still fail validation. This records recursive
 lookup scope, not proof of customer payload delivery.
+
+IOSv 15.9(3)M8 defaulted to an 80-column terminal in the same lab. A long
+VRF BGP redistribution command executed but its full echo was not retained,
+so echo-correlated initialization stopped. `terminal width 512` was accepted
+and the command subsequently completed with full echo verification. IOS
+initialization that requires command echoes now prepares that session width
+before entering configuration mode; terminal width is session state.
