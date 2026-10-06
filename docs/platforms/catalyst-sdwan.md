@@ -181,3 +181,19 @@ missing or down required paths fail. Same-site paths are excluded. Intentionally
 isolated paths may be absent or down; an up isolated path or an unknown peer/color
 fails the declared intent. This helper does not establish controller/OMP health,
 configuration persistence, or service payload forwarding; qualify those separately.
+
+
+## Serial console recovery prerequisite
+
+DOCUMENTED: Catalyst 8000V console selection depends on the installed image and
+persisted console settings. Cisco documents serial/automatic versus virtual VGA
+console selection, including persistence in a Manager device template. A silent
+serial stream with a reachable QEMU monitor does not establish a console-selection
+fault; correlate it with guest forwarding, boot state, and configured console
+mode. The documented controller-mode procedure includes reset/mode transitions;
+do not apply it as a generic harmless console nudge or assume configuration is
+preserved. Recover access and qualify the exact image before changing console
+mode. This possibility has not been field-confirmed on 17.15.01a.
+
+Sources: [Cisco Catalyst 8000V console access](https://www.cisco.com/c/en/us/td/docs/routers/C8000V/Configuration/c8000v-installation-configuration-guide/configure-console-access/configuring-console-access.html),
+[Cisco SD-WAN controller-mode console changes](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/configuration/sdwan-xe-gs-book/install-upgrade-17-2-later.html).
