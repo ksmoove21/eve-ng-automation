@@ -21,3 +21,9 @@ is version-specific and older listed serial examples do not qualify11.1.
 are model/license-specific: the published VM-300 memory minimum is9GB and its
 disk minimum60GB. A4-vCPU/8GiB guest reaching VGA login is an observation,
 not a supported resource-profile claim or proof of dataplane readiness.
+
+The SSH helper accepts an explicit `known_hosts` file in addition to system
+keys. Enroll only a public key whose fingerprint matches trusted guest console
+output (`show ssh-fingerprints hash-type sha256 format base64` onPAN-OS11.1).
+The file can remain in ignored workspace state. Missing or changed keys still
+fail; this does not enable automatic key acceptance or disable verification.

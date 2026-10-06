@@ -27,11 +27,13 @@ def management_targets(root, lab, node_name=None, management_ip=None):
     return result
 
 
-def connect_palo(host_ssh, address, username, password, timeout):
+def connect_palo(host_ssh, address, username, password, timeout, *, known_hosts=None):
     deadline = time.monotonic() + timeout
     while True:
         device = paramiko.SSHClient()
         device.load_system_host_keys()
+        if known_hosts is not None:
+            device.load_host_keys(str(Path(known_hosts)))
         tunnel = None
         try:
             remaining = max(1, min(10, deadline - time.monotonic()))

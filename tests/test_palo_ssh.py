@@ -49,6 +49,27 @@ class PaloSSHTests(unittest.TestCase):
         device.set_missing_host_key_policy.assert_not_called()
 
     @patch('eve_lab.palo_ssh.paramiko.SSHClient')
+    def test_explicit_host_key_file_keeps_strict_verification(self, factory):
+        path = self.root / 'verified-hosts'
+        connect_palo(MagicMock(), '192.0.2.10', 'admin', 'testpass', 60,
+                     known_hosts=path)
+        device = factory.return_value
+        device.load_system_host_keys.assert_called_once_with()
+        device.load_host_keys.assert_called_once_with(str(path))
+        device.set_missing_host_key_policy.assert_not_called()
+
+    @patch('eve_lab.palo_ssh.paramiko.SSHClient')
+    def test_changed_key_fails_even_with_explicit_verified_file(self, factory):
+        key = MagicMock()
+        factory.return_value.connect.side_effect = paramiko.BadHostKeyException('192.0.2.10', key, key)
+        with self.assertRaisesRegex(RuntimeError, 'host key changed'):
+            connect_palo(MagicMock(), '192.0.2.10', 'admin', 'testpass', 60,
+                         known_hosts=self.root / 'verified-hosts')
+        factory.return_value.connect.assert_called_once()
+        factory.return_value.close.assert_called_once()
+        factory.return_value.set_missing_host_key_policy.assert_not_called()
+
+    @patch('eve_lab.palo_ssh.paramiko.SSHClient')
     def test_authentication_failure_does_not_retry_or_leak_password(self, factory):
         factory.return_value.connect.side_effect = paramiko.AuthenticationException('testpass')
         with self.assertRaisesRegex(RuntimeError, 'Palo SSH authentication') as error:
