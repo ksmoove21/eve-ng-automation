@@ -34,3 +34,6 @@ Current platform notes:
 - [NX-OSv management bootstrap](nxosv-management-bootstrap.md): active-image preflight and repeatable management configuration.
 
 - [IOSv MPLS provider validation](iosv-mpls.md)
+
+- [EVE Pro native link quality](eve-pro-link-quality.md): fixed per-direction delays, semantic cable binding and readback preservation.
+- [PAN-OS console qualification](paloalto-console.md): distinguish silent serial transport from guest boot and VGA readiness.
