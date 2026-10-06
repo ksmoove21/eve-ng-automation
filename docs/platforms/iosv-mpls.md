@@ -26,9 +26,11 @@ setup is declined by the existing IOS console bootstrap. A three-router
 PE-P-PE field test also observed FULL OSPF adjacencies, operational LDP sessions
 in label space zero, numeric outgoing labels at each PE for the remote PE
 loopback, and `Pop Label` entries at the P router. Reciprocal PE loopback probes
-sourced from Loopback0 received five replies out of five. VPNv4 and customer
-VRF acceptance are separate proof stages; these observations do not imply their
-completion.
+sourced from Loopback0 received five replies out of five. The same field test established global VPNv4
+peering with zero received customer prefixes, PE-only customer VRFs with RD/RT
+policy, and full startup/running configuration equality on all three routers.
+Customer-facing ports stayed unassigned and shut down. Global VPNv4 summary
+is field-tested; a VRF-scoped query remains unqualified for this image.
 
 ## Proof boundary
 
