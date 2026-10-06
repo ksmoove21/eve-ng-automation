@@ -37,3 +37,20 @@ address including its prefix length. A bare address was rejected as an invalid
 reference. Set OSPF backbone area type `normal` explicitly before adding its
 interface; the unset area type failed the backbone stub/NSSA constraint.
 These observations qualify parser prerequisites, not routing convergence.
+
+## Session diagnostics after routing changes
+
+On PAN-OS 11.1.0, `show session all filter source <host-IP> destination
+<host-IP>` accepts exact host addresses. Field validation rejected a CIDR
+network in the destination filter. Keep diagnostics and any authorized session
+clear bounded to explicit endpoint pairs or a verified session ID.
+
+A current FIB route alone does not establish that an existing UDP session has
+correct reverse-flow zone state. Field readback observed a session retaining an
+old reverse zone while its egress interface matched the new FIB route; its
+reverse packet count remained zero. Inspect `show session id <ID>` alongside
+routing and packet evidence. Palo documents long-lived session behavior after
+routing changes and targeted session cleanup in its
+[session reroute knowledge-base article](https://knowledgebase.paloaltonetworks.com/KCSArticleDetail?id=kA10g000000PLlfCAG).
+Requalify traffic after recovery; do not infer success from a session-clear
+acknowledgment or broaden firewall policy to mask cached state.
