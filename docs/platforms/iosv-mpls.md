@@ -52,3 +52,11 @@ so echo-correlated initialization stopped. `terminal width 512` was accepted
 and the command subsequently completed with full echo verification. IOS
 initialization that requires command echoes now prepares that session width
 before entering configuration mode; terminal width is session state.
+
+The same image subsequently passed customer PE-CE OSPF in a VRF while
+provider OSPF ran in the global table, including VPN route exchange, reciprocal
+customer probes and increasing provider label counters. Reusing the global
+process router ID for the customer process was rejected with `% OSPF: router-id
+... in use by ospf process ...`; a distinct customer router ID was saved and
+adopted after a process-scoped restart. Console commands now treat that exact
+rejection family as an error instead of claiming configuration success.

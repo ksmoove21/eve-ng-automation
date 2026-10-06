@@ -436,7 +436,10 @@ class Console:
             _PRIVILEGED_PROMPT, max(.1, deadline - time.monotonic()),
             latest=True, redisplay=True)
         response = echoed + output
-        if re.search(r'^%\s*(?:Invalid|Incomplete|Ambiguous|Error|Authorization|Access denied)', response, re.M | re.I):
+        if re.search(
+                r'^%\s*(?:Invalid|Incomplete|Ambiguous|Error|Authorization|Access denied|'
+                r'OSPF:\s*router-id\s+\S+\s+in use by ospf process\s+\d+)',
+                response, re.M | re.I):
             raise RuntimeError('Cisco rejected a command; inspect the console (output omitted)')
         self.prompt = match.group().strip()
         lines = (echoed + output[:match.start()]).splitlines()

@@ -286,6 +286,13 @@ class ConsoleTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'rejected'):
             c.command('ip domain name example.com', require_echo=True)
 
+    def test_echo_correlation_rejects_duplicate_ospf_router_id(self):
+        c, _ = self.console([
+            'router-id 192.0.2.1\n% OSPF: router-id 192.0.2.1 in use by ospf process 100\nR0(config-router)#',
+        ])
+        with self.assertRaisesRegex(RuntimeError, 'rejected'):
+            c.command('router-id 192.0.2.1', require_echo=True)
+
     def test_init_can_require_each_command_echo(self):
         c = Console(MagicMock())
         c.command = MagicMock(return_value='[OK]\n')
