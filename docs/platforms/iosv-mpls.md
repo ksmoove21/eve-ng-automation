@@ -39,3 +39,9 @@ and forwarding-table state. A VPNv4 peer with zero received prefixes can be
 established before customer attachments exist. These checks alone do not prove
 customer VPN route exchange, payload delivery, or isolation. Prove those with
 VRF routing and customer traffic tests after customer edges are attached.
+
+Imported VPN routes on IOSv 15.9(3)M8 were observed with a `(default)`
+annotation on the remote PE next hop. The route parser accepts that exact
+annotation and retains those addresses as `global_next_hops`; unknown scopes
+and incomplete descriptors still fail validation. This records recursive
+lookup scope, not proof of customer payload delivery.

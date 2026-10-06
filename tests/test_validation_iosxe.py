@@ -110,6 +110,18 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(parse_route(direct)['next_hops'], [])
         self.assertTrue(parse_route('Routing Table: BLUE\n' + ROUTE)['present'])
 
+    def test_route_global_recursive_next_hops(self):
+        scoped = 'Routing Table: BLUE\n' + ROUTE.replace('198.51.100.1,', '198.51.100.1 (default),')
+        result = parse_route(scoped)
+        self.assertEqual(result['next_hops'], ['198.51.100.1', '198.51.100.2'])
+        self.assertEqual(result['global_next_hops'], ['198.51.100.1'])
+        for malformed in (scoped.replace('(default)', '(unknown)'),
+                          scoped.replace('198.51.100.1', '999.51.100.1'),
+                          scoped.replace('198.51.100.2,', '198.51.100.2 (unknown),'),
+                          scoped.replace('Route metric is 2,', '', 1)):
+            with self.subTest(output=malformed), self.assertRaises(RuntimeError):
+                parse_route(malformed)
+
     def test_route_explicit_absence(self):
         for response in ('% Network not in table', '% Subnet not in table',
                          'Routing Table: BLUE\n% Network not in table\n'):

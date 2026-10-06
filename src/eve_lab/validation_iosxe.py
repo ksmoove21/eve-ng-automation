@@ -138,15 +138,19 @@ def parse_route(output):
     parts = output.split('Routing Descriptor Blocks:')
     if len(parts) != 2:
         raise RuntimeError('Missing route descriptors')
-    descriptors = re.findall(r'^\s*\*?\s*(\d+\.\d+\.\d+\.\d+|directly connected)(?:,.*)?\s*$', parts[1], re.M)
+    descriptors = re.findall(r'^\s*\*?\s*(\d+\.\d+\.\d+\.\d+|directly connected)( \(default\))?(?:,.*)?\s*$', parts[1], re.M)
     metrics = re.findall(r'^\s*Route metric is \d+,', parts[1], re.M)
     if not descriptors or len(metrics) != len(descriptors):
         raise RuntimeError('Incomplete route descriptors')
     try:
-        hops = sorted({str(IPv4Address(value)) for value in descriptors if value != 'directly connected'})
+        hops = sorted({str(IPv4Address(value)) for value, scope in descriptors if value != 'directly connected'})
     except ValueError:
         raise RuntimeError('Invalid route next hop in response') from None
-    return {'prefix': prefix, 'next_hops': hops, 'present': True}
+    result = {'prefix': prefix, 'next_hops': hops, 'present': True}
+    global_hops = sorted({str(IPv4Address(value)) for value, scope in descriptors if scope and value != 'directly connected'})
+    if global_hops:
+        result['global_next_hops'] = global_hops
+    return result
 
 
 def parse_bgp(output):
