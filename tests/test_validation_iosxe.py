@@ -66,7 +66,7 @@ class SchemaTests(unittest.TestCase):
             check('default-route', expected='absent', vrf='BLUE\nreload'),
             check('default-route', expected='absent', vrf='BLUE | include x'),
             check('bgp-neighbor', neighbor='192.0.2.2', state='full'),
-            check('bgp-neighbor', neighbor='192.0.2.2', state='idle', address_family='vpnv4'),
+            check('bgp-neighbor', neighbor='192.0.2.2', state='idle', address_family='vpnv6'),
             check('bgp-neighbor', neighbor='2001:db8::2', state='idle'),
             check('ospf-neighbor', neighbor='bad', state='full'),
             check('isis-adjacency', neighbor='peer', state='established'),

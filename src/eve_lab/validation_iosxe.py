@@ -5,7 +5,7 @@ registry. Other platforms must provide explicit capabilities.
 """
 from ipaddress import IPv4Address, IPv4Network, ip_address
 import re
-from . import validation_ipsec
+from . import validation_ipsec, validation_mpls
 
 
 FIELDS = {
@@ -18,6 +18,7 @@ FIELDS = {
     'mtu-ping': {'destination', 'packet_size', 'df', 'min_success_rate'},
 }
 FIELDS.update(validation_ipsec.FIELDS)
+FIELDS.update(validation_mpls.FIELDS)
 FIELDS.update({
     "iosxe-vlan": {"vlan"},
     "iosxe-switchport": {"interface", "mode", "vlans"},
@@ -37,6 +38,8 @@ def validate_check(check):
     kind = check['type']
     if kind in validation_ipsec.FIELDS:
         return validation_ipsec.validate_check(check)
+    if kind in validation_mpls.FIELDS:
+        return validation_mpls.validate_check(check)
     if kind == "iosxe-vlan":
         if type(check.get("vlan")) is not int or not 1 <= check["vlan"] <= 4094:
             raise ValueError("vlan must be an integer from 1 to 4094")
@@ -95,9 +98,9 @@ def validate_check(check):
             (ip_address if kind == 'bgp-neighbor' else IPv4Address)(check['neighbor'])
         if kind == 'bgp-neighbor':
             family = check.get('address_family', 'ipv4-unicast')
-            if family not in ('ipv4-unicast', 'ipv6-unicast'):
-                raise ValueError('BGP supports ipv4-unicast and ipv6-unicast only')
-            if ip_address(check['neighbor']).version != (4 if family == 'ipv4-unicast' else 6):
+            if family not in ('ipv4-unicast', 'ipv6-unicast', 'vpnv4'):
+                raise ValueError('Unsupported BGP address family')
+            if ip_address(check['neighbor']).version != (6 if family == 'ipv6-unicast' else 4):
                 raise ValueError('BGP neighbor address must match address_family')
     else:
         if not isinstance(check.get('destination'), str):
@@ -263,11 +266,16 @@ def parse_ping(output):
 
 def command_for(check):
     kind = check['type']
+    if kind in validation_mpls.FIELDS:
+        return validation_mpls.command_for(check)
     if kind in ('route', 'default-route'):
         network = IPv4Network(check['prefix'] if kind == 'route' else '0.0.0.0/0')
         scope = ' vrf ' + check['vrf'] if 'vrf' in check else ''
         return f'show ip route{scope} {network.network_address} {network.netmask}'
     if kind == 'bgp-neighbor':
+        if check.get('address_family') == 'vpnv4':
+            scope = 'vrf ' + check['vrf'] if 'vrf' in check else 'all'
+            return 'show ip bgp vpnv4 ' + scope + ' summary'
         family = check.get('address_family', 'ipv4-unicast').split('-')[0]
         scope = family + ' unicast'
         if 'vrf' in check:
@@ -290,6 +298,8 @@ def evaluate(console, check):
     """Return measured evidence, failing closed on unsupported output."""
     if check["type"] in validation_ipsec.FIELDS:
         return validation_ipsec.evaluate(console, check)
+    if check["type"] in validation_mpls.FIELDS:
+        return validation_mpls.evaluate(console, check)
     validate_check(check)
     if check["type"] in (
             "iosxe-vlan", "iosxe-switchport", "iosxe-transparent-bridge"):
@@ -307,7 +317,9 @@ def evaluate(console, check):
             evidence.update(destination=check['destination'], success_rate=best,
                             minimum_success_rate=minimum, attempts=attempts)
         else:
-            output = console.command(command)
+            output = (console.command(command, require_echo=True)
+                      if kind == 'bgp-neighbor' and check.get('address_family') == 'vpnv4'
+                      else console.command(command))
             if kind in ('route', 'default-route'):
                 observed = parse_route(output)
                 prefix = check['prefix'] if kind == 'route' else '0.0.0.0/0'

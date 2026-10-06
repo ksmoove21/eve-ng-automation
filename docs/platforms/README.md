@@ -32,3 +32,5 @@ Current platform notes:
 - [Nexus Dashboard / Fabric Controller](nexus-dashboard.md)
 
 - [NX-OSv management bootstrap](nxosv-management-bootstrap.md): active-image preflight and repeatable management configuration.
+
+- [IOSv MPLS provider validation](iosv-mpls.md)

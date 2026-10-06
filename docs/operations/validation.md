@@ -25,7 +25,7 @@ closed. The baseline lab has not been expanded.
 
 ## Implemented scope
 
-`c8000v` remains enabled through the IOS XE adapter in
+IOS-family templates, including `c8000v` and `vios`, use the IOS adapter in
 `src/eve_lab/validation_iosxe.py`. Catalyst 9000v UADP `cat9kvuadp` nodes use
 the profile-aware adapter in `src/eve_lab/validation_cat9kv.py`. Palo Alto
 firewall nodes use `src/eve_lab/validation_panos.py`, and supported Nexus 9000v
@@ -40,6 +40,8 @@ without an explicit adapter still fail preflight.
 | `default-route` | `expected` | `vrf` |
 | `bgp-neighbor` | `neighbor`, `state` | `vrf`, `address_family` |
 | `ospf-neighbor` | `neighbor`, `state` | none |
+| `ldp-neighbor` | `neighbor`, `state` (`operational`) | none |
+| `mpls-forwarding` | `prefix`, `expected` | `next_hop`, `action` (`swap` or `pop`) |
 | `isis-adjacency` | `neighbor`, `state` | none |
 | `vrf-ping` | `vrf`, `destination` | `min_success_rate` (default 100) |
 | `mtu-ping` | `destination`, `packet_size`, `df` | `min_success_rate` (default 100) |
@@ -73,15 +75,27 @@ adjacencies acceptance requirements. Passing evidence reports
   A covering route is not the requested exact prefix. `next_hop` is an IPv4
   address and applies only to a present route; any matching ECMP next hop
   satisfies it. Directly connected routes have no numeric next hop.
-- BGP `address_family` is `ipv4-unicast` (default) or `ipv6-unicast`.
+- BGP `address_family` is `ipv4-unicast` (default), `ipv6-unicast`, or `vpnv4`.
   Neighbor address version must match. Global queries use the scoped
   `show bgp ipv4|ipv6 unicast summary`; VRF queries use
   `show bgp vpnv4|vpnv6 unicast vrf NAME summary` to inspect that VRF's unicast
-  peers. VPN AF acceptance, multicast and cross-family transport are not
-  implemented. States are `idle`, `connect`, `active`, `opensent`,
+  peers. VPNv4 checks use `show ip bgp vpnv4 all summary`, or
+  `show ip bgp vpnv4 vrf NAME summary` when scoped. VPNv4 neighbors must be
+  IPv4 addresses. VPNv6, multicast and cross-family transport are not implemented. States are `idle`, `connect`, `active`, `opensent`,
   `openconfirm`, `established` (case insensitive). A numeric received-prefix
   count, including zero, means established. Administrative annotations are
   retained in evidence; `Idle (Admin)` has state `idle`.
+- LDP checks require an operational IPv4 peer in platform label space zero.
+  They query `show mpls ldp neighbor`; incomplete peer blocks, unsupported
+  output, and absent peers fail rather than implying a down state.
+- MPLS forwarding checks query `show mpls forwarding-table` and match the
+  exact canonical IPv4 prefix. Numeric outgoing labels prove swap; `Pop Label`
+  proves penultimate-hop popping. `No Label` is retained as evidence but does
+  not satisfy labeled forwarding. An optional next hop must match a labeled
+  entry, along with the requested action when supplied. An absent check cannot
+  specify a next hop or action. This parser covers complete single-line IPv4
+  LFIB rows; wrapped/aggregate/IPv6 formats fail closed. Label counters do not
+  prove end-to-end customer payload delivery.
 - OSPF covers the global IPv4 neighbor table. `neighbor` matches a router ID
   or neighbor interface address. States are `down`, `attempt`, `init`,
   `2way`, `exstart`, `exchange`, `loading`, `full` (case insensitive).
@@ -108,6 +122,9 @@ adjacencies acceptance requirements. Passing evidence reports
 - VRF names must be single CLI tokens using letters, digits, underscores,
   dots or hyphens. They must start with a letter, digit or underscore.
 
+LDP, LFIB and VPNv4 checks correlate their own command echo before accepting
+the response, preventing a delayed previous prompt from completing a new check.
+
 Parsers require recognized headers/rows or the explicit IOS route-not-in-table
 response. Command errors, unknown formats and detected pagination/truncation
 fail with reasons; they do not prove route absence. Evidence contains parsed
@@ -126,6 +143,9 @@ validation:
   - {name: no-default, type: default-route, node: edge, vrf: BLUE, expected: absent}
   - {name: bgp, type: bgp-neighbor, node: edge, neighbor: 198.51.100.1, state: established, address_family: ipv4-unicast}
   - {name: ospf, type: ospf-neighbor, node: edge, neighbor: 203.0.113.1, state: full}
+  - {name: ldp, type: ldp-neighbor, node: edge, neighbor: 203.0.113.2, state: operational}
+  - {name: label-path, type: mpls-forwarding, node: edge, prefix: 203.0.113.3/32, expected: present, action: swap}
+  - {name: vpnv4, type: bgp-neighbor, node: edge, neighbor: 203.0.113.3, state: established, address_family: vpnv4}
   - {name: isis, type: isis-adjacency, node: edge, neighbor: '0000.0000.0002', state: up}
   - {name: tenant-ping, type: vrf-ping, node: edge, vrf: BLUE, destination: 192.0.2.10, min_success_rate: 100}
   - {name: path-mtu, type: mtu-ping, node: edge, destination: 192.0.2.10, packet_size: 1500, df: true, min_success_rate: 100}
