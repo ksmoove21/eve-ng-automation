@@ -35,8 +35,10 @@ def stages_from_plan(plan):
                        for command in item["commands"])):
             raise ValueError("Invalid compiled control-component stage")
         result.append(ControlStage(item["name"], tuple(item["commands"])))
-    if [item.name for item in result] != ["identity", "vpn0", "vpn512"]:
-        raise ValueError("Control-component stages must be identity, vpn0, vpn512")
+    names = [item.name for item in result]
+    if names not in (["identity", "vpn0"], ["identity", "vpn0", "vpn512"]):
+        raise ValueError(
+            "Control-component stages must be identity, vpn0, with optional vpn512")
     return tuple(result)
 
 

@@ -49,3 +49,38 @@ a bounded resume of the same generation. A node-only restart may be needed if
 IOS XE does not redisplay a usable login prompt; the restart does not authorize
 replaying its PAYG token. The runner does not automatically restart a node in
 that condition.
+
+
+## Controller-only plans
+
+`eve_lab.sdwan_control_intent` compiles a controller-only plan from an explicit
+topology. It configures controller identity and VPN 0 transport, with VPN 512
+only when that controller has an explicit management attachment. Before static
+VPN 0 addressing, it removes IPv4 and IPv6 DHCP clients from the declared
+transport interface. It never creates aggregation, edge, Cloud0, or
+transport-fabric actions. The initializer
+can consume that compiled plan directly, so this narrow workflow does not alter
+the R1 factory compiler contract.
+
+The console/transaction adapter is field-qualified for control release
+20.15.1. Controller-only plans are offline-tested; field acceptance remains
+scoped to each declared topology. Disabled DHCP clients are omitted even in
+the 20.15.1 details view, so readback proves their absence within the declared
+transport interface. Cisco's [Compatibility Matrix Tool](https://www.cisco.com/c/en/us/support/cloud-systems-management/sd-wan/products-device-support-tables-list.html)
+documents that control-plane versions must match or exceed the edge-equivalent
+release. Its 20.15.1 matrix includes C8000V IOS XE SD-WAN 17.15.1a. This is not
+a support claim for 20.12 releases or mixed-version deployments.
+
+## Authentication rejection during first boot
+
+Cisco documents five consecutive failed password attempts and a 15-minute
+account lockout for Manager 20.9.1 and later. Console initialization stops on
+an explicit credential rejection; it does not retry that failure as a boot
+transition. Bounded resume remains available for transient boot/CLI failures.
+After a rejected login, preserve the UUID-bound first-boot state and inspect
+the transition before submitting another credential. A password-submission
+record alone does not prove that the new password was accepted or persisted.
+
+Source: [Cisco 20.x user authentication guide](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/configuration/system-interface/vedge-20-x/systems-interfaces-book/user-access-authentication.html).
+Lockout behavior is DOCUMENTED; a returned login prompt is an observed
+rejection signal, not by itself proof of lockout.

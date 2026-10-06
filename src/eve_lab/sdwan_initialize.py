@@ -16,7 +16,7 @@ import paramiko
 from .client import EveClient
 from .config import load_server
 from .deploy import lab_path, named
-from .device_console import credentials
+from .device_console import ConsoleAuthenticationError, credentials
 from .initialize import _open_telnet_console, telnet_console_url
 from .live_guard import enforce_live_guard
 from .sdwan_control import ViptelaConsole, stages_from_plan
@@ -72,6 +72,8 @@ def _first_login(console, login, state, path, node_name, node_uuid, *, manager=F
             console.login("admin", "admin", login[2], new_password=login[1],
                           on_password_submit=persist_pending,
                           vmanage_first_boot=manager)
+        except ConsoleAuthenticationError:
+            raise
         except RuntimeError:
             # Recovery is safe only after the hook durably proves the factory
             # password was submitted for this exact EVE node UUID.
@@ -92,6 +94,8 @@ def _first_login(console, login, state, path, node_name, node_uuid, *, manager=F
                 console.login(
                     login[0], login[1], login[2], new_password=login[1],
                     vmanage_first_boot=manager)
+            except ConsoleAuthenticationError:
+                raise
             except RuntimeError:
                 if not manager or attempt == 5:
                     raise
@@ -140,6 +144,25 @@ def _normalize_line(line):
     return re.sub(r'"([^"\s]+)"', r"\1", collapsed)
 
 
+def _interface_lines(output, name):
+    """Read one indented interface block without borrowing another port's state."""
+    if not name:
+        return None
+    lines = output.splitlines()
+    for index, raw in enumerate(lines):
+        if raw.strip() != "interface " + name:
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        body = []
+        for line in lines[index + 1:]:
+            if line.strip() and len(line) - len(line.lstrip()) <= indent:
+                break
+            if line.strip():
+                body.append(_normalize_line(line))
+        return body
+    return None
+
+
 def verify_stage(console, stage, *, timeout=60):
     output = console.command(_stage_command(stage.name), timeout=timeout)
     normalized = {_normalize_line(line)
@@ -148,9 +171,24 @@ def verify_stage(console, stage, *, timeout=60):
     absent_interfaces = [
         command.removeprefix("no interface ")
         for command in stage.commands if command.startswith("no interface ")]
+    current_output = output
     def missing_indexes():
-        indexes = [index for index, line in enumerate(expected, start=1)
-                   if _normalize_line(line) not in normalized]
+        indexes = []
+        interface = None
+        for index, line in enumerate(expected, start=1):
+            if line.startswith("interface "):
+                interface = line.removeprefix("interface ")
+            if line in {"no ip dhcp-client", "no ipv6 dhcp-client"}:
+                # 20.15.1 omits disabled DHCP clients even in the details view.
+                # Prove absence only within the declared transport interface.
+                body = _interface_lines(current_output, interface)
+                enabled = line.removeprefix("no ")
+                if body is None or any(
+                        value == enabled or value.startswith(enabled + " ")
+                        for value in body):
+                    indexes.append(index)
+            elif _normalize_line(line) not in normalized:
+                indexes.append(index)
         indexes.extend(
             len(expected) + offset
             for offset, interface in enumerate(absent_interfaces, start=1)
@@ -163,6 +201,7 @@ def verify_stage(console, stage, *, timeout=60):
              if stage.name == "identity"
              else "show running-config vpn 0 | details | nomore"),
             timeout=timeout)
+        current_output = detailed
         normalized.update(
             _normalize_line(line) for line in detailed.splitlines()
             if line.strip())
@@ -188,12 +227,22 @@ def ensure_stage(console, stage, *, timeout=300, on_apply=None):
 
 
 def initialize_control(client, topology, root, server_name, node_name,
-                       check=False, timeout=900):
+                       check=False, timeout=900, *, compiled_plan=None):
     if not 1 <= timeout <= 3600:
         raise ValueError("timeout must be between 1 and 3600 seconds")
-    declared = load_topology(Path(root), topology["name"])
-    plan = load_and_compile(Path(root), topology["name"], declared)[
-        "node_operations"].get(node_name)
+    if compiled_plan is None:
+        declared = load_topology(Path(root), topology["name"])
+        plan = load_and_compile(Path(root), topology["name"], declared)[
+            "node_operations"].get(node_name)
+    else:
+        if (not isinstance(compiled_plan, dict)
+                or compiled_plan.get("schema") != 1
+                or compiled_plan.get("lab") != topology["name"]
+                or not isinstance(compiled_plan.get("node_operations"), dict)):
+            raise ValueError("compiled_plan must be a schema 1 plan for the supplied topology")
+        plan = compiled_plan["node_operations"].get(node_name)
+        if plan is None:
+            raise ValueError("Compiled control plan lacks node: " + node_name)
     stages = stages_from_plan(plan)
     nodes = named(client, lab_path(topology) + "/nodes")
     if node_name not in nodes:

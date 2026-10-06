@@ -15,6 +15,10 @@ import paramiko
 from .config import load_server
 
 
+class ConsoleAuthenticationError(RuntimeError):
+    """A credential submission was rejected; retrying can lock the account."""
+
+
 _PROMPT = r'^[ \t]*[\w.()/:-]+[>#](?=[ \t]*(?:$|[*%]))'
 _PRIVILEGED_PROMPT = r'^[ \t]*[\w.()/:-]+#(?=[ \t]*(?:$|[*%]))'
 _OSC_TITLE = re.compile(r'\x1b\][012];[\x20-\x7e]*(?:\x07|\x1b\\)')
@@ -343,10 +347,10 @@ class Console:
                         username_sent = False
                         password_setup_stages.add('relogin')
                     else:
-                        raise RuntimeError(
+                        raise ConsoleAuthenticationError(
                             'Console returned to login after one credential submission')
                 if username_sent:
-                    raise RuntimeError(
+                    raise ConsoleAuthenticationError(
                         'Console repeated login after one username submission')
                 self.send(username)
                 username_sent = True
@@ -375,7 +379,7 @@ class Console:
                         self.send_secret(new_password)
                         wake = False
                     else:
-                        raise RuntimeError('Console repeated a password prompt after one password submission')
+                        raise ConsoleAuthenticationError('Console repeated a password prompt after one password submission')
                 else:
                     if on_password_submit is not None and not correlation_recorded:
                         on_password_submit()

@@ -16,6 +16,15 @@ class ControlPlanTests(unittest.TestCase):
         self.assertEqual([stage.name for stage in stages_from_plan(plan)],
                          ["identity", "vpn0", "vpn512"])
 
+    def test_accepts_controller_without_vpn512(self):
+        plan = {"adapter": "viptela-control", "operations": [
+            {"name": name, "mode": "config-transaction",
+             "commands": ["system", "exit"], "commit": True}
+            for name in ("identity", "vpn0")
+        ]}
+        self.assertEqual([stage.name for stage in stages_from_plan(plan)],
+                         ["identity", "vpn0"])
+
     def test_rejects_reordered_or_multiline_commands(self):
         for operations in (
             [{"name": "vpn0", "mode": "config-transaction",

@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from eve_lab.device_console import Console
+from eve_lab.device_console import Console, ConsoleAuthenticationError
 
 
 class ConsoleTests(unittest.TestCase):
@@ -83,7 +83,7 @@ class ConsoleTests(unittest.TestCase):
 
     def test_login_stops_after_one_repeated_password_prompt(self):
         c, ch = self.console(['login:', 'Password:', 'Password:'])
-        with self.assertRaisesRegex(RuntimeError, 'repeated a password prompt after one'):
+        with self.assertRaisesRegex(ConsoleAuthenticationError, 'repeated a password prompt after one'):
             c.login('admin', 'admin', 'unused-enable')
         self.assertEqual([v.args[0] for v in ch.sendall.call_args_list],
                          ['\r', 'admin\r', 'admin\r'])

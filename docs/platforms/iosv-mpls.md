@@ -32,6 +32,24 @@ policy, and full startup/running configuration equality on all three routers.
 Customer-facing ports stayed unassigned and shut down. Global VPNv4 summary
 is field-tested; a VRF-scoped query remains unqualified for this image.
 
+## IOSv 15.9(3)M8 DMVPN Phase 3
+
+FIELD-TESTED on EVE-NG 7.2.0-4 with IOSv 15.9(3)M8: the image accepted and
+operated an IKEv2 profile using AES-CBC-256, SHA-256, and DH group 14 with a
+transport-mode IPsec profile. A dual-hub mGRE/NHRP Phase 3 topology established
+two registered spokes at each hub, two static NHS mappings at each spoke, eight
+READY IKEv2 SAs, and four established BGP hub-spoke sessions. Sourced tunnel
+probes to both hubs passed 5/5 and showed active IPsec encapsulation and
+decapsulation counters with zero send and receive errors.
+
+A bounded synthetic TEST-NET /32 route exchange then produced direct dynamic
+spoke-to-spoke NHRP mappings, active direct-spoke transport IPsec SAs, and
+strict sourced traffic at 5/5 in both directions. The temporary loopbacks and
+exact BGP advertisements were removed, and all BGP sessions returned to zero
+received prefixes. This qualifies the overlay mechanisms only. Real LAN prefix
+exports, enterprise service routing, and production payload policy remain
+untested.
+
 ## Proof boundary
 
 An operational LDP session and an LFIB entry establish provider control-plane
