@@ -128,6 +128,25 @@ class EdgeConsoleTests(unittest.TestCase):
             "copy scp://admin@10.1.0.1//home/admin/SDWAN.pem bootflash:SDWAN.pem\r",
             "yes\r", "\r", "secret\r"])
 
+    def test_scp_success_ignores_async_smart_licensing_error(self):
+        console = self.console([
+            "Destination filename [SDWAN.pem]?", "Password:",
+            "*Oct 6 12:00:00.123: %SMART_LIC-2-PLATFORM_ERROR: "
+            "Smart Licensing internal software error\n1354 bytes copied\nEDGE#"])
+        console.copy_scp_absolute(
+            "admin", "10.1.0.1", "/home/admin/SDWAN.pem",
+            "bootflash:SDWAN.pem", "secret", {"SHA256:trusted"})
+
+    def test_scp_real_transfer_failure_is_retained_with_licensing_noise(self):
+        console = self.console([
+            "Destination filename [SDWAN.pem]?", "Password:",
+            "*Oct 6 12:00:00.123: %SMART_LIC-2-PLATFORM_ERROR: error\n"
+            "%Error opening scp file (Permission denied)\n1354 bytes copied\nEDGE#"])
+        with self.assertRaisesRegex(RuntimeError, "did not complete"):
+            console.copy_scp_absolute(
+                "admin", "10.1.0.1", "/home/admin/SDWAN.pem",
+                "bootflash:SDWAN.pem", "secret", {"SHA256:trusted"})
+
     def test_scp_rejects_wrong_host_key(self):
         console = self.console([
             "RSA key fingerprint is SHA256:wrong\n"

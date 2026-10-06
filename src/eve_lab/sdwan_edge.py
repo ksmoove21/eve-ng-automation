@@ -160,9 +160,15 @@ class CedgeConsole(Console):
             transcript += output
             prompt = match.group().strip()
             if prompt.endswith("#"):
+                # IOS licensing diagnostics are unrelated to the SCP result.
+                # Retain actual transfer errors and require a copied-byte result.
+                transfer_output = re.sub(
+                    r"(?:\*?[A-Z][a-z]{2}\s+\d+\s+"
+                    r"\d{2}:\d{2}:\d{2}(?:\.\d+)?\s*:\s*)?"
+                    r"%SMART_LIC-\d+-[A-Z0-9_]+:[^\n]*", "", transcript)
                 if (not re.search(r"\d+ bytes copied", transcript, re.I)
                         or re.search(r"(?im)permission denied|connection refused|"
-                                     r"no such file|error|failed|timed out", transcript)):
+                                     r"no such file|error|failed|timed out", transfer_output)):
                     raise RuntimeError("SCP copy did not complete successfully")
                 return
             lower = prompt.lower()

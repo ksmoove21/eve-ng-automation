@@ -131,3 +131,17 @@ and exhausted retries propagate immediately; no in-place overwrite is used.
 One-shot PAYG generation and activation must still wait for a successful durable
 save. A failed pre-submit save does not authorize replay of an ambiguous API
 request: reconcile the saved inventory snapshot and the exact failure point.
+
+For service-side BGP on C8000V IOS XE 17.15.01a, configure an RD under the
+service VRF before creating its BGP address family. Field validation rejected
+an otherwise parsed transaction with `VRF ... does not have an RD configured`;
+the transaction was aborted. Cisco's [17.x BGP configuration guide](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/configuration/routing/ios-xe-17/routing-configuration-guide-17-x/border-gateway-protocol/configure-bgp.html)
+includes `rd 1:<VPN>` in its service VRF example. This is a local VRF/BGP
+prerequisite; it does not authorize cross-VRF route-target imports or exports.
+
+On IOS XE 17.15.01a, asynchronous `%SMART_LIC` messages can appear during a
+successful SCP transfer and contain the word `error`. The SCP result classifier
+excludes those diagnostic lines while retaining transfer failures and requiring
+a copied-byte result. Field validation independently confirmed the destination
+file's nonzero size and SHA-256 match to the source CA before installation;
+the classifier result alone is insufficient proof of certificate fidelity.
