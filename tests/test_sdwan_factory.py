@@ -113,5 +113,51 @@ class DeclaredEdgeManagerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _manager_ssh_fingerprints(context, transport_interface="eth0\nrequest reboot")
 
+
+class EdgeAuthenticationTests(unittest.TestCase):
+    def run_configuration(self, login_errors, edge):
+        from contextlib import nullcontext
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from eve_lab.sdwan_factory import _configure_edge
+        from eve_lab.sdwan_edge import EdgeStage
+        console = Mock()
+        console.login.side_effect = login_errors
+        console.command.return_value = "Controller-Managed"
+        context = SimpleNamespace(root=Path("."), ledger=Mock(),
+                                 compiled={"node_operations": {"EDGE": {}}})
+        with patch("eve_lab.sdwan_factory.credentials", return_value=("admin", "configured", "enable")), patch(
+                "eve_lab.sdwan_factory._eve_console", side_effect=lambda *a, **k: nullcontext(console)), patch(
+                "eve_lab.sdwan_factory.stages_from_edge_plan", return_value=(EdgeStage("identity", ("hostname EDGE",)),)), patch(
+                "eve_lab.sdwan_factory.missing_desired_commands", return_value=()), patch(
+                "eve_lab.sdwan_factory.time.sleep"), patch(
+                "eve_lab.sdwan_factory.time.monotonic", side_effect=range(20)):
+            _configure_edge(context, "EDGE", edge, 10)
+        return console
+
+    def test_boot_timeout_retries_configured_login_without_factory_credentials(self):
+        console = self.run_configuration([RuntimeError("boot prompt timeout"), None], {})
+        self.assertEqual([c.args for c in console.login.call_args_list],
+                         [("admin", "configured", "enable")] * 2)
+
+    def test_explicit_post_mode_rejection_uses_factory_password_once(self):
+        from eve_lab.device_console import ConsoleAuthenticationError
+        edge = {}
+        console = self.run_configuration([ConsoleAuthenticationError("rejected"), None, None], edge)
+        self.assertEqual([c.args for c in console.login.call_args_list],
+                         [("admin", "configured", "enable"), ("admin", "admin", "enable"),
+                          ("admin", "configured", "enable")])
+        self.assertEqual(console.login.call_args_list[1].kwargs, {"new_password": "configured"})
+        self.assertEqual(edge["post_mode_factory_login_result"], "password-initialized")
+        self.assertTrue(edge["baseline_complete"])
+
+    def test_rejection_after_completed_password_initialization_stops(self):
+        from eve_lab.device_console import ConsoleAuthenticationError
+        edge = {"post_mode_factory_login_attempted": True,
+                "post_mode_factory_login_result": "password-initialized"}
+        with self.assertRaisesRegex(ConsoleAuthenticationError, "recorded password initialization"):
+            self.run_configuration([ConsoleAuthenticationError("rejected")], edge)
+        self.assertNotIn("post_mode_factory_login_retry_attempted", edge)
+
 if __name__ == "__main__":
     unittest.main()

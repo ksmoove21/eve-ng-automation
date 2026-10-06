@@ -21,7 +21,7 @@ import paramiko
 
 from .config import load_server
 from .deploy import apply, delete, lab_path, lifecycle, named
-from .device_console import Console, credentials
+from .device_console import Console, ConsoleAuthenticationError, credentials
 from .initialize import _open_telnet_console, initialize, telnet_console_url
 from .sdwan_api import ManagerApi
 from .sdwan_control import ViptelaConsole
@@ -714,7 +714,10 @@ def _configure_edge(context, name, edge, timeout):
             with _eve_console(context, name, CedgeConsole, timeout) as console:
                 try:
                     console.login(*login)
-                except RuntimeError:
+                except ConsoleAuthenticationError:
+                    if edge.get("post_mode_factory_login_result") == "password-initialized":
+                        raise ConsoleAuthenticationError(
+                            "Configured cEdge credentials rejected after recorded password initialization")
                     if edge.get("post_mode_factory_login_attempted"):
                         if edge.get("post_mode_factory_login_retry_attempted"):
                             raise
@@ -751,6 +754,8 @@ def _configure_edge(context, name, edge, timeout):
                     edge["baseline_complete"] = True
                     context.ledger.save()
                     return
+        except ConsoleAuthenticationError:
+            raise
         except RuntimeError as error:
             last_error = error
         if factory_login:

@@ -115,3 +115,11 @@ equal-distance routes installed both next hops. After correcting an independent
 access-VLAN mismatch, both interface-sourced Validator probes passed. This
 qualifies underlay reachability only; control and BFD acceptance remain separate.
 Validate gateway ARP and the intermediate switch VLAN before enrollment.
+
+
+C8000V post-mode bootstrap distinguishes a transient prompt timeout from an
+explicit credential rejection. Only an explicit rejection permits the bounded
+factory-password initialization path. Once password initialization is recorded
+as complete, another rejection stops; it does not submit factory credentials
+or repeat configured credentials. This safeguard is offline-tested separately
+from guest boot and console availability.
