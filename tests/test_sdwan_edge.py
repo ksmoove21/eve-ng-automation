@@ -63,6 +63,23 @@ class EdgePlanTests(unittest.TestCase):
         self.assertEqual(missing_desired_commands("hostname EDGE\n", stages),
                          ("organization-name org",))
 
+    def test_readback_preserves_config_after_exact_async_udi_diagnostic(self):
+        noise = ("*Oct 6 12:00:00.123: %SMART_LIC-2-PLATFORM_ERROR: "
+                 "Smart Licensing has encountered an internal software error. "
+                 "Contact TAC: The platform provided UDI list has invalid "
+                 "values: ; udi_sn is empty; udi_sn is null or empty for valid udi_pid")
+        stages = (EdgeStage("transport", ("tunnel source GigabitEthernet1",)),)
+        self.assertEqual(missing_desired_commands(
+            noise + " tunnel source GigabitEthernet1\n", stages), ())
+        self.assertEqual(missing_desired_commands(noise + "\n", stages),
+                         ("tunnel source GigabitEthernet1",))
+
+    def test_readback_does_not_strip_unknown_diagnostics_into_config(self):
+        stages = (EdgeStage("transport", ("sdwan",)),)
+        self.assertEqual(missing_desired_commands(
+            "%SMART_LIC-2-PLATFORM_ERROR: unknown diagnostic sdwan\n", stages),
+                         ("sdwan",))
+
     def test_scp_absolute_path_and_certificate_parser(self):
         self.assertEqual(
             absolute_scp_source("admin", "10.1.0.1", "/home/admin/SDWAN.pem"),

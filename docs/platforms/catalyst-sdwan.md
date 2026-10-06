@@ -145,3 +145,9 @@ excludes those diagnostic lines while retaining transfer failures and requiring
 a copied-byte result. Field validation independently confirmed the destination
 file's nonzero size and SHA-256 match to the source CA before installation;
 the classifier result alone is insufficient proof of certificate fidelity.
+
+The same 17.15.01a UDI diagnostic was observed concatenated directly with a
+configuration line during readback. The baseline normalizer removes only that
+exact known diagnostic body and preserves the following command. Unknown
+diagnostics and genuinely absent commands remain failures. Independent narrow
+readback confirmed the apparent omissions without changing guest intent.

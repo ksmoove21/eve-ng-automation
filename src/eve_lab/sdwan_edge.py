@@ -80,6 +80,14 @@ def stages_from_edge_plan(plan):
 
 
 def _normalized_config(output):
+    # Remove this exact asynchronous diagnostic, retaining the following line.
+    output = re.sub(
+        r"(?:\*?[A-Z][a-z]{2}\s+\d+\s+"
+        r"\d{2}:\d{2}:\d{2}(?:\.\d+)?\s*:\s*)?"
+        r"%SMART_LIC-2-PLATFORM_ERROR: Smart Licensing has encountered an "
+        r"internal software error\. Contact TAC: The platform provided UDI "
+        r"list has invalid values: ; udi_sn is empty; udi_sn is null or empty "
+        r"for valid udi_pid", "", output)
     return "\n".join(" ".join(line.replace('"', '').split())
                      for line in output.splitlines())
 
