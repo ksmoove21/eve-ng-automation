@@ -43,3 +43,19 @@ for the evaluated guest; allocated QCOW2 file size is not virtual capacity.
 The guest remained CPU Limit disabled throughout initialization.
 
 Source: [ISE 3.4 VM requirements](https://www.cisco.com/c/en/us/td/docs/security/ise/3-4/install_guide/b_ise_installationGuide34/b_ise_InstallationGuide_chapter_2.html).
+
+## Console input qualification
+
+Field testing on the EVE QEMU console found that raw VNC keysyms and Caps Lock
+could alter letter case and shifted symbols. Qualify a nonsecret mixed-case and
+symbol sample before entering credentials, then erase it without submitting a
+login. Physical QMP guest-console keys with explicit Shift plus base key produced
+the intended input and authenticated the configured administrator on 3.4.0.608.
+Keep credentials out of command arguments and captured login history. Prompt
+classification should emit only the current prompt type.
+
+Post-installation command responses were delayed, and early VNC captures showed
+only the echoed command. Later refreshes returned completed output; framebuffer
+caching versus guest command latency was not isolated. Correlate the echoed
+command, completed result and returned prompt before recording service acceptance.
+These are field observations, not a reusable ISE adapter implementation.
