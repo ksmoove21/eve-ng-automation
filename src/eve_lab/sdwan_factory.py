@@ -262,8 +262,8 @@ def _wait_activity(api, activity_id, operation, timeout=900):
         time.sleep(15)
 
 
-def _manager_api(context, timeout=45):
-    address = context.management_address("MANAGER1")
+def _manager_api(context, timeout=45, *, manager_name="MANAGER1"):
+    address = context.management_address(manager_name)
     state = context.generation.setdefault("manager_api", {})
     certificate_path = context.root / ".state" / (context.lab + "-manager-https.pem")
     pem = ssl.get_server_certificate((address, 8443), timeout=10)
@@ -326,15 +326,15 @@ def _install_control_root(context, name, root_certificate):
     return True
 
 
-def _sign_on_manager(context, csr, name):
-    with _pinned_management_console(context, "MANAGER1") as console:
+def _sign_on_manager(context, csr, name, *, manager_name="MANAGER1"):
+    with _pinned_management_console(context, manager_name) as console:
         return sign_csr_on_manager(console, csr, name=name)
 
 
-def _install_manager_certificate(context, api):
+def _install_manager_certificate(context, api, *, manager_name="MANAGER1"):
     state = read_control_state(context.control_state_path)
-    record = state["nodes"]["MANAGER1"]
-    device_ip = context.control_plan("MANAGER1")["desired"]["system_ip"]
+    record = state["nodes"][manager_name]
+    device_ip = context.control_plan(manager_name)["desired"]["system_ip"]
     inventory = control_component_record(
         api, device_ip=device_ip, personality="vmanage")
     root_hash = str(inventory.get("rootCertHash", "")).strip().lower()
@@ -350,7 +350,7 @@ def _install_manager_certificate(context, api):
                        "Manager certificate")
     else:
         csr = api.generate_csr(device_ip)
-        certificate = _sign_on_manager(context, csr, "manager-control")
+        certificate = _sign_on_manager(context, csr, "manager-control", manager_name=manager_name)
         record.update({
             "manager_csr_sha256": hashlib.sha256(csr.encode()).hexdigest(),
             "manager_signed_certificate_sha256": hashlib.sha256(
@@ -395,14 +395,14 @@ def _find_control_record(api, *, personality, addresses, record_uuid=None):
     return matches[0] if matches else None
 
 
-def _enroll_control_component(context, api, name, personality):
+def _enroll_control_component(context, api, name, personality, *, manager_name="MANAGER1"):
     state = read_control_state(context.control_state_path)
     node = state["nodes"][name]
     desired = context.control_plan(name)["desired"]
     device_ip = str(ip_interface(desired["vpn0_address"]).ip)
     system_ip = desired["system_ip"]
     manager_record = control_component_record(
-        api, device_ip=context.control_plan("MANAGER1")["desired"]["system_ip"],
+        api, device_ip=context.control_plan(manager_name)["desired"]["system_ip"],
         personality="vmanage")
     root_hash = str(manager_record.get("rootCertHash", "")).strip().lower()
     if not certificate_is_installed(manager_record, root_hash=root_hash):
@@ -462,7 +462,8 @@ def _enroll_control_component(context, api, name, personality):
             require_lifecycle_complete=personality == "vsmart")
         certificate = _sign_on_manager(
             context, settled.csr,
-            "validator-control" if personality == "vbond" else "controller-control")
+            "validator-control" if personality == "vbond" else "controller-control",
+            manager_name=manager_name)
         node.update({
             "manager_csr_sha256": settled.sha256,
             "manager_signed_certificate_sha256": hashlib.sha256(
