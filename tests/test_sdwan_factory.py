@@ -161,3 +161,54 @@ class EdgeAuthenticationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AtomicLedgerPersistenceTests(unittest.TestCase):
+    def test_windows_sharing_failure_retries_atomic_replace(self):
+        import json
+        from unittest.mock import patch
+        from eve_lab.sdwan_factory import _atomic_json
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "ledger.json"
+            path.write_text('{"old": true}')
+            original = Path.replace
+            error = PermissionError("sharing violation")
+            error.winerror = 32
+            calls = []
+            def replace(source, target):
+                calls.append(source)
+                if len(calls) == 1:
+                    self.assertEqual(json.loads(path.read_text()), {"old": True})
+                    raise error
+                return original(source, target)
+            with patch.object(Path, "replace", replace), patch(
+                    "eve_lab.sdwan_factory.time.sleep") as sleep:
+                _atomic_json(path, {"new": True})
+            self.assertEqual(json.loads(path.read_text()), {"new": True})
+            self.assertEqual(len(calls), 2)
+            sleep.assert_called_once_with(0.2)
+
+    def test_persistent_denial_preserves_old_ledger_and_raises(self):
+        from unittest.mock import patch
+        from eve_lab.sdwan_factory import _atomic_json
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "ledger.json"
+            path.write_text("old ledger")
+            error = PermissionError("access denied")
+            error.winerror = 5
+            with patch.object(Path, "replace", side_effect=error) as replace, patch(
+                    "eve_lab.sdwan_factory.time.sleep"), self.assertRaises(PermissionError):
+                _atomic_json(path, {"attempted": True})
+            self.assertEqual(path.read_text(), "old ledger")
+            self.assertEqual(replace.call_count, 6)
+            self.assertTrue(path.with_suffix(".json.tmp").exists())
+
+    def test_other_permission_failure_is_not_retried(self):
+        from unittest.mock import patch
+        from eve_lab.sdwan_factory import _atomic_json
+        with TemporaryDirectory() as directory:
+            with patch.object(Path, "replace", side_effect=PermissionError("denied")) as replace, patch(
+                    "eve_lab.sdwan_factory.time.sleep") as sleep, self.assertRaises(PermissionError):
+                _atomic_json(Path(directory) / "ledger.json", {})
+            replace.assert_called_once()
+            sleep.assert_not_called()

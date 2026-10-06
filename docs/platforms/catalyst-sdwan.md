@@ -123,3 +123,11 @@ factory-password initialization path. Once password initialization is recorded
 as complete, another rejection stops; it does not submit factory credentials
 or repeat configured credentials. This safeguard is offline-tested separately
 from guest boot and console availability.
+
+Atomic factory-ledger writes fsync a complete temporary file before replacing
+its destination. On Windows/SMB, transient replacement denials with Windows
+error 5, 32, or 33 receive at most six attempts over three seconds. Other errors
+and exhausted retries propagate immediately; no in-place overwrite is used.
+One-shot PAYG generation and activation must still wait for a successful durable
+save. A failed pre-submit save does not authorize replay of an ambiguous API
+request: reconcile the saved inventory snapshot and the exact failure point.

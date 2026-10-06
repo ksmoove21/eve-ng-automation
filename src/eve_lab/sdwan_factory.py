@@ -62,7 +62,17 @@ def _atomic_json(path, value):
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
-    temporary.replace(path)
+    # SMB/Windows readers can briefly deny an atomic replacement. Keep the
+    # complete, fsynced temporary file and retry only that replacement; never
+    # overwrite the ledger in place or continue after persistence fails.
+    for attempt in range(6):
+        try:
+            temporary.replace(path)
+            break
+        except PermissionError as error:
+            if getattr(error, "winerror", None) not in (5, 32, 33) or attempt == 5:
+                raise
+            time.sleep(0.2 * (attempt + 1))
 
 
 def correlate_single_new(before, after):
