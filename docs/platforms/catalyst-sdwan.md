@@ -170,3 +170,14 @@ Parser acceptance does not prove master/backup election, persistence, forwarding
 or failover; those require separate live readbacks and payload tests.
 
 Source: [Cisco Catalyst SD-WAN qualified VRRP commands](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/command/iosxe/qualified-cli-command-reference-guide/m-vrrp.html).
+
+
+## BFD transport intent validation
+
+`eve_lab.sdwan_bfd` evaluates tabular IOS XE SD-WAN BFD output against explicit
+edge identities, intended transport colors, and allowed directed color pairs.
+Use intended colors for TLOC extensions even before they are operational:
+missing or down required paths fail. Same-site paths are excluded. Intentionally
+isolated paths may be absent or down; an up isolated path or an unknown peer/color
+fails the declared intent. This helper does not establish controller/OMP health,
+configuration persistence, or service payload forwarding; qualify those separately.
