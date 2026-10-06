@@ -30,7 +30,7 @@ fail; this does not enable automatic key acceptance or disable verification.
 
 ## PAN-OS 11.1.0 routing parser observations
 
-FIELD-TESTED on the same disposable guest: set the BGP router ID before
+FIELD-TESTED on the same disposable guest: set the BGP router ID before other BGP options or
 `enable yes`; otherwise the server rejects activation because router ID is
 required. A peer's local-address IP must reference the configured interface
 address including its prefix length. A bare address was rejected as an invalid

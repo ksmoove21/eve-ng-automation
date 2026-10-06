@@ -60,3 +60,16 @@ process router ID for the customer process was rejected with `% OSPF: router-id
 ... in use by ospf process ...`; a distinct customer router ID was saved and
 adopted after a process-scoped restart. Console commands now treat that exact
 rejection family as an error instead of claiming configuration success.
+
+## Bounded IOSv console recovery observation
+
+FIELD-TESTED on EVE Pro 7.2.0-4 with IOSv 15.9(3)M8: an unconfigured
+new-lab guest exposed a reachable Telnet wrapper but no IOS serial payload.
+A simple stop/start did not recover it. Read-only QMP reported running,
+serial frontend open, and boot disk reads comparable to a working peer.
+A native stop/wipe/start of only that unconfigured disposable guest restored
+normal login and `show version`. The root cause remains unqualified; this is
+not proof of boot failure or a general requirement to wipe IOSv nodes.
+Preserve configured guests. Native wipe rebuilds the selected guest from its
+base image; use it only within an authorized disposable scope after preserving
+needed evidence and confirming the guest has no configuration to retain.
