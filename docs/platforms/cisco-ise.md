@@ -27,8 +27,19 @@ setup result.
 
 `Setup executed successfully` followed by `Installing Applications` is an
 installation checkpoint, not application readiness. Qualify installed version,
-`show application`, `show application status ise`, interface addressing,
+`show application version ise`, `show application status ise`, interface addressing,
 gateway, DNS resolution, NTP/time and standalone HTTPS readiness afterward.
 Controller integration is a separate dependency and acceptance boundary.
 
 Source: [Cisco ISE 3.4 installation and setup guide](https://www.cisco.com/c/en/us/td/docs/security/ise/3-4/install_guide/b_ise_installationGuide34/b_ise_InstallationGuide_chapter_3.html).
+
+## Resource classification
+
+Cisco lists a 4-vCPU/16-GB/300-GB evaluation profile for ISE 3.4. Its production
+Extra Small 8-vCPU/32-GB profile supports only the PSN persona, not PAN or MnT.
+Do not equate an 8-vCPU guest booting a standalone evaluation with supported
+production PAN/MnT sizing. Field QMP readback confirmed one 300-GiB virtual disk
+for the evaluated guest; allocated QCOW2 file size is not virtual capacity.
+The guest remained CPU Limit disabled throughout initialization.
+
+Source: [ISE 3.4 VM requirements](https://www.cisco.com/c/en/us/td/docs/security/ise/3-4/install_guide/b_ise_installationGuide34/b_ise_InstallationGuide_chapter_2.html).
