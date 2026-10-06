@@ -290,6 +290,16 @@ Guest/device interaction is a separate lifecycle concern. Console, guest SSH,
 NETCONF, browser automation, and vendor APIs should still be selected according
 to the guest/platform lifecycle state.
 
+On EVE Pro 7.2.0-4, native stopped-node QEMU option updates require both
+`qemu_options` (desired value) and `ro_qemu_options` (the original value from
+node detail readback). This requirement is documented by the installed native
+API reference and field-tested. Omitting the original-value field may return
+success without retaining the desired options. Read back the options, node UUID,
+and `cpulimit=0` before starting the node; API success alone is insufficient.
+Save the original options and retain the disk/identity correlation for temporary
+diagnostic variants. This does not establish an atomic compare-and-swap contract
+or authorize changes to shared host templates.
+
 ## Reconciliation behavior
 
 `eve apply` is a reconciler, not a one-shot creation script.

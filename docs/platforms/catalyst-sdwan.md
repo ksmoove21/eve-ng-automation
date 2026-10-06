@@ -197,3 +197,23 @@ mode. This possibility has not been field-confirmed on 17.15.01a.
 
 Sources: [Cisco Catalyst 8000V console access](https://www.cisco.com/c/en/us/td/docs/routers/C8000V/Configuration/c8000v-installation-configuration-guide/configure-console-access/configuring-console-access.html),
 [Cisco SD-WAN controller-mode console changes](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/configuration/sdwan-xe-gs-book/install-upgrade-17-2-later.html).
+
+
+## Reciprocal Layer 2 TLOC-extension routing
+
+DOCUMENTED in the [Cisco Catalyst SD-WAN design guide](https://www.cisco.com/c/en/us/td/docs/solutions/CVD/SDWAN/cisco-sdwan-design-guide.html#TLOC-Extension-Routing):
+VPN 0 may retain a default for each transport. Transport tunnel source and
+next-hop subnet govern route selection; this is not a justification for
+recursive peer defaults in arbitrary traffic. Bind the helper's physical
+SD-WAN interface to its own native transport with `tloc-extension`, and give
+the receiver a separate tunnel interface and a directly connected helper
+next hop. Preserve controller routes through both transports at equal
+administrative distance when both must be installed.
+
+Extended TLOC sources require corresponding provider return routes. Use exact
+transport prefixes; do not redistribute them into service VPNs. Internet NAT
+is documented when an extension uses private addressing; a public extension
+instead requires an actual return-route proof. A missing extension is a failed
+intended transport, independently of intentionally isolated cross-color BFD.
+Exact release syntax, abort/readback, persistence, and forwarding must each be
+qualified; vendor documentation alone does not establish a live PASS.
