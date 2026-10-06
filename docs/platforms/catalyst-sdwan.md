@@ -157,3 +157,16 @@ On C8000V IOS XE SD-WAN 17.15.01a, the supported history diagnostic is
 validated after the plural form was rejected. Use the cEdge grammar rather
 than carrying over vEdge command spelling. Cisco documents the command in its
 [qualified troubleshooting command reference](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/command/iosxe/qualified-cli-command-reference-guide/m-troubleshooting-commands.html).
+
+
+## Controller-mode VRRP grammar
+
+DOCUMENTED and PARSER-QUALIFIED on C8000V IOS XE SD-WAN 17.15.01a: enter
+`vrrp <group> address-family ipv4` under the service interface, then configure
+`address <virtual-ip> primary` in VRRP group mode. The transaction parser accepted
+this form during an explicitly aborted qualification transaction. Retain the
+service VRF and existing route-filter boundaries when adding first-hop redundancy.
+Parser acceptance does not prove master/backup election, persistence, forwarding
+or failover; those require separate live readbacks and payload tests.
+
+Source: [Cisco Catalyst SD-WAN qualified VRRP commands](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/command/iosxe/qualified-cli-command-reference-guide/m-vrrp.html).
