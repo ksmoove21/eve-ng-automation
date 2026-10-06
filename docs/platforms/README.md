@@ -37,3 +37,5 @@ Current platform notes:
 
 - [EVE Pro native link quality](eve-pro-link-quality.md): fixed per-direction delays, semantic cable binding and readback preservation.
 - [PAN-OS console qualification](paloalto-console.md): distinguish silent serial transport from guest boot and VGA readiness.
+
+- [Cisco ISE standalone first boot](cisco-ise.md): observed ISE 3.4 setup sequence and readiness boundaries.

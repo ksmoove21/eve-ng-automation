@@ -151,3 +151,9 @@ configuration line during readback. The baseline normalizer removes only that
 exact known diagnostic body and preserves the following command. Unknown
 diagnostics and genuinely absent commands remain failures. Independent narrow
 readback confirmed the apparent omissions without changing guest intent.
+
+On C8000V IOS XE SD-WAN 17.15.01a, the supported history diagnostic is
+`show sdwan control connection-history` (singular). This command was field
+validated after the plural form was rejected. Use the cEdge grammar rather
+than carrying over vEdge command spelling. Cisco documents the command in its
+[qualified troubleshooting command reference](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/command/iosxe/qualified-cli-command-reference-guide/m-troubleshooting-commands.html).
