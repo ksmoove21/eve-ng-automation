@@ -150,3 +150,14 @@ state is never substituted for the declared running configuration.
   processes in a stopped state. That is an EVE/QEMU host condition outside the
   engine; an operator must diagnose or resume the affected process before a
   bounded initialization or validation run can make progress.
+
+## Normal console acquisition after a licensing reload
+
+FIELD-TESTED on `cat9kvuadp-17.15.01`: a bounded recovery-aware reload wait
+expired without a CLI prompt or the documented GRUB failure/menu. A fresh
+normal Return/login probe subsequently reached privileged EXEC and confirmed
+Network/DNA Advantage active. Early serial text (`Both links down` and
+`Switch number is 1`) and a stale VGA boot display did not establish guest
+failure. Use normal login for initial acquisition; reserve the GRUB recovery
+path for a reload and its exact observed failure. This observation does not
+qualify a general workaround or authorize a disk reset.

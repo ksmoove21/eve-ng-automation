@@ -91,3 +91,15 @@ not proof of boot failure or a general requirement to wipe IOSv nodes.
 Preserve configured guests. Native wipe rebuilds the selected guest from its
 base image; use it only within an authorized disposable scope after preserving
 needed evidence and confirming the guest has no configuration to retain.
+
+## OSPF external routes at a CE BGP boundary
+
+Cisco documents that `redistribute ospf <process>` under BGP includes only
+OSPF internal routes unless external route types are selected explicitly. See
+[OSPF-to-BGP redistribution](https://www.cisco.com/c/en/us/support/docs/ip/border-gateway-protocol-bgp/5242-bgp-ospf-redis.html).
+FIELD-TESTED on IOSv 15.9(3)M8: a customer payload learned as OSPF external
+type 1 was present in the CE RIB but absent from its BGP export. Explicit
+`match internal external 1 external 2` with an exact prefix route map admitted
+the intended payload while retaining the existing internal exports. Saved
+configuration and bidirectional payload probes were verified. Do not broaden
+external redistribution without the owning lab's explicit prefix policy.
