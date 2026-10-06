@@ -84,3 +84,34 @@ record alone does not prove that the new password was accepted or persisted.
 Source: [Cisco 20.x user authentication guide](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/configuration/system-interface/vedge-20-x/systems-interfaces-book/user-access-authentication.html).
 Lockout behavior is DOCUMENTED; a returned login prompt is an observed
 rejection signal, not by itself proof of lockout.
+
+## Explicit edge plans and controller PKI
+
+`eve_lab.sdwan_edge_intent` compiles c8000v 17.15.01a baseline transactions
+against declared direct transport peers. It accepts GiN/GigabitEthernetN
+names, resolves them to one native port, and rejects duplicate identities,
+addresses, colors and conflicting attachments. Transport plans include default
+and controller-prefix routes with declared administrative distances; default
+distance 1 is omitted in generated CLI to match canonical IOS XE readback.
+The service-LAN transaction is optional. Explicit service interfaces create
+their IPv4 VRFs; an enrollment-only plan creates no service-VPN state.
+
+The Manager API/PKI helpers accept an explicit Manager node name while their
+original factory default remains available. FIELD-TESTED on control release
+20.15.1: a topology-bound three-controller plan completed identity/transport,
+Manager VPN512, Manager-local CA, enterprise trust, pinned HTTPS/API settings,
+and Manager-owned CSR/sign/install lifecycle. All three exact records became
+READY/valid with installed valid certificates and reciprocal DTLS relationships.
+This does not qualify cEdge enrollment, service-VPN payload or BFD/data behavior.
+
+
+## Active transport routes
+
+Cisco documents a VPN0 default route for each transport tunnel so the Validator
+is reachable through each WAN ([network interface guide](https://www.cisco.com/c/en/us/td/docs/routers/sdwan/configuration/system-interface/vedge-20-x/systems-interfaces-book/configure-interfaces.html)).
+FIELD-TESTED on C8000V 17.15.01a: two active transport next hops require both
+routes to be installed. A higher-distance static route was absent from the RIB;
+equal-distance routes installed both next hops. After correcting an independent
+access-VLAN mismatch, both interface-sourced Validator probes passed. This
+qualifies underlay reachability only; control and BFD acceptance remain separate.
+Validate gateway ARP and the intermediate switch VLAN before enrollment.

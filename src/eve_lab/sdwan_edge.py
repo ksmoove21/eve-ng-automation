@@ -71,10 +71,11 @@ def stages_from_edge_plan(plan):
                        for command in item["commands"])):
             raise ValueError("Invalid compiled cEdge stage")
         result.append(EdgeStage(item["name"], tuple(item["commands"])))
-    if [item.name for item in result] != [
-            "identity", "transport", "service-lan"]:
+    names = [item.name for item in result]
+    if names not in (["identity", "transport"],
+                     ["identity", "transport", "service-lan"]):
         raise ValueError(
-            "cEdge stages must be identity, transport, service-lan")
+            "cEdge stages must be identity, transport, with optional service-lan")
     return tuple(result)
 
 

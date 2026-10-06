@@ -78,5 +78,40 @@ class DeclaredManagerTests(unittest.TestCase):
         self.assertEqual(record.call_args.kwargs["device_ip"], "192.0.2.1")
         self.assertEqual(state["nodes"]["DECLARED-MGR"]["manager_control_certificate"], "installed")
 
+
+class DeclaredEdgeManagerTests(unittest.TestCase):
+    def test_payg_generation_uses_declared_manager_and_one_inventory_delta(self):
+        from unittest.mock import Mock
+        from eve_lab.sdwan_factory import _ensure_payg
+        context, api = Mock(), Mock()
+        context.generation = {}
+        context.control_plan.return_value = {"desired": {"organization_name": "example-org"}}
+        api.inventory.side_effect = [[], [{"uuid": "new-identity", "chasisNumber": "chassis-test", "token": "test-token"}]]
+        api.generate_payg.return_value = {}
+        edge, record = _ensure_payg(context, api, "EDGE", manager_name="DECLARED-MGR")
+        context.control_plan.assert_called_once_with("DECLARED-MGR")
+        api.generate_payg.assert_called_once_with(count=1, validity="valid", organization="example-org")
+        self.assertEqual(edge["correlated_uuid"], "new-identity")
+        self.assertTrue(edge["generation_attempted"])
+
+    def test_fingerprint_read_uses_explicit_transport_and_rejects_injection(self):
+        from unittest.mock import Mock, patch
+        from contextlib import nullcontext
+        from eve_lab.sdwan_factory import _manager_ssh_fingerprints
+        context, console = Mock(), Mock()
+        console.command.return_value = "tunnel-interface\nallow-service all"
+        with patch("eve_lab.sdwan_factory._pinned_management_console",
+                   return_value=nullcontext(console)) as connection, patch(
+                       "eve_lab.sdwan_factory.manager_ca_certificate", return_value="root"), patch(
+                       "eve_lab.sdwan_factory._enter_shell"), patch(
+                       "eve_lab.sdwan_factory._leave_shell"), patch(
+                       "eve_lab.sdwan_factory._shell_command", return_value=("0", "SHA256:abc123")):
+            root, pins = _manager_ssh_fingerprints(context, manager_name="DECLARED-MGR", transport_interface="eth0")
+        connection.assert_called_once_with(context, "DECLARED-MGR")
+        console.command.assert_called_once_with("show running-config vpn 0 interface eth0 | nomore", timeout=120)
+        self.assertEqual(pins, {"SHA256:abc123"})
+        with self.assertRaises(ValueError):
+            _manager_ssh_fingerprints(context, transport_interface="eth0\nrequest reboot")
+
 if __name__ == "__main__":
     unittest.main()

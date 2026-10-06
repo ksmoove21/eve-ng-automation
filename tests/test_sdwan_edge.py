@@ -40,6 +40,15 @@ class EdgePlanTests(unittest.TestCase):
         self.assertEqual([item.name for item in stages_from_edge_plan(self.plan())],
                          ["identity", "transport", "service-lan"])
 
+    def test_allows_deferred_service_and_rejects_partial_baseline(self):
+        plan = self.plan()
+        plan["operations"].pop()
+        self.assertEqual([stage.name for stage in stages_from_edge_plan(plan)],
+                         ["identity", "transport"])
+        plan["operations"].pop()
+        with self.assertRaises(ValueError):
+            stages_from_edge_plan(plan)
+
     def test_rejects_reordered_or_multiline_stage(self):
         plan = self.plan()
         plan["operations"][2]["name"] = "service-lan"

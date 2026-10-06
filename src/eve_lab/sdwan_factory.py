@@ -589,7 +589,7 @@ def _edge_state(context, name):
     return context.generation.setdefault("edges", {}).setdefault(name, {})
 
 
-def _ensure_payg(context, api, name):
+def _ensure_payg(context, api, name, *, manager_name="MANAGER1"):
     edge = _edge_state(context, name)
 
     def records():
@@ -617,7 +617,7 @@ def _ensure_payg(context, api, name):
         context.ledger.save()
         response = api.generate_payg(
             count=1, validity="valid",
-            organization=context.control_plan("MANAGER1")["desired"]
+            organization=context.control_plan(manager_name)["desired"]
             ["organization_name"])
         if isinstance(response.get("id"), str):
             edge["generation_activity_id"] = response["id"]
@@ -763,10 +763,13 @@ def _configure_edge(context, name, edge, timeout):
     raise RuntimeError(name + " did not reach configurable controller mode") from last_error
 
 
-def _manager_ssh_fingerprints(context):
-    with _pinned_management_console(context, "MANAGER1") as console:
+def _manager_ssh_fingerprints(context, *, manager_name="MANAGER1",
+                              transport_interface="eth1"):
+    if not re.fullmatch(r"eth[0-9]+", transport_interface or ""):
+        raise ValueError("Manager transport interface must be ethN")
+    with _pinned_management_console(context, manager_name) as console:
         vpn0 = console.command(
-            "show running-config vpn 0 interface eth1 | nomore", timeout=120)
+            "show running-config vpn 0 interface " + transport_interface + " | nomore", timeout=120)
         if ("tunnel-interface" not in vpn0
                 or not re.search(r"allow-service\s+(?:all|ssh|sshd)", vpn0)):
             raise RuntimeError("Manager VPN0 SSH service exposure is not proven")
