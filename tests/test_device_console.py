@@ -286,6 +286,14 @@ class ConsoleTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'rejected'):
             c.command('ip domain name example.com', require_echo=True)
 
+    def test_echo_correlation_rejects_nxos_invalid_interface_format(self):
+        c, _ = self.console([
+            "show running-config interface nve1\n^\n"
+            "Invalid interface format at '^' marker.\nNX1#",
+        ])
+        with self.assertRaisesRegex(RuntimeError, 'rejected'):
+            c.command('show running-config interface nve1', require_echo=True)
+
     def test_echo_correlation_rejects_duplicate_ospf_router_id(self):
         c, _ = self.console([
             'router-id 192.0.2.1\n% OSPF: router-id 192.0.2.1 in use by ospf process 100\nR0(config-router)#',

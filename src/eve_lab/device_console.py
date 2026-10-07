@@ -442,7 +442,8 @@ class Console:
         response = echoed + output
         if re.search(
                 r'^%\s*(?:Invalid|Incomplete|Ambiguous|Error|Authorization|Access denied|'
-                r'OSPF:\s*router-id\s+\S+\s+in use by ospf process\s+\d+)',
+                r'OSPF:\s*router-id\s+\S+\s+in use by ospf process\s+\d+)|'
+                r'^Invalid interface format at ',
                 response, re.M | re.I):
             raise RuntimeError('Cisco rejected a command; inspect the console (output omitted)')
         self.prompt = match.group().strip()
