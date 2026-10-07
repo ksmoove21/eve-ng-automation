@@ -70,3 +70,20 @@ remote leaf. Wait for the reported fabric convergence timer to expire before
 classifying an early absent route or Down peer as the recovery result.
 This proves the exercised recovery, not the exact defect attribution or
 uninterrupted fabric stability.
+
+## NX-OS 10.5(x) QEMU and NIC requirements
+
+**DOCUMENTED:** Cisco sets QEMU 4.2.0 as the minimum for the 10.5(x)
+Nexus 9000v KVM deployment and supports E1000 network adapters. Retain
+`e1000`; do not substitute `e1000e` or virtio based only on a reset message.
+Use an installed QEMU release meeting the documented minimum and qualify
+that runtime with the exact simulator image.
+Source: [Cisco 10.5(x) deployment guide](https://www.cisco.com/c/en/us/td/docs/dcn/nx-os/nexus9000/105x/configuration/n9000v-9300v-9500v/cisco-nexus-9000v-9300v-9500v-guide-release-105x/m-nexus-9000v-deployment.html).
+
+**OBSERVED on Lite 10.5.2.F with QEMU 4.1.0:** repeated underlay adjacency
+loss and E1000 kernel adapter resets were observed after boot. Four vCPUs
+alone did not establish stability. QEMU 4.1.0 is below the documented
+minimum, but the observations do not prove that mismatch caused the resets.
+Earlier image bootstrap or point-in-time fabric success does not waive
+these runtime requirements. Qualification on an eligible installed QEMU
+release is separate from the bounded NVE reconstruction recovery above.

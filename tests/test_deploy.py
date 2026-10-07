@@ -696,6 +696,52 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(apply(self.client, self.topology)["changes"], [])
         self.assertEqual(self.client.writes, [])
 
+    def test_qemu_version_creation_stopped_reconcile_and_idempotence(self):
+        self.topology["nodes"][0]["qemu_version"] = "8.2.1"
+        apply(self.client, self.topology)
+        self.assertEqual(self.client.nodes["1"]["qemu_version"], "8.2.1")
+        self.topology["nodes"][0]["qemu_version"] = "9.1.0"
+        self.client.writes.clear()
+        apply(self.client, self.topology)
+        self.assertEqual(self.client.writes, [("PUT", "labs/palo-lab.unl/nodes/1", {
+            "name": "R1", "qemu_version": "9.1.0", "ro_qemu_version": "8.2.1", "cpulimit": 0})])
+        self.client.writes.clear()
+        self.assertEqual(apply(self.client, self.topology)["changes"], [])
+
+    def test_qemu_version_running_rejected_and_active_version_preserved(self):
+        self.topology["nodes"].append(dict(self.topology["nodes"][0], name="R2"))
+        apply(self.client, self.topology)
+        self.client.nodes["1"].update(status=2, qemu_version="7.0.0")
+        self.topology["nodes"][0]["qemu_version"] = "9.1.0"
+        self.topology["nodes"][1]["qemu_version"] = "9.1.0"
+        result = apply(self.client, self.topology, prune=True)
+        self.assertEqual(self.client.nodes["1"]["qemu_version"], "7.0.0")
+        self.assertEqual(self.client.nodes["2"]["qemu_version"], "9.1.0")
+        self.assertTrue(result["deferred"])
+        with self.assertRaisesRegex(RuntimeError, "Stop R1"):
+            apply(self.client, self.topology, prune=False)
+
+    def test_qemu_version_validation_and_readback_failure(self):
+        for version in ("", "9", 9, "../9.1.0"):
+            topology = copy.deepcopy(self.topology)
+            topology["nodes"][0]["qemu_version"] = version
+            with self.assertRaisesRegex(ValueError, "qemu_version"):
+                validate(topology)
+        topology = copy.deepcopy(self.topology)
+        topology["nodes"][0].update(type="iol", image="iol-xe-l3-17.16.01a.bin", qemu_version="9.1.0")
+        with self.assertRaisesRegex(ValueError, "qemu_version"):
+            validate(topology)
+        self.topology["nodes"][0]["qemu_version"] = "8.2.1"
+        original = self.client.request
+        def request(method, path, payload=None):
+            if method == "POST" and path.endswith("/nodes"):
+                payload = dict(payload)
+                payload.pop("qemu_version", None)
+            return original(method, path, payload)
+        self.client.request = request
+        with self.assertRaisesRegex(RuntimeError, "qemu_version"):
+            apply(self.client, self.topology)
+
     def test_apply_updates_console_and_explicit_positions(self):
         apply(self.client, self.topology)
         self.topology['nodes'][0].update(console='telnet', left=350, top=400)

@@ -84,7 +84,7 @@ def validate(topology: dict):
     validate_folder(topology.get("remote_folder", "/"))
     allowed = {
         "nodes": {"name", "template", "type", "image", "cpu", "ram", "ethernet", "console", "left", "top", "icon",
-                  "satellite", "required_storage_gib", "required_image_disks", "required_image_disk_names"},
+                  "satellite", "required_storage_gib", "required_image_disks", "required_image_disk_names", "qemu_version"},
         "networks": {"name", "type", "left", "top", "icon"},
         "links": {"node", "interface", "network"},
     }
@@ -118,6 +118,9 @@ def validate(topology: dict):
                 raise ValueError(f"{node['name']}: {field} must be a positive integer")
         if "satellite" in node and (type(node["satellite"]) is not int or node["satellite"] < 1):
             raise ValueError(f"{node['name']}: satellite must be a positive EVE satellite ID; manager placement is not allowed")
+        if "qemu_version" in node and (node["type"] != "qemu" or not isinstance(node["qemu_version"], str)
+                                       or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", node["qemu_version"])):
+            raise ValueError(f"{node['name']}: qemu_version must be a QEMU major.minor.patch string")
         if "required_storage_gib" in node and (
                 type(node["required_storage_gib"]) is not int or node["required_storage_gib"] < 1):
             raise ValueError(f"{node['name']}: required_storage_gib must be a positive integer")

@@ -313,7 +313,10 @@ rule and must not be implemented as platform-specific adapter logic.
 
 The reconciler enforces `cpulimit=0` for newly created and stopped managed QEMU
 nodes, independent of EVE template defaults. Native IOL node records do not
-persist this QEMU setting and are left without it. Running nodes remain unchanged
+persist this QEMU setting and are left without it. Optional `qemu_version` is a
+generic explicit QEMU-only `major.minor.patch` resource: creation carries it in
+the node payload, while stopped-node updates send the original readback as
+`ro_qemu_version` and require readback convergence. Running nodes remain unchanged
 under the existing deferral/race protection policy. There is no opt-in to CPU
 limiting in the topology schema. Optional `icon` values are checked against the
 live template inventory before writes.

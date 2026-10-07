@@ -317,7 +317,7 @@ def preserve_active(client, path, topology, direct, nodes, networks):
     result = {**topology}
     result['nodes'] = []
     declared = {node['name'] for node in topology['nodes']}
-    fields = ('name', 'template', 'type', 'image', 'cpu', 'ram', 'ethernet', 'console', 'left', 'top', 'icon', 'cpulimit', 'sat')
+    fields = ('name', 'template', 'type', 'image', 'cpu', 'ram', 'ethernet', 'console', 'left', 'top', 'icon', 'cpulimit', 'sat', 'qemu_version')
     for desired in topology['nodes'] + [nodes[name] for name in sorted(active - declared)]:
         name = desired['name']
         result['nodes'].append({key: nodes[name][key] for key in fields if key in nodes[name]}
@@ -476,7 +476,7 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
         for desired in topology[kind]:
             if desired["name"] in existing:
                 actual = existing[desired["name"]]
-                resources = {key: desired[key] for key in ("cpu", "ram", "ethernet", "console", "left", "top", "icon", "cpulimit", "sat")
+                resources = {key: desired[key] for key in ("cpu", "ram", "ethernet", "console", "left", "top", "icon", "cpulimit", "sat", "qemu_version")
                              if kind == "nodes" and key in desired
                              and str(desired[key]) != str(actual.get(key))}
                 if kind == "networks":
@@ -563,7 +563,11 @@ def apply(client, topology, prune=True, root=None, server_name="default", image_
                         raise RuntimeError(f"Server did not disconnect removed interface {port['name']}")
             # EVE-NG's edit() changes CPU/RAM without setting its modified flag.
             # Sending the unchanged name triggers persistence without a rename.
-            client.request("PUT", f"{path}/nodes/{ident}", {"name": current["name"], **resources})
+            payload = {"name": current["name"], **resources}
+            if "qemu_version" in resources:
+                payload["ro_qemu_version"] = current.get("qemu_version")
+                payload["cpulimit"] = 0
+            client.request("PUT", f"{path}/nodes/{ident}", payload)
             changes.append(f"updated {desired['name']}: {resources}")
             nodes = named(client, path + "/nodes")
             check_settings(desired, nodes[desired["name"]])
