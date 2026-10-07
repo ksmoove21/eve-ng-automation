@@ -44,3 +44,29 @@ Lite. The full-image minimums must not be applied to the checked-in
 `nxos64-cs-lite.10.5.2.F.bin` reference without distinguishing the image flavor.
 These resource limits do not establish the cause of any observed service crash.
 Source: [Nexus 9300v and 9500v Lite, 10.5(x)](https://www.cisco.com/c/en/us/td/docs/dcn/nx-os/nexus9000/105x/configuration/n9000v-9300v-9500v/cisco-nexus-9000v-9300v-9500v-guide-release-105x/m-nexus-9300v-and-9500v-lite-nx-os-image.html).
+
+## Missing NVE runtime despite saved configuration
+
+**OBSERVED on NX-OSv Lite 10.5.2.F:** the NVE feature remained enabled,
+startup configuration retained NVE1, and its VLAN/VRF/source-loopback
+prerequisites remained configured, but running interfaces and NVE VNI state
+lacked NVE1. Both `interface nve1` and `interface nve 1` returned
+`Invalid interface format at '^' marker.` The same state persisted across
+one disk-preserving guest restart.
+
+**DOCUMENTED for a different release scenario:** Cisco lists this rejection
+and missing NVE state in CSCwf92752 for upgrades into 10.4(x). Its workaround
+is to disable and re-enable `feature nv overlay`, then restore the full NVE
+configuration. This is a comparable symptom, not confirmation that 10.5.2.F
+has that exact defect. Ordinary interface reconciliation must not silently
+perform this feature cycle.
+Source: [Cisco 10.4(2)F release notes, CSCwf92752](https://www.cisco.com/c/en/us/td/docs/dcn/nx-os/nexus9000/104x/release-notes/cisco-nexus-9000-nxos-release-notes-1042.html).
+
+**FIELD-VALIDATED recovery on Lite 10.5.2.F:** the bounded feature cycle
+allowed NVE1 to be recreated and saved to startup configuration. The intended
+L2 and L3 VNIs became operational, both VTEP peers reached Up, and a firewall
+BGP default was exported as a valid EVPN type-5 route and installed on the
+remote leaf. Wait for the reported fabric convergence timer to expire before
+classifying an early absent route or Down peer as the recovery result.
+This proves the exercised recovery, not the exact defect attribution or
+uninterrupted fabric stability.
