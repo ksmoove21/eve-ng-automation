@@ -123,13 +123,25 @@ def _management_from_context(root, reference):
 
 
 def _interface_intent(data, kind, process_id):
-    required = ("interface", "address", "ospf_area")
+    required = {"interface", "address", "ospf_area"}
     optional = {"network_type"} if kind == "routed" else set()
+    if kind == "routed":
+        optional.add("ospf_enabled")
+        if not isinstance(data, dict):
+            raise ValueError("routed interface must be a mapping")
+        ospf_enabled = data.get("ospf_enabled", True)
+        if type(ospf_enabled) is not bool:
+            raise ValueError("routed interface ospf_enabled must be boolean")
+        if not ospf_enabled:
+            required.remove("ospf_area")
+            if "network_type" in data:
+                raise ValueError("routed interface network_type requires ospf_enabled")
     if (not isinstance(data, dict)
-            or set(data) - (set(required) | optional)
-            or not set(required) <= set(data)):
-        raise ValueError(kind + " interface requires interface, address, ospf_area"
-                         + (", and optional network_type" if optional else ""))
+            or set(data) - (required | optional)
+            or not required <= set(data)):
+        raise ValueError(kind + " interface requires interface and address"
+                         + (", ospf_area when ospf_enabled, and optional network_type"
+                            if kind == "routed" else ", and ospf_area"))
     pattern = _DATA_INTERFACE if kind == "routed" else _LOOPBACK_INTERFACE
     interface = _token(data["interface"], kind + " interface", pattern)
     try:
@@ -142,10 +154,13 @@ def _interface_intent(data, kind, process_id):
     result = {
         "interface": interface,
         "address": str(address),
-        "ospf_area": _area(data["ospf_area"]),
-        "ospf_process_id": process_id,
     }
     if kind == "routed":
+        result["ospf_enabled"] = data.get("ospf_enabled", True)
+    if kind == "loopback" or result.get("ospf_enabled"):
+        result["ospf_area"] = _area(data["ospf_area"])
+        result["ospf_process_id"] = process_id
+    if kind == "routed" and result["ospf_enabled"]:
         network_type = data.get("network_type", "point-to-point")
         if network_type != "point-to-point":
             raise ValueError("Cat9Kv routed interface network_type must be point-to-point")
@@ -294,16 +309,18 @@ def bootstrap_commands(intent, username, password, enable_secret, snmp_ro, snmp_
         underlay = intent["underlay"]
         process_id = underlay["ospf"]["process_id"]
         commands.append("ip routing")
-        interfaces = [(underlay["loopback"], True)]
-        interfaces.extend((item, False) for item in underlay["routed_interfaces"])
-        for item, is_loopback in interfaces:
+        interfaces = [(underlay["loopback"], True, True)]
+        interfaces.extend(
+            (item, False, item["ospf_enabled"])
+            for item in underlay["routed_interfaces"])
+        for item, is_loopback, ospf_enabled in interfaces:
             interface = IPv4Interface(item["address"])
             commands.extend([
                 "interface " + item["interface"],
                 *([] if is_loopback else ["no switchport"]),
                 f"ip address {interface.ip} {interface.network.netmask}",
-                *([] if is_loopback else ["ip ospf network point-to-point"]),
-                f"ip ospf {process_id} area {item['ospf_area']}",
+                *([] if is_loopback or not ospf_enabled else ["ip ospf network point-to-point"]),
+                *([f"ip ospf {process_id} area {item['ospf_area']}"] if ospf_enabled else []),
                 "no shutdown",
                 "exit",
             ])
@@ -312,7 +329,7 @@ def bootstrap_commands(intent, username, password, enable_secret, snmp_ro, snmp_
             "router-id " + underlay["ospf"]["router_id"],
             "passive-interface default",
             *["no passive-interface " + item["interface"]
-              for item in underlay["routed_interfaces"]],
+              for item in underlay["routed_interfaces"] if item["ospf_enabled"]],
             "exit",
         ])
     return commands

@@ -60,6 +60,9 @@ underlay:
       address: 198.51.100.1/30
       ospf_area: 0
       network_type: point-to-point
+    - interface: GigabitEthernet1/0/2
+      address: 198.51.100.5/30
+      ospf_enabled: false
 ```
 
 The management source must be a workspace-relative YAML path that stays inside
@@ -86,10 +89,12 @@ The DNAC profile configures:
 - console and VTY session behavior suitable for automation; and
 - the declared Network and DNA license tiers.
 
-The underlay profile enables IP routing, assigns the declared loopback and
-routed `GigabitEthernet1/0/N` interfaces, makes routed links OSPF
-point-to-point, and uses passive-by-default OSPF with only declared routed
-uplinks made active.
+The underlay profile enables IP routing and assigns the declared loopback and
+routed `GigabitEthernet1/0/N` interfaces. Routed interfaces use OSPF
+point-to-point and are made active from passive-by-default OSPF unless they
+set `ospf_enabled: false`. A non-OSPF routed interface remains Layer 3 with an
+address and `no shutdown`; it omits `ospf_area` and cannot declare
+`network_type`.
 
 ## Save, license, and reload behavior
 

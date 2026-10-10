@@ -104,6 +104,23 @@ class Cat9kvInitTests(unittest.TestCase):
             self.assertIn(expected, commands)
         self.assertNotIn("10.100.254.20", "\n".join(commands))
 
+    def test_non_ospf_routed_interface_remains_layer_three_only(self):
+        self.data["underlay"]["routed_interfaces"].append({
+            "interface": "GigabitEthernet1/0/2",
+            "address": "203.0.113.5/30",
+            "ospf_enabled": False,
+        })
+        self.path.write_text(yaml.safe_dump(self.data), encoding="utf-8")
+        intent = load_bootstrap(self.path, self.root)
+        commands = bootstrap_commands(
+            intent, "automation", "device-pass", "enable-pass", "ro-value", "rw-value")
+        joined = "\n".join(commands)
+        self.assertIn("interface GigabitEthernet1/0/2", commands)
+        self.assertIn("ip address 203.0.113.5 255.255.255.252", commands)
+        self.assertNotIn("no passive-interface GigabitEthernet1/0/2", commands)
+        self.assertEqual(joined.count("ip ospf network point-to-point"), 1)
+        self.assertEqual(joined.count("ip ospf 100 area 0"), 2)
+
     def test_schema_rejects_implicit_or_unsafe_state(self):
         cases = []
         cases.append({**self.data, "profiles": ["ospf-underlay"]})
@@ -113,6 +130,21 @@ class Cat9kvInitTests(unittest.TestCase):
             **self.data["underlay"], "ospf": {"process_id": 100, "router_id": "198.51.100.2"}}})
         for index, data in enumerate(cases):
             with self.subTest(index=index):
+                self.path.write_text(yaml.safe_dump(data), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    load_bootstrap(self.path, self.root)
+
+    def test_schema_rejects_invalid_non_ospf_interface_settings(self):
+        interface = self.data["underlay"]["routed_interfaces"][0]
+        cases = [
+            {**interface, "ospf_enabled": "false"},
+            {**interface, "ospf_enabled": False, "network_type": "point-to-point"},
+        ]
+        for index, item in enumerate(cases):
+            with self.subTest(index=index):
+                data = {**self.data, "underlay": {
+                    **self.data["underlay"], "routed_interfaces": [item],
+                }}
                 self.path.write_text(yaml.safe_dump(data), encoding="utf-8")
                 with self.assertRaises(ValueError):
                     load_bootstrap(self.path, self.root)
