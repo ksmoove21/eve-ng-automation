@@ -345,6 +345,16 @@ class ConsoleTests(unittest.TestCase):
             'configure terminal', 'username admin privilege 15 password 0 test-password',
             'line vty 0 4', 'login local', 'transport input ssh', 'end', 'write memory'])
 
+    def test_init_uses_default_aaa_login_after_enabling_aaa_new_model(self):
+        c = Console(MagicMock())
+        c.command = MagicMock(return_value='[OK]\n')
+        c.initialize(['aaa new-model', 'aaa authentication login default local'],
+                     username='admin', password='test-password')
+        commands = [call.args[0] for call in c.command.call_args_list]
+        self.assertEqual(commands[-7:], [
+            'configure terminal', 'username admin privilege 15 password 0 test-password',
+            'line vty 0 4', 'login authentication default',
+            'transport input ssh', 'end', 'write memory'])
     def test_init_rejects_credential_command_injection_before_changes(self):
         c = Console(MagicMock())
         c.command = MagicMock()

@@ -450,6 +450,8 @@ class Console:
                 raise ValueError('Invalid Cisco username')
             if not password or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in password):
                 raise ValueError('Cisco init password must be a nonempty CLI token')
+        aaa_new_model = any(
+            command.strip().lower() == 'aaa new-model' for command in commands)
         send_command = (
             (lambda value, **options: self.command(value, require_echo=True, **options))
             if require_echo else self.command
@@ -466,7 +468,7 @@ class Console:
             send_command('configure terminal')
             send_command(f'username {username} privilege 15 password 0 {password}')
             send_command('line vty 0 4')
-            send_command('login local')
+            send_command('login authentication default' if aaa_new_model else 'login local')
             send_command('transport input ssh')
             send_command('end')
         saved = send_command('write memory', timeout=120)
