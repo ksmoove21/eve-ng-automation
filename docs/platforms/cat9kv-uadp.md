@@ -63,6 +63,9 @@ underlay:
     - interface: GigabitEthernet1/0/2
       address: 198.51.100.5/30
       ospf_enabled: false
+  static_routes:
+    - prefix: 192.0.2.3/32
+      next_hop: 198.51.100.2
 ```
 
 The management source must be a workspace-relative YAML path that stays inside
@@ -94,7 +97,9 @@ routed `GigabitEthernet1/0/N` interfaces. Routed interfaces use OSPF
 point-to-point and are made active from passive-by-default OSPF unless they
 set `ospf_enabled: false`. A non-OSPF routed interface remains Layer 3 with an
 address and `no shutdown`; it omits `ospf_area` and cannot declare
-`network_type`.
+`network_type`. Optional `underlay.static_routes` are IPv4 global-routing
+routes. Each route has a CIDR `prefix` and a unicast `next_hop` that belongs to
+a declared routed-interface network; duplicate prefixes are rejected.
 
 ## Save, license, and reload behavior
 

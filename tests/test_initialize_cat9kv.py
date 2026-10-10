@@ -121,6 +121,16 @@ class Cat9kvInitTests(unittest.TestCase):
         self.assertEqual(joined.count("ip ospf network point-to-point"), 1)
         self.assertEqual(joined.count("ip ospf 100 area 0"), 2)
 
+    def test_underlay_static_route_uses_declared_routed_network(self):
+        self.data["underlay"]["static_routes"] = [{
+            "prefix": "198.51.100.3/32", "next_hop": "203.0.113.2",
+        }]
+        self.path.write_text(yaml.safe_dump(self.data), encoding="utf-8")
+        intent = load_bootstrap(self.path, self.root)
+        commands = bootstrap_commands(
+            intent, "automation", "device-pass", "enable-pass", "ro-value", "rw-value")
+        self.assertIn("ip route 198.51.100.3 255.255.255.255 203.0.113.2", commands)
+
     def test_schema_rejects_implicit_or_unsafe_state(self):
         cases = []
         cases.append({**self.data, "profiles": ["ospf-underlay"]})
@@ -144,6 +154,23 @@ class Cat9kvInitTests(unittest.TestCase):
             with self.subTest(index=index):
                 data = {**self.data, "underlay": {
                     **self.data["underlay"], "routed_interfaces": [item],
+                }}
+                self.path.write_text(yaml.safe_dump(data), encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    load_bootstrap(self.path, self.root)
+
+    def test_schema_rejects_invalid_underlay_static_routes(self):
+        cases = [
+            [{"prefix": "198.51.100.3/32", "next_hop": "198.51.100.2"}],
+            [
+                {"prefix": "198.51.100.3/32", "next_hop": "203.0.113.2"},
+                {"prefix": "198.51.100.3/32", "next_hop": "203.0.113.2"},
+            ],
+        ]
+        for index, routes in enumerate(cases):
+            with self.subTest(index=index):
+                data = {**self.data, "underlay": {
+                    **self.data["underlay"], "static_routes": routes,
                 }}
                 self.path.write_text(yaml.safe_dump(data), encoding="utf-8")
                 with self.assertRaises(ValueError):

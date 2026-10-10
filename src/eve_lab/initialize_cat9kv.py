@@ -225,7 +225,11 @@ def load_bootstrap(path, root):
     }
     if "underlay" in data:
         underlay = data["underlay"]
-        _exact(underlay, ("ospf", "loopback", "routed_interfaces"), "underlay")
+        required_underlay = {"ospf", "loopback", "routed_interfaces"}
+        if (not isinstance(underlay, dict)
+                or set(underlay) - (required_underlay | {"static_routes"})
+                or not required_underlay <= set(underlay)):
+            raise ValueError("underlay requires ospf, loopback, routed_interfaces, and optional static_routes")
         ospf = underlay["ospf"]
         _exact(ospf, ("process_id", "router_id"), "underlay ospf")
         if type(ospf["process_id"]) is not int or not 1 <= ospf["process_id"] <= 65535:
@@ -248,10 +252,36 @@ def load_bootstrap(path, root):
             raise ValueError("Underlay interfaces and addresses must be unique")
         if router_id != str(IPv4Interface(loopback["address"]).ip):
             raise ValueError("OSPF router_id must equal the declared loopback address")
+        static_routes = underlay.get("static_routes", [])
+        if not isinstance(static_routes, list):
+            raise ValueError("underlay static_routes must be a list")
+        if "static_routes" in underlay and not static_routes:
+            raise ValueError("underlay static_routes must be nonempty when declared")
+        route_prefixes = set()
+        normalized_routes = []
+        connected_networks = [IPv4Interface(item["address"]).network for item in routed]
+        for item in static_routes:
+            _exact(item, ("prefix", "next_hop"), "underlay static route")
+            try:
+                prefix = IPv4Network(item["prefix"], strict=True)
+                next_hop = IPv4Address(item["next_hop"])
+            except ValueError:
+                raise ValueError("underlay static route requires an IPv4 CIDR prefix and IPv4 next_hop") from None
+            if (next_hop.is_unspecified or next_hop.is_multicast
+                    or next_hop == IPv4Address("255.255.255.255")):
+                raise ValueError("underlay static route next_hop must be a unicast IPv4 host")
+            if not any(next_hop in network for network in connected_networks):
+                raise ValueError("underlay static route next_hop must use a declared routed interface network")
+            normalized_prefix = str(prefix)
+            if normalized_prefix in route_prefixes:
+                raise ValueError("underlay static route prefixes must be unique")
+            route_prefixes.add(normalized_prefix)
+            normalized_routes.append({"prefix": normalized_prefix, "next_hop": str(next_hop)})
         result["underlay"] = {
             "ospf": {"process_id": ospf["process_id"], "router_id": router_id},
             "loopback": loopback,
             "routed_interfaces": routed,
+            "static_routes": normalized_routes,
         }
     return result
 
@@ -324,6 +354,9 @@ def bootstrap_commands(intent, username, password, enable_secret, snmp_ro, snmp_
                 "no shutdown",
                 "exit",
             ])
+        for route in underlay["static_routes"]:
+            prefix = IPv4Network(route["prefix"], strict=True)
+            commands.append(f"ip route {prefix.network_address} {prefix.netmask} {route['next_hop']}")
         commands.extend([
             "router ospf " + str(process_id),
             "router-id " + underlay["ospf"]["router_id"],
