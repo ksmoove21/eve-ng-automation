@@ -179,12 +179,6 @@ state is never substituted for the declared running configuration.
 - Smart Licensing registration and entitlement consumption are external to
   the boot-level configuration checked here.
 - Only IPv4 management and an IPv4 OSPF underlay are implemented.
-
-## Layer-2 border capability field validation
-
-**FIELD-VALIDATED on the installed Catalyst Center 2.3.7.10:** the controller accepted a same-device fabric-role/settings update adding `borderTypes: [LAYER_3, LAYER_2]` without delete/re-add or transit detachment. A separate Layer-2 handoff request against an otherwise empty interface was rejected with `NCHS20177` because the device was not yet a Layer-2 border. This confirms the required role prerequisite for the handoff workflow on this exact release; it does not prove forwarding or permit mutation of an existing routed underlay interface. Use a separate, intentionally unused interface for a bounded handoff test and verify the asynchronous task/readback.
-
-The 2.3.7.6 API schema describes limited update fields and separate Layer-2 handoff operations; this field result is specific to the installed 2.3.7.10 behavior and must not be generalized to other releases.
 - Data interfaces are intentionally limited to `GigabitEthernet1/0/N`, and
   routed OSPF links are point-to-point in this profile.
 - Backup/restore has not received Cat9Kv-specific live qualification.
@@ -227,11 +221,20 @@ Primary source: [Catalyst Center 2.3.7 User Guide - Manage Your Inventory](https
 The documented update API exposes only limited fabric-device fields. Supported fabric-role deletion/re-add is distinct from inventory deletion: it can preserve managed inventory and site provisioning, but the exact workflow remains field-tested per deployment. Do not generalize one lab result to all Catalyst Center releases.
 
 Primary references: [Update Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/update-fabric-devices/), [Add Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/add-fabric-devices/), and [Delete Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/delete-fabric-devices/).
+
+## Layer-2 border capability field validation
+
+**FIELD-VALIDATED on the installed Catalyst Center 2.3.7.10:** the controller accepted a same-device fabric-role/settings update adding `borderTypes: [LAYER_3, LAYER_2]` without delete/re-add or transit detachment. A separate Layer-2 handoff request against an otherwise empty interface was rejected with `NCHS20177` because the device was not yet a Layer-2 border. This confirms the required role prerequisite for the handoff workflow on this exact release; it does not prove forwarding or permit mutation of an existing routed underlay interface. Use a separate, intentionally unused interface for a bounded handoff test and verify the asynchronous task/readback.
+
+The 2.3.7.6 API schema describes limited update fields and separate Layer-2 handoff operations; this field result is specific to the installed 2.3.7.10 behavior and must not be generalized to other releases.
+
 ## Multicast routing command syntax
 
-**FIELD-TESTED on `cat9kvuadp-17.15.01`:** the Border rejected `ip multicast-routing distributed` at the `distributed` keyword. No PIM configuration was issued during that probe. The supported IOS-XE 17.15 command reference documents the plain form `ip multicast-routing [vrf vrf-name]`; validate this syntax on the UADP image before applying multicast configuration. The cited command reference targets Catalyst 9400, so this is a command-reference baseline plus exact-image field observation, not proof that every Catalyst 9000v behavior is identical.
+**FIELD-TESTED on `cat9kvuadp-17.15.01`:** the Border rejected `ip multicast-routing distributed` at the `distributed` keyword. A subsequent four-device test accepted plain `ip multicast-routing`, PIM sparse mode on the underlay interfaces and Loopback0, and a scoped static RP mapping. Two RP devices accepted a shared Loopback60000 address with OSPF advertisement, MSDP peers sourced from their unique Loopback0 addresses, `ip msdp originator-id Loopback0`, and `ip msdp default-peer`. Both MSDP sessions reached Up; non-RP devices learned the shared RP through OSPF. Saved configuration and PIM adjacency readback were checked. These results prove the tested control plane, not end-to-end external Layer-2 forwarding.
 
-Source: https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9400/software/release/17-15/command_reference/b_1715_9400_cr/ip_multicast_routing.html
+**DOCUMENTED:** Cisco's SD-Access CVD uses underlay PIM ASM for Layer-2 flooding, with redundant Anycast RP/MSDP and sparse-mode underlay interfaces. This is distinct from PIM SSM used for native Layer-3 multicast transport. Preserve the controller-generated flooding groups; enabling underlay multicast does not itself make Layer-2 transit between independent fabric sites supported.
+
+Sources: [IOS XE 17.15 multicast command reference](https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9400/software/release/17-15/command_reference/b_1715_9400_cr/ip_multicast_routing.html), [IOS XE 17.15 MSDP configuration](https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9500/software/release/17-15/configuration_guide/rtng/b_1715_rtng_9500_cg/configuring_msdp.html), and [SD-Access deployment CVD](https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/catalyst-center/cisco-validated-solution-profiles/validated-profile-sda-deployment.html).
 
 ## SDA transit and external L2 boundary
 
