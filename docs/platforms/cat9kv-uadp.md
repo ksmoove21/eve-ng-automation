@@ -39,6 +39,11 @@ DF-set traffic across the actual virtual path before claiming forwarding or
 restart persistence. Parser acceptance and a saved configuration alone do not
 prove that the EVE host or distributed transport carries the configured size.
 Leave interfaces outside the intended jumbo path at their declared MTU.
+On a live-tested virtual path, 8900-byte DF ICMP probes took approximately
+three seconds per reply: a two-second timeout reported failure, while a
+ten-second timeout returned all replies. Qualify the probe timeout against
+observed virtual datapath latency before diagnosing a packet-size limit.
+This observation does not guarantee the same latency on other hosts.
 The structured bootstrap profile currently has no MTU field.
 
 Cisco's [Catalyst 9000 MTU troubleshooting guide](https://www.cisco.com/c/en/us/support/docs/switches/catalyst-9500-series-switches/217233-troubleshoot-mtu-on-catalyst-9000-series.html)
