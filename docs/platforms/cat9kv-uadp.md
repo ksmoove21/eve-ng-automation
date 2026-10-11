@@ -213,3 +213,11 @@ Primary source: [Catalyst Center 2.3.7 User Guide - Manage Your Inventory](https
 ## Readiness timing observation
 
 **OBSERVED on CAT 9000v UADP IOS XE 17.15.01:** after boot/reacquisition, routed data ports were initially observed notconnect with zero packets and later read back up/up while FED was running, without a guest configuration change or host wiring repair. The observations establish coincidence only, not causal ordering or a general recovery method. Validate platform/FED state and interface readback before declaring underlay readiness.
+
+## Catalyst Center border/transit prerequisites
+
+**OBSERVED and version-gated for Catalyst Center 2.3.7.x:** border creation requires a default exit or external-route import setting; a border created without either can be rejected with the documented NCHS20392 prerequisite. SDA transit attachment rejects a non-default border, and `isDefaultExit` is immutable after creation (NCHS20123). Therefore create the intended border with `defaultExit=true` or `importExternalRoutes=true` when that role is required; do not depend on a later PUT to change the immutable setting.
+
+The documented update API exposes only limited fabric-device fields. Supported fabric-role deletion/re-add is distinct from inventory deletion: it can preserve managed inventory and site provisioning, but the exact workflow remains field-tested per deployment. Do not generalize one lab result to all Catalyst Center releases.
+
+Primary references: [Update Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/update-fabric-devices/), [Add Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/add-fabric-devices/), and [Delete Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/delete-fabric-devices/).
