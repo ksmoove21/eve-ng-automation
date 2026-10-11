@@ -179,6 +179,12 @@ state is never substituted for the declared running configuration.
 - Smart Licensing registration and entitlement consumption are external to
   the boot-level configuration checked here.
 - Only IPv4 management and an IPv4 OSPF underlay are implemented.
+
+## Layer-2 border capability field validation
+
+**FIELD-VALIDATED on the installed Catalyst Center 2.3.7.10:** the controller accepted a same-device fabric-role/settings update adding `borderTypes: [LAYER_3, LAYER_2]` without delete/re-add or transit detachment. A separate Layer-2 handoff request against an otherwise empty interface was rejected with `NCHS20177` because the device was not yet a Layer-2 border. This confirms the required role prerequisite for the handoff workflow on this exact release; it does not prove forwarding or permit mutation of an existing routed underlay interface. Use a separate, intentionally unused interface for a bounded handoff test and verify the asynchronous task/readback.
+
+The 2.3.7.6 API schema describes limited update fields and separate Layer-2 handoff operations; this field result is specific to the installed 2.3.7.10 behavior and must not be generalized to other releases.
 - Data interfaces are intentionally limited to `GigabitEthernet1/0/N`, and
   routed OSPF links are point-to-point in this profile.
 - Backup/restore has not received Cat9Kv-specific live qualification.
