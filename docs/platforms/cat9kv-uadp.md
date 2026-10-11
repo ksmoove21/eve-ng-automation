@@ -241,3 +241,9 @@ Sources: [IOS XE 17.15 multicast command reference](https://www.cisco.com/c/en/u
 **FIELD-VALIDATED on Catalyst Center 2.3.7.10 / CAT 9000v UADP IOS XE 17.15.01:** the installed design reproduced distinct L2 BUM groups for independent sites and did not expose a Catalyst Center L2 VN operation to force a shared group. Cisco's validated SDA deployment guide states that SD-Access transit is not supported for internal borders or Layer 2 borders. This is a documented role/topology boundary for the attempted external L2 path, not a universal statement that every L2 service circuit is impossible. Keep any external service-circuit exception as an explicit architecture decision and preserve the routed underlay.
 
 Source: https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/catalyst-center/cisco-validated-solution-profiles/validated-profile-sda-deployment.html
+
+## VRF-aware SSH through a guest console
+
+**FIELD-TESTED on `cat9kvuadp-17.15.01`:** with `ip ssh source-interface GigabitEthernet0/0` configured, an IOS SSH client connection to a global-table adjacent interface timed out. An explicit `ssh -vrf Mgmt-vrf -l <username> <management-address>` connection over the shared management segment succeeded. Verify the destination SSH host key and guest identity before configuration. Closing the outer Telnet channel did not terminate the nested IOS SSH session; explicitly exit it and verify the expected hostname and Loopback0 identity before another node-specific write.
+
+**DOCUMENTED:** the SSH source-interface setting controls client sourcing. Use the explicit VRF-aware client command for a management interface in a VRF. See [Cisco VRF-aware management examples](https://www.cisco.com/c/en/us/support/docs/routers/asr-1000-series-aggregation-services-routers/116093-configure-vrf-00.html).
