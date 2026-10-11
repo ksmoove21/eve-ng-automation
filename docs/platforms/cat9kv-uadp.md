@@ -24,6 +24,27 @@ observed, the Cat9Kv reload path selects `VNGWC - GOLDEN IMAGE` once and
 continues bounded console reacquisition. It does not guess at other bootloader
 failures or apply this recovery to other templates.
 
+## MTU on the tested 17.15.01 image
+
+**Observed live, image-specific:** `system mtu 9100` is rejected on the
+`cat9kvuadp-17.15.01` image. Routed data interfaces instead accept `mtu`
+values from 1500 through 8978. After setting the hardware interface MTU to
+8978, the same interface accepts `ip mtu 8978`; its earlier `ip mtu ?`
+range ended at 1500 while the hardware MTU was still 1500. A global-command
+rejection therefore does not establish that jumbo forwarding is unsupported.
+
+Use interface configuration and inspect hardware and IP MTU separately with
+`show interfaces` and `show ip interface`. Verify startup configuration and
+DF-set traffic across the actual virtual path before claiming forwarding or
+restart persistence. Parser acceptance and a saved configuration alone do not
+prove that the EVE host or distributed transport carries the configured size.
+Leave interfaces outside the intended jumbo path at their declared MTU.
+The structured bootstrap profile currently has no MTU field.
+
+Cisco's [Catalyst 9000 MTU troubleshooting guide](https://www.cisco.com/c/en/us/support/docs/switches/catalyst-9500-series-switches/217233-troubleshoot-mtu-on-catalyst-9000-series.html)
+provides physical-platform context; its limits and global syntax are not a
+substitute for the virtual image's parser and forwarding evidence.
+
 ## Structured initialization
 
 Files named `configs/NODE-init.yaml` use schema version 1. The required
