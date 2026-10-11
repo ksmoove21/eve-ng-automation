@@ -205,3 +205,7 @@ Catalyst Center 2.3.7's User Guide documents that assigning an already provision
 Treat this as a Catalyst Center workflow outside the engine: preserve the EVE guest identity, detach fabric/transit roles in the controller, delete the provisioned inventory record, rediscover/add the same device, provision it to the target fabric site, then restore transit membership using the current readback controller identity. Do not assume UUID continuity or rotation; rematch by serial, management IP, and current readback UUID, and update references accordingly. If the controller rejects deletion while a transit/control-plane association remains, resolve that dependency first and record the exact task result.
 
 Primary source: [Catalyst Center 2.3.7 User Guide - Manage Your Inventory](https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/catalyst-center/2-3-7/user_guide/b_cisco_dna_center_ug_2_3_7_chapter_011.html). This is a version-gated platform fact, not an engine feature or automatic migration workflow.
+
+## Native-wipe serial observation
+
+**OBSERVED on EVE Pro 7.2.0-4 with CAT 9000v UADP IOS XE 17.15.01:** a native wipe preserved the EVE node object, MAC, interface wiring, and resource profile, but the guest generated a new serial number. This is not a universal contract. After a wipe/recovery, reconcile the actual guest serial and current Catalyst Center inventory UUID before resync or provisioning; do not rely on a cached serial or identity assumption.
