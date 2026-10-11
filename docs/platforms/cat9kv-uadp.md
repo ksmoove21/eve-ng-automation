@@ -209,3 +209,7 @@ Primary source: [Catalyst Center 2.3.7 User Guide - Manage Your Inventory](https
 ## Native-wipe serial observation
 
 **OBSERVED on EVE Pro 7.2.0-4 with CAT 9000v UADP IOS XE 17.15.01:** a native wipe preserved the EVE node object, MAC, interface wiring, and resource profile, but the guest generated a new serial number. This is not a universal contract. After a wipe/recovery, reconcile the actual guest serial and current Catalyst Center inventory UUID before resync or provisioning; do not rely on a cached serial or identity assumption.
+
+## Readiness timing observation
+
+**OBSERVED on CAT 9000v UADP IOS XE 17.15.01:** after boot/reacquisition, routed data ports were initially observed notconnect with zero packets and later read back up/up while FED was running, without a guest configuration change or host wiring repair. The observations establish coincidence only, not causal ordering or a general recovery method. Validate platform/FED state and interface readback before declaring underlay readiness.
