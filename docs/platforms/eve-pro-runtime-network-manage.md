@@ -25,3 +25,9 @@ request. Verify the running `vnet` bridge, each endpoint `bun`/`pun`, the `bun`
 master, guest `vun` carrier, and an unaffected control link separately before
 proceeding to another network. Do not replace this scoped API call with raw
 host `ip link`, broad node restarts, or the undocumented netsetup stdin tool.
+
+## Native wipe and placement observation
+
+On EVE Pro 7.2.0-4, a native node wipe can preserve the node object and its image/resource/interface identity while resetting a stopped node's observed satellite placement to the manager/default value. This is an **OBSERVED** version-specific behavior, not a universal API contract; the native API documentation describes wipe but does not document the placement reset. After wiping a stopped node, explicitly restore the intended host/satellite placement and verify the stopped-node pin before starting it.
+
+Reference: [EVE-NG API documentation](https://www.eve-ng.net/index.php/how-to-eve-ng-api/).
