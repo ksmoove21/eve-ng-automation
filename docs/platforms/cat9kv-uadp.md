@@ -227,3 +227,14 @@ Primary source: [Catalyst Center 2.3.7 User Guide - Manage Your Inventory](https
 The documented update API exposes only limited fabric-device fields. Supported fabric-role deletion/re-add is distinct from inventory deletion: it can preserve managed inventory and site provisioning, but the exact workflow remains field-tested per deployment. Do not generalize one lab result to all Catalyst Center releases.
 
 Primary references: [Update Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/update-fabric-devices/), [Add Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/add-fabric-devices/), and [Delete Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/delete-fabric-devices/).
+## Multicast routing command syntax
+
+**FIELD-TESTED on `cat9kvuadp-17.15.01`:** the Border rejected `ip multicast-routing distributed` at the `distributed` keyword. No PIM configuration was issued during that probe. The supported IOS-XE 17.15 command reference documents the plain form `ip multicast-routing [vrf vrf-name]`; validate this syntax on the UADP image before applying multicast configuration. The cited command reference targets Catalyst 9400, so this is a command-reference baseline plus exact-image field observation, not proof that every Catalyst 9000v behavior is identical.
+
+Source: https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9400/software/release/17-15/command_reference/b_1715_9400_cr/ip_multicast_routing.html
+
+## SDA transit and external L2 boundary
+
+**FIELD-VALIDATED on Catalyst Center 2.3.7.10 / CAT 9000v UADP IOS XE 17.15.01:** the installed design reproduced distinct L2 BUM groups for independent sites and did not expose a Catalyst Center L2 VN operation to force a shared group. Cisco's validated SDA deployment guide states that SD-Access transit is not supported for internal borders or Layer 2 borders. This is a documented role/topology boundary for the attempted external L2 path, not a universal statement that every L2 service circuit is impossible. Keep any external service-circuit exception as an explicit architecture decision and preserve the routed underlay.
+
+Source: https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/catalyst-center/cisco-validated-solution-profiles/validated-profile-sda-deployment.html
