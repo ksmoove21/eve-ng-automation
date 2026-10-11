@@ -197,3 +197,11 @@ Network/DNA Advantage active. Early serial text (`Both links down` and
 failure. Use normal login for initial acquisition; reserve the GRUB recovery
 path for a reload and its exact observed failure. This observation does not
 qualify a general workaround or authorize a disk reset.
+
+## Catalyst Center site migration boundary (version-gated)
+
+Catalyst Center 2.3.7's User Guide documents that assigning an already provisioned device to a different site requires deleting it from inventory and adding it again at the new site. The SDA `provisionDevices` DELETE operation is inventory deletion, not an association-only move; the inventory record is temporarily removed during the move. A 2.3.7.10 field case showed rediscovery returning the same UUID, so UUID rotation must not be assumed. Existing SDA transit/control-plane membership must be detached or updated before the old inventory identity is removed and restored only after the rediscovered device is rematched by serial, management IP, and current readback UUID.
+
+Treat this as a Catalyst Center workflow outside the engine: preserve the EVE guest identity, detach fabric/transit roles in the controller, delete the provisioned inventory record, rediscover/add the same device, provision it to the target fabric site, then restore transit membership using the current readback controller identity. Do not assume UUID continuity or rotation; rematch by serial, management IP, and current readback UUID, and update references accordingly. If the controller rejects deletion while a transit/control-plane association remains, resolve that dependency first and record the exact task result.
+
+Primary source: [Catalyst Center 2.3.7 User Guide - Manage Your Inventory](https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/catalyst-center/2-3-7/user_guide/b_cisco_dna_center_ug_2_3_7_chapter_011.html). This is a version-gated platform fact, not an engine feature or automatic migration workflow.
