@@ -1,6 +1,7 @@
 """Read-first reconciliation for Catalyst Center Layer-3 virtual networks."""
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -314,4 +315,153 @@ class Layer2VirtualNetworkAdapter:
                 raise CatalystCenterError(f"Layer-2 VN {plan.desired.vlan_name} changed controller ID")
             if plan.desired.vlan_id is not None and record.get("vlanId") != plan.desired.vlan_id or record["trafficType"] != plan.desired.traffic_type or record.get("associatedLayer3VirtualNetworkName") != plan.desired.associated_layer3_virtual_network_name:
                 raise CatalystCenterError(f"Layer-2 VN {plan.desired.vlan_name} changed association")
+        return plans
+
+_LAYER3_IP_TRANSIT_HANDOFF_PATH = "/dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits"
+
+
+@dataclass(frozen=True)
+class Layer3IPTransitHandoff:
+    """Controller-allocated IPv4 Layer-3 handoff over an IP transit."""
+
+    network_device_id: str
+    fabric_id: str
+    transit_network_id: str
+    interface_name: str
+    virtual_network_name: str
+    vlan_id: int
+    external_connectivity_ip_pool_name: str
+
+    def __post_init__(self) -> None:
+        values = (
+            self.network_device_id,
+            self.fabric_id,
+            self.transit_network_id,
+            self.interface_name,
+            self.virtual_network_name,
+            self.external_connectivity_ip_pool_name,
+        )
+        if not all(isinstance(value, str) and value for value in values):
+            raise ValueError("Layer-3 IP-transit handoff identity fields are required")
+        if (
+            type(self.vlan_id) is not int
+            or not 2 <= self.vlan_id <= 4093
+            or 1002 <= self.vlan_id <= 1005
+            or self.vlan_id == 2046
+        ):
+            raise ValueError("Layer-3 IP-transit handoff VLAN ID is reserved or outside 2-4093")
+
+    @property
+    def endpoint(self) -> tuple[str, str, str, int]:
+        return self.fabric_id, self.network_device_id, self.interface_name, self.vlan_id
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "networkDeviceId": self.network_device_id,
+            "fabricId": self.fabric_id,
+            "transitNetworkId": self.transit_network_id,
+            "interfaceName": self.interface_name,
+            "virtualNetworkName": self.virtual_network_name,
+            "vlanId": self.vlan_id,
+            "externalConnectivityIpPoolName": self.external_connectivity_ip_pool_name,
+        }
+
+
+@dataclass(frozen=True)
+class Layer3IPTransitHandoffPlan:
+    desired: Layer3IPTransitHandoff
+    action: str
+    payload: dict[str, Any] | None
+    observed_id: str | None
+
+
+class Layer3IPTransitHandoffAdapter:
+    """Read-first, create-only IP-transit handoffs with controller-allocated IPv4 endpoints."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    @staticmethod
+    def _record(raw: dict[str, Any]) -> tuple[str, Layer3IPTransitHandoff, ipaddress.IPv4Interface, ipaddress.IPv4Interface]:
+        try:
+            handoff = Layer3IPTransitHandoff(
+                raw["networkDeviceId"], raw["fabricId"], raw["transitNetworkId"], raw["interfaceName"],
+                raw["virtualNetworkName"], raw["vlanId"], raw["externalConnectivityIpPoolName"],
+            )
+            identity = raw["id"]
+            local = ipaddress.ip_interface(raw["localIpAddress"])
+            remote = ipaddress.ip_interface(raw["remoteIpAddress"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise CatalystCenterError("Layer-3 IP-transit handoff list returned invalid identity or IPv4 assignment") from error
+        if not isinstance(identity, str) or not identity or not isinstance(local, ipaddress.IPv4Interface) or not isinstance(remote, ipaddress.IPv4Interface):
+            raise CatalystCenterError("Layer-3 IP-transit handoff list returned invalid identity or IPv4 assignment")
+        if local.ip == remote.ip or local.network != remote.network or local.network.prefixlen not in {30, 31}:
+            raise CatalystCenterError("Layer-3 IP-transit handoff list returned invalid IPv4 pair")
+        if local.ip not in local.network.hosts() or remote.ip not in remote.network.hosts():
+            raise CatalystCenterError("Layer-3 IP-transit handoff list returned unusable IPv4 host assignment")
+        return identity, handoff, local, remote
+
+    def _records(self, fabric_id: str) -> dict[tuple[str, str, str, int], tuple[str, Layer3IPTransitHandoff]]:
+        records = self._client.list_all(
+            _LAYER3_IP_TRANSIT_HANDOFF_PATH,
+            query={"fabricId": fabric_id},
+            limit=500,
+            operation="Layer-3 IP-transit handoff list",
+        )
+        result: dict[tuple[str, str, str, int], tuple[str, Layer3IPTransitHandoff]] = {}
+        ids: set[str] = set()
+        for raw in records:
+            if not isinstance(raw, dict):
+                raise CatalystCenterError("Layer-3 IP-transit handoff list returned invalid record")
+            identity, handoff, _, _ = self._record(raw)
+            if identity in ids or handoff.endpoint in result:
+                raise CatalystCenterError("Layer-3 IP-transit handoff list returned duplicate ID or endpoint")
+            ids.add(identity)
+            result[handoff.endpoint] = (identity, handoff)
+        return result
+
+    def plan(self, desired_handoffs: Iterable[Layer3IPTransitHandoff]) -> tuple[Layer3IPTransitHandoffPlan, ...]:
+        desired = tuple(desired_handoffs)
+        if not all(isinstance(handoff, Layer3IPTransitHandoff) for handoff in desired):
+            raise TypeError("desired handoffs must be Layer3IPTransitHandoff instances")
+        if len({handoff.endpoint for handoff in desired}) != len(desired):
+            raise ValueError("desired Layer-3 IP-transit handoff endpoints must be unique")
+        records = {fabric_id: self._records(fabric_id) for fabric_id in {handoff.fabric_id for handoff in desired}}
+        plans: list[Layer3IPTransitHandoffPlan] = []
+        for handoff in desired:
+            found = records[handoff.fabric_id].get(handoff.endpoint)
+            if found is None:
+                plans.append(Layer3IPTransitHandoffPlan(handoff, "create", handoff.payload(), None))
+                continue
+            identity, observed = found
+            if observed != handoff:
+                raise CatalystCenterError("Layer-3 IP-transit handoff has immutable identity conflict")
+            plans.append(Layer3IPTransitHandoffPlan(handoff, "noop", None, identity))
+        return tuple(plans)
+
+    def reconcile(
+        self, desired_handoffs: Iterable[Layer3IPTransitHandoff], *, dry_run: bool = False
+    ) -> tuple[Layer3IPTransitHandoffPlan, ...]:
+        plans = self.plan(desired_handoffs)
+        if dry_run or all(plan.action == "noop" for plan in plans):
+            return plans
+        creates = [plan.payload for plan in plans if plan.action == "create"]
+        if creates:
+            response = self._client.request(
+                "POST", _LAYER3_IP_TRANSIT_HANDOFF_PATH, body=creates, operation="Layer-3 IP-transit handoff create"
+            )
+            task = self._client.task_reference(response)
+            if task is None:
+                raise CatalystCenterTaskError("Layer-3 IP-transit handoff create returned no task ID")
+            self._client.wait_task(task)
+        actual = {fabric_id: self._records(fabric_id) for fabric_id in {plan.desired.fabric_id for plan in plans}}
+        for plan in plans:
+            found = actual[plan.desired.fabric_id].get(plan.desired.endpoint)
+            if found is None:
+                raise CatalystCenterError("Layer-3 IP-transit handoff did not converge")
+            identity, observed = found
+            if plan.observed_id is not None and identity != plan.observed_id:
+                raise CatalystCenterError("Layer-3 IP-transit handoff changed controller ID")
+            if observed != plan.desired:
+                raise CatalystCenterError("Layer-3 IP-transit handoff changed immutable identity")
         return plans

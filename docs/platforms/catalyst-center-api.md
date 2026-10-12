@@ -75,8 +75,14 @@ with the modern Layer-3 VN record without controller readback.
 | --- | --- | --- | --- | --- |
 | Transit network | `GET /dna/intent/api/v1/sda/transitNetworks` | `POST /dna/intent/api/v1/sda/transitNetworks` | `PUT /dna/intent/api/v1/sda/transitNetworks` | List filters include `id`, `name`, `type`, `offset`, and `limit` (maximum 500). Cisco documents transit `id`, `name`, `type`, routing protocol, and ASN as non-updatable. |
 | Layer 2 handoff | `GET /dna/intent/api/v1/sda/fabricDevices/layer2Handoffs` | `POST /dna/intent/api/v1/sda/fabricDevices/layer2Handoffs` | No generic update contract | Create identity: `networkDeviceId`, `fabricId`, `interfaceName`, `internalVlanId`, `externalVlanId`. |
-| Layer 3 IP-transit handoff | `GET /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | `POST /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | `PUT /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | Create identity: `networkDeviceId`, `fabricId`, `transitNetworkId`, `interfaceName`, `virtualNetworkName`, `vlanId`. |
+| Layer 3 IP-transit handoff | `GET /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | `POST /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | No generic update contract | The create-only adapter requires `networkDeviceId`, `fabricId`, `transitNetworkId`, `interfaceName`, `virtualNetworkName`, `vlanId`, and `externalConnectivityIpPoolName`. It never supplies local or remote IPs. |
 
+The GET response supplies controller-assigned `localIpAddress` and
+`remoteIpAddress` records. After a create task completes, the adapter requires
+distinct IPv4 host interfaces in the same `/30` or `/31`, keeps the controller
+resource ID, and compares every requested identity field exactly. A changed
+endpoint, transit, virtual network, VLAN, or external-connectivity pool fails
+closed; it never PUTs, deletes, or rebuilds a handoff.
 Layer-3 handoff reads require `fabricId`, accept optional `networkDeviceId`, and
 use `offset`/`limit`. The documented update schema identifies device, fabric,
 transit, interface, external-connectivity pool, VN, and VLAN as immutable. Fail
