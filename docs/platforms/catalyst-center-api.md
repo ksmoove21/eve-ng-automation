@@ -1,0 +1,104 @@
+# Catalyst Center 2.3.7 API contract
+
+This generic adapter contract is pinned to the 2.3.7.10 release line. It records
+public operations confirmed in Cisco's 2.3.7 API reference and the current
+controller's read surface. It is not a topology definition and never supplies
+controller-specific values.
+
+## Reconciliation rules
+
+Read first and preserve controller IDs returned by the matching read. Create
+only when the intended object is absent. An update is allowed only where the
+exact operation schema documents mutable fields. Never turn an update failure
+into delete-and-recreate.
+
+Every mutation requires operation-specific readback after its documented
+completion signal. A `taskId` is only a task when that operation returns
+`response.taskId`; never treat a resource `id` as a task. Site APIs can instead
+return `executionId` and `executionStatusUrl`; an adapter must support that
+shape before it mutates sites.
+
+## Hierarchy and pools
+
+| Resource | Read | Create | Update | Adapter boundary |
+| --- | --- | --- | --- | --- |
+| Site hierarchy | `GET /dna/intent/api/v1/site` | `POST /dna/intent/api/v1/site` | `PUT /dna/intent/api/v1/site/{siteId}` | Create supplies `type` and its matching area/building/floor structure. Do not invent building coordinates or parent hierarchy. |
+| Global pool | `GET /dna/intent/api/v1/global-pool` | `POST /dna/intent/api/v1/global-pool` | `PUT /dna/intent/api/v1/global-pool/{globalPoolId}` | Read paginates with one-based `offset` and `limit`; preserve the returned pool ID. |
+| Reserved site IPv4 subpool | `GET /dna/intent/api/v1/ipam/siteIpAddressPools` | `POST /dna/intent/api/v1/ipam/siteIpAddressPools` | No generic update contract | Create requires `ipV4AddressSpace`, `name`, `poolType`, and `siteId`; IPv4 space requires `subnet`, `prefixLength`, and `globalPoolId`. Reconcile is create-only and preserves the returned ID. |
+
+## Fabric and virtual networks
+
+| Resource | Read | Create | Update | Adapter boundary |
+| --- | --- | --- | --- | --- |
+| Fabric/site/device inventory | `GET /dna/intent/api/v1/sda/fabricSites`; `GET /dna/intent/api/v1/sda/fabricDevices` | Fabric creation/association is adapter-specific | No generic update contract | Read fabric-site and device IDs before role, VN, or handoff operations. |
+| Layer 3 VN | `GET /dna/intent/api/v1/sda/layer3VirtualNetworks` | `POST /dna/intent/api/v1/sda/layer3VirtualNetworks` | `PUT /dna/intent/api/v1/sda/layer3VirtualNetworks` | Cisco documents array payloads. A greenfield create requires only `virtualNetworkName`; it may additionally declare `fabricIds` and `anchoredSiteId`. Preserve the returned record ID. |
+| Layer 2 VN | `GET /dna/intent/api/v1/sda/layer2VirtualNetworks` | No generic create contract here | No generic update contract here | Readback includes fabric, VLAN, traffic type, and its associated Layer-3 VN name where present. |
+| VN anycast gateway | `GET /dna/intent/api/v1/sda/anycastGateways` | No generic contract here | No generic contract here | Use readback for verification only until a version-specific mutation schema is accepted. |
+
+`anchoredSiteId` is a documented Layer-3 VN field for a greenfield POST. Do not
+use its PUT operation to convert an ordinary existing VN into an anchored VN:
+that conversion remains unsupported by the relevant Cisco validated design. A
+reconciler may create a new intended anchored VN, but must fail closed if an
+existing same-name ordinary VN differs from that design.
+
+The older `business/sda/virtual-network` and `business/sda/virtualnetwork/ippool`
+operations remain versioned public APIs. Do not mix those resource identities
+with the modern Layer-3 VN record without controller readback.
+
+## Transit and handoffs
+
+| Resource | Read | Create | Update | Adapter boundary |
+| --- | --- | --- | --- | --- |
+| Transit network | `GET /dna/intent/api/v1/sda/transitNetworks` | `POST /dna/intent/api/v1/sda/transitNetworks` | `PUT /dna/intent/api/v1/sda/transitNetworks` | List filters include `id`, `name`, `type`, `offset`, and `limit` (maximum 500). Cisco documents transit `id`, `name`, `type`, routing protocol, and ASN as non-updatable. |
+| Layer 2 handoff | `GET /dna/intent/api/v1/sda/fabricDevices/layer2Handoffs` | `POST /dna/intent/api/v1/sda/fabricDevices/layer2Handoffs` | No generic update contract | Create identity: `networkDeviceId`, `fabricId`, `interfaceName`, `internalVlanId`, `externalVlanId`. |
+| Layer 3 IP-transit handoff | `GET /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | `POST /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | `PUT /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | Create identity: `networkDeviceId`, `fabricId`, `transitNetworkId`, `interfaceName`, `virtualNetworkName`, `vlanId`. |
+
+Layer-3 handoff reads require `fabricId`, accept optional `networkDeviceId`, and
+use `offset`/`limit`. The documented update schema identifies device, fabric,
+transit, interface, external-connectivity pool, VN, and VLAN as immutable. Fail
+closed on a change to any of those fields.
+
+Layer-2 and Layer-3 creates return the documented asynchronous
+`response.taskId` and `response.url` shape. Track that task, then read back the
+specific handoff before reporting convergence. Mutation payloads may be one
+object or a documented batch of objects; generic transport supports both but
+resource adapters own field validation.
+
+## TLS compatibility
+
+The generic client uses Python's strict default context unless an environment
+provides an explicit `ssl.SSLContext`. An injected context must retain
+`CERT_REQUIRED` and hostname checking. This permits a caller with a known CA to
+remove only `VERIFY_X509_STRICT` for a documented legacy certificate-chain
+compatibility case; it does not permit unverified TLS or hostname bypass.
+
+Python 3.13 adds `VERIFY_X509_STRICT` and `VERIFY_X509_PARTIAL_CHAIN` to the
+default context flags. Python documents that strict validation can reject
+pre-RFC 5280 or malformed certificates, and shows clearing only the strict flag
+for a compatibility exception.
+
+## Sources
+
+- [Catalyst Center 2.3.7.10 API changelog](https://developer.cisco.com/docs/catalyst-center/api-changelog/)
+- [Create Site](https://developer.cisco.com/docs/catalyst-center/2-3-7-7/create-site/)
+- [Create a global IP address pool](https://developer.cisco.com/docs/catalyst-center/2-3-7-10/create-a-global-ip-address-pool/)
+- [Reserve IP address subpools](https://developer.cisco.com/docs/catalyst-center/reserve-create-ip-address-subpools/)
+- [Add Layer 3 virtual networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/add-layer-3-virtual-networks/)
+- [Get Layer 3 virtual networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-layer-3-virtual-networks/)
+- [Get Layer 2 virtual networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-layer-2-virtual-networks/)
+- [Add transit networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/add-transit-networks/)
+- [Get transit networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-transit-networks/)
+- [Add Layer 2 handoffs](https://developer.cisco.com/docs/catalyst-center/2-3-7-5/add-fabric-devices-layer-2-handoffs/)
+- [Add Layer 3 IP-transit handoffs](https://developer.cisco.com/docs/catalyst-center/2-3-7-5/add-fabric-devices-layer-3-handoffs-with-ip-transit/)
+- [Get Layer 3 IP-transit handoffs](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-fabric-devices-layer-3-handoffs-with-ip-transit/)
+- [Python 3.13 SSL documentation](https://docs.python.org/3.13/library/ssl.html)
+
+
+### Layer-3 VN membership ordering
+
+**OBSERVED on Catalyst Center 2.3.7.10:** Layer-3 VN `fabricIds` ordering can
+change between reads without a membership change. Reconciliation compares this
+field as an unordered unique membership set, retains the controller's existing
+order when constructing an additive request, and still rejects a readback that
+adds or removes any member. Controller record IDs and anchors remain exact
+identity fields.
