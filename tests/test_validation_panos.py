@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import MagicMock
 
 from eve_lab.validation_panos import (
     evaluate,
+    evaluate_operational,
     parse_running_config,
     validate_check,
 )
@@ -182,5 +184,52 @@ class PanosValidationTests(unittest.TestCase):
                 parse_running_config(text)
 
 
+
+class PanosReadinessTests(unittest.TestCase):
+    def readiness(self, jobs, chassis="yes"):
+        console = MagicMock()
+        console.command.side_effect = [chassis, jobs]
+        return evaluate_operational(console, {"type": "panos-readiness"})
+
+    def test_latest_finished_commit_controls_historical_failures_by_job_id(self):
+        passed, evidence = self.readiness(
+            "12 Commit FIN FAIL\n13 Commit FIN OK")
+        self.assertTrue(passed)
+        self.assertEqual(evidence["latest_finished_commit"], {
+            "id": 13, "status": "FIN", "result": "OK"})
+        self.assertFalse(evidence["unfinished_or_failed_commit"])
+
+        passed, evidence = self.readiness(
+            "2026/10/12 10:00:00 2026/10/12 10:00:01 14 Commit FIN OK 2026/10/12 10:00:02")
+        self.assertTrue(passed)
+        self.assertEqual(evidence["latest_finished_commit"]["id"], 14)
+
+        passed, evidence = self.readiness(
+            "13 Commit FIN OK\n12 Commit FIN FAIL")
+        self.assertTrue(passed)
+        self.assertEqual(evidence["latest_finished_commit"]["id"], 13)
+
+    def test_active_newer_or_failed_latest_commit_blocks_readiness(self):
+        for jobs in (
+                "12 Commit FIN OK\n13 Commit ACT PEND",
+                "12 Commit FIN OK\n13 Commit FIN FAIL"):
+            with self.subTest(jobs=jobs):
+                passed, evidence = self.readiness(jobs)
+                self.assertFalse(passed)
+                self.assertTrue(evidence["unfinished_or_failed_commit"])
+
+    def test_readiness_fails_closed_without_finished_commit_or_with_malformed_row(self):
+        for jobs in ("", "12 Commit ACT PEND", "12 Commit FIN"):
+            with self.subTest(jobs=jobs):
+                passed, evidence = self.readiness(jobs)
+                self.assertFalse(passed)
+                self.assertFalse(evidence["successful_commit"])
+        passed, evidence = self.readiness("12 Commit FIN")
+        self.assertEqual(evidence["malformed_commit_rows"], ["12 Commit FIN"])
+
+    def test_chassis_not_ready_blocks_a_successful_latest_commit(self):
+        passed, evidence = self.readiness("12 Commit FIN OK", chassis="no")
+        self.assertFalse(passed)
+        self.assertFalse(evidence["chassis_ready"])
 if __name__ == "__main__":
     unittest.main()

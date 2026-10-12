@@ -169,20 +169,55 @@ def evaluate(root, check):
     return passed, evidence
 
 
+_COMMIT_JOB = re.compile(
+    r"^\s*(?:.*\s)?(?P<id>\d+)\s+Commit\s+(?P<status>\S+)\s+(?P<result>\S+)(?:\s+.*)?$",
+    re.I,
+)
+
+
+def _commit_jobs(text):
+    """Parse `show jobs all` commit rows without trusting display order."""
+    rows = [line for line in text.splitlines() if re.search(r"\bCommit\b", line, re.I)]
+    jobs, malformed = [], []
+    for row in rows:
+        match = _COMMIT_JOB.fullmatch(row)
+        if match is None:
+            malformed.append(row)
+            continue
+        jobs.append({
+            "id": int(match["id"]),
+            "status": match["status"].upper(),
+            "result": match["result"].upper(),
+        })
+    return jobs, malformed
+
+
 def evaluate_operational(console, check):
     validate_check(check)
     try:
         if check["type"] == "panos-readiness":
             text = console.command("show chassis-ready")
             ready = bool(re.search(r"(?:^|\n)\s*yes\s*(?:$|\n)", text, re.I))
-            jobs = console.command("show jobs all")
-            rows = [line.split() for line in jobs.splitlines() if re.search(r"\bCommit\b", line)]
-            committed = any("FIN" in row and "OK" in row for row in rows)
-            outstanding = any("FIN" not in row or "FAIL" in row for row in rows)
-            return ready and committed and not outstanding, {"chassis_ready":ready,"successful_commit":committed,"unfinished_or_failed_commit":outstanding}
+            jobs, malformed = _commit_jobs(console.command("show jobs all"))
+            active = [job for job in jobs if job["status"] != "FIN"]
+            finished = [job for job in jobs if job["status"] == "FIN"]
+            latest = max(finished, key=lambda job: job["id"], default=None)
+            committed = latest is not None and latest["result"] == "OK"
+            blocked = bool(active) or bool(malformed) or (latest is not None and not committed)
+            evidence = {
+                "chassis_ready": ready,
+                "successful_commit": committed,
+                "unfinished_or_failed_commit": blocked,
+                "active_commit_job_ids": [job["id"] for job in active],
+                "latest_finished_commit": latest,
+            }
+            if malformed:
+                evidence["malformed_commit_rows"] = malformed
+            return ready and committed and not blocked, evidence
         text = console.command("show interface " + check["interface"])
         state = re.search(r"(?:Runtime link speed/duplex/state|Link status):[^\n]*\b(up|down)\b", text, re.I)
-        if not state: raise RuntimeError("Unrecognized PAN-OS operational interface state")
-        return state[1].lower()=="up", {"interface":check["interface"],"state":state[1].lower()}
+        if not state:
+            raise RuntimeError("Unrecognized PAN-OS operational interface state")
+        return state[1].lower() == "up", {"interface": check["interface"], "state": state[1].lower()}
     except RuntimeError as error:
-        return False,{"reason":str(error),"failed_layer":"panos-operational"}
+        return False, {"reason": str(error), "failed_layer": "panos-operational"}

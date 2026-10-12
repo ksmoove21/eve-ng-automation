@@ -54,3 +54,21 @@ routing changes and targeted session cleanup in its
 [session reroute knowledge-base article](https://knowledgebase.paloaltonetworks.com/KCSArticleDetail?id=kA10g000000PLlfCAG).
 Requalify traffic after recovery; do not infer success from a session-clear
 acknowledgment or broaden firewall policy to mask cached state.
+
+## PAN-OS 12.1.4 operational readiness
+
+FIELD-TESTED on EVE Pro 7.2.0-4: an inherited serial session remained in the
+output pager, including a nested help screen. TCP and management API access
+were healthy while the CLI login matcher found no operational prompt. Exit
+the observed pager with `q`, reacquire the operational prompt, and use
+`set cli pager off` for the diagnostic session. This changes terminal behavior,
+not candidate or running configuration. A pager mismatch is not evidence that
+the guest needs a restart.
+
+The readiness validator parses numeric job IDs from `show jobs all` without
+relying on display order. It requires chassis readiness, a latest completed
+Commit with `FIN/OK`, no active Commit, and no malformed Commit rows. A failed
+older Commit does not block a later successful one; a failed latest completed
+Commit still blocks readiness. Historical failure supersession is covered by
+regression tests. Live 12.1.4 job tables qualified the parser format and
+readiness checks; no retained failed Commit was present in those CLI tables.

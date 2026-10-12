@@ -4,7 +4,7 @@ from eve_lab.validation_panos import evaluate_operational
 
 class OperationalTests(unittest.TestCase):
     def test_readiness_requires_finished_successful_commit(self):
-        for jobs,expected in [('12 Commit FIN OK',True),('',False),('12 Commit ACT PEND',False),('12 Commit FIN OK\n13 Commit FIN FAIL',False)]:
+        for jobs,expected in [('12 Commit FIN OK',True),('',False),('12 Commit ACT PEND',False),('12 Commit FIN FAIL\n13 Commit FIN OK',True)]:
             c=MagicMock();c.command.side_effect=['yes',jobs]
             self.assertEqual(evaluate_operational(c,dict(type='panos-readiness'))[0],expected)
     def test_interface_requires_recognized_up_state(self):
