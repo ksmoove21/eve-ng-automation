@@ -74,9 +74,13 @@ with the modern Layer-3 VN record without controller readback.
 | Resource | Read | Create | Update | Adapter boundary |
 | --- | --- | --- | --- | --- |
 | Transit network | `GET /dna/intent/api/v1/sda/transitNetworks` | `POST /dna/intent/api/v1/sda/transitNetworks` | `PUT /dna/intent/api/v1/sda/transitNetworks` | List filters include `id`, `name`, `type`, `offset`, and `limit` (maximum 500). Cisco documents transit `id`, `name`, `type`, routing protocol, and ASN as non-updatable. |
-| Layer 2 handoff | `GET /dna/intent/api/v1/sda/fabricDevices/layer2Handoffs` | `POST /dna/intent/api/v1/sda/fabricDevices/layer2Handoffs` | No generic update contract | Create identity: `networkDeviceId`, `fabricId`, `interfaceName`, `internalVlanId`, `externalVlanId`. |
+| Layer 2 handoff | `GET /dna/intent/api/v1/sda/fabricDevices/layer2Handoffs` | `POST /dna/intent/api/v1/sda/fabricDevices/layer2Handoffs` | No generic update contract | The create-only adapter uses only `networkDeviceId`, `fabricId`, `interfaceName`, `internalVlanId`, and `externalVlanId` in Cisco's documented POST array shape. Its endpoint is fabric/device/interface/internal-VLAN; the external VLAN is immutable. |
 | Layer 3 IP-transit handoff | `GET /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | `POST /dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/ipTransits` | No generic update contract | The create-only adapter requires `networkDeviceId`, `fabricId`, `transitNetworkId`, `interfaceName`, `virtualNetworkName`, `vlanId`, and `externalConnectivityIpPoolName`. It never supplies local or remote IPs. |
 
+Layer-2 handoff reads require `fabricId`. The adapter preserves controller IDs,
+checks both VLANs against the documented non-reserved range, waits for the
+asynchronous create task, and verifies exact readback. It neither models
+physical-port coexistence nor PUTs, deletes, or rebuilds a handoff.
 The GET response supplies controller-assigned `localIpAddress` and
 `remoteIpAddress` records. After a create task completes, the adapter requires
 distinct IPv4 host interfaces in the same `/30` or `/31`, keeps the controller

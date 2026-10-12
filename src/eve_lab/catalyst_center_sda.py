@@ -465,3 +465,129 @@ class Layer3IPTransitHandoffAdapter:
             if observed != plan.desired:
                 raise CatalystCenterError("Layer-3 IP-transit handoff changed immutable identity")
         return plans
+_LAYER2_HANDOFF_PATH = "/dna/intent/api/v1/sda/fabricDevices/layer2Handoffs"
+
+
+@dataclass(frozen=True)
+class Layer2Handoff:
+    """Immutable Layer-2 fabric handoff identity."""
+
+    network_device_id: str
+    fabric_id: str
+    interface_name: str
+    internal_vlan_id: int
+    external_vlan_id: int
+
+    def __post_init__(self) -> None:
+        if not all(isinstance(value, str) and value for value in (self.network_device_id, self.fabric_id, self.interface_name)):
+            raise ValueError("Layer-2 handoff network device, fabric, and interface are required")
+        for vlan_id in (self.internal_vlan_id, self.external_vlan_id):
+            if (
+                type(vlan_id) is not int
+                or not 2 <= vlan_id <= 4093
+                or 1002 <= vlan_id <= 1005
+                or vlan_id == 2046
+            ):
+                raise ValueError("Layer-2 handoff VLAN ID is reserved or outside 2-4093")
+
+    @property
+    def endpoint(self) -> tuple[str, str, str, int]:
+        return self.fabric_id, self.network_device_id, self.interface_name, self.internal_vlan_id
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "networkDeviceId": self.network_device_id,
+            "fabricId": self.fabric_id,
+            "interfaceName": self.interface_name,
+            "internalVlanId": self.internal_vlan_id,
+            "externalVlanId": self.external_vlan_id,
+        }
+
+
+@dataclass(frozen=True)
+class Layer2HandoffPlan:
+    desired: Layer2Handoff
+    action: str
+    payload: dict[str, Any] | None
+    observed_id: str | None
+
+
+class Layer2HandoffAdapter:
+    """Read-first, create-only Layer-2 handoffs; no update or rebuild path exists."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    @staticmethod
+    def _record(raw: dict[str, Any]) -> tuple[str, Layer2Handoff]:
+        try:
+            handoff = Layer2Handoff(
+                raw["networkDeviceId"], raw["fabricId"], raw["interfaceName"], raw["internalVlanId"], raw["externalVlanId"]
+            )
+            identity = raw["id"]
+        except (KeyError, TypeError, ValueError) as error:
+            raise CatalystCenterError("Layer-2 handoff list returned invalid identity") from error
+        if not isinstance(identity, str) or not identity:
+            raise CatalystCenterError("Layer-2 handoff list returned invalid ID")
+        return identity, handoff
+
+    def _records(self, fabric_id: str) -> dict[tuple[str, str, str, int], tuple[str, Layer2Handoff]]:
+        records = self._client.list_all(
+            _LAYER2_HANDOFF_PATH,
+            query={"fabricId": fabric_id},
+            limit=500,
+            operation="Layer-2 handoff list",
+        )
+        result: dict[tuple[str, str, str, int], tuple[str, Layer2Handoff]] = {}
+        ids: set[str] = set()
+        for raw in records:
+            if not isinstance(raw, dict):
+                raise CatalystCenterError("Layer-2 handoff list returned invalid record")
+            identity, handoff = self._record(raw)
+            if identity in ids or handoff.endpoint in result:
+                raise CatalystCenterError("Layer-2 handoff list returned duplicate ID or endpoint")
+            ids.add(identity)
+            result[handoff.endpoint] = (identity, handoff)
+        return result
+
+    def plan(self, desired_handoffs: Iterable[Layer2Handoff]) -> tuple[Layer2HandoffPlan, ...]:
+        desired = tuple(desired_handoffs)
+        if not all(isinstance(handoff, Layer2Handoff) for handoff in desired):
+            raise TypeError("desired handoffs must be Layer2Handoff instances")
+        if len({handoff.endpoint for handoff in desired}) != len(desired):
+            raise ValueError("desired Layer-2 handoff endpoints must be unique")
+        records = {fabric_id: self._records(fabric_id) for fabric_id in {handoff.fabric_id for handoff in desired}}
+        plans: list[Layer2HandoffPlan] = []
+        for handoff in desired:
+            found = records[handoff.fabric_id].get(handoff.endpoint)
+            if found is None:
+                plans.append(Layer2HandoffPlan(handoff, "create", handoff.payload(), None))
+                continue
+            identity, observed = found
+            if observed != handoff:
+                raise CatalystCenterError("Layer-2 handoff has immutable identity conflict")
+            plans.append(Layer2HandoffPlan(handoff, "noop", None, identity))
+        return tuple(plans)
+
+    def reconcile(self, desired_handoffs: Iterable[Layer2Handoff], *, dry_run: bool = False) -> tuple[Layer2HandoffPlan, ...]:
+        plans = self.plan(desired_handoffs)
+        if dry_run or all(plan.action == "noop" for plan in plans):
+            return plans
+        creates = [plan.payload for plan in plans if plan.action == "create"]
+        if creates:
+            response = self._client.request("POST", _LAYER2_HANDOFF_PATH, body=creates, operation="Layer-2 handoff create")
+            task = self._client.task_reference(response)
+            if task is None:
+                raise CatalystCenterTaskError("Layer-2 handoff create returned no task ID")
+            self._client.wait_task(task)
+        actual = {fabric_id: self._records(fabric_id) for fabric_id in {plan.desired.fabric_id for plan in plans}}
+        for plan in plans:
+            found = actual[plan.desired.fabric_id].get(plan.desired.endpoint)
+            if found is None:
+                raise CatalystCenterError("Layer-2 handoff did not converge")
+            identity, observed = found
+            if plan.observed_id is not None and identity != plan.observed_id:
+                raise CatalystCenterError("Layer-2 handoff changed controller ID")
+            if observed != plan.desired:
+                raise CatalystCenterError("Layer-2 handoff changed immutable identity")
+        return plans
