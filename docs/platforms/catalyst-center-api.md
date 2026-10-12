@@ -81,6 +81,25 @@ Layer-2 handoff reads require `fabricId`. The adapter preserves controller IDs,
 checks both VLANs against the documented non-reserved range, waits for the
 asynchronous create task, and verifies exact readback. It neither models
 physical-port coexistence nor PUTs, deletes, or rebuilds a handoff.
+
+### Layer-2 handoff provisioning and repair (observed 2.3.7.10)
+
+Catalyst Center 2.3.7.10 accepted a documented Layer-2 handoff POST on an
+interface already used by an IP-transit Layer-3 handoff. The asynchronous task
+succeeded, filtered GET readback converged, and existing handoff IDs remained
+unchanged. This proves controller provisioning acceptance only; data-plane
+forwarding requires separate endpoint proof.
+
+A targeted lifecycle repair also succeeded through exact-ID `DELETE
+/dna/intent/api/v1/sda/fabricDevices/layer2Handoffs/{id}` and `DELETE
+/dna/intent/api/v1/sda/layer2VirtualNetworks/{id}` operations for the defective
+targets only. Their tasks completed and subsequent associated-VN creation plus
+Layer-2 handoff recreation converged to no-op; unrelated VN and handoff objects
+and IDs stayed unchanged.
+
+Those delete operations are explicit, owner-directed lifecycle actions. The
+generic Layer-2 VN and handoff adapters remain create-only and never
+automatically delete, repair, or rebuild a controller object.
 The GET response supplies controller-assigned `localIpAddress` and
 `remoteIpAddress` records. After a create task completes, the adapter requires
 distinct IPv4 host interfaces in the same `/30` or `/31`, keeps the controller
@@ -126,6 +145,8 @@ for a compatibility exception.
 - [Add transit networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/add-transit-networks/)
 - [Get transit networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-transit-networks/)
 - [Add Layer 2 handoffs](https://developer.cisco.com/docs/catalyst-center/2-3-7-5/add-fabric-devices-layer-2-handoffs/)
+- [Delete fabric device Layer-2 handoff by ID](https://developer.cisco.com/docs/catalyst-center/2-3-7-5/delete-fabric-device-layer-2-handoff-by-id/)
+- [Delete Layer-2 virtual network by ID](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/delete-layer-2-virtual-network-by-id/)
 - [Add Layer 3 IP-transit handoffs](https://developer.cisco.com/docs/catalyst-center/2-3-7-5/add-fabric-devices-layer-3-handoffs-with-ip-transit/)
 - [Get Layer 3 IP-transit handoffs](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-fabric-devices-layer-3-handoffs-with-ip-transit/)
 - [Python 3.13 SSL documentation](https://docs.python.org/3.13/library/ssl.html)
