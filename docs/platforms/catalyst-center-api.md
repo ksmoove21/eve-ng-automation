@@ -130,6 +130,35 @@ default context flags. Python documents that strict validation can reject
 pre-RFC 5280 or malformed certificates, and shows clearing only the strict flag
 for a compatibility exception.
 
+## RMA device replacement and software images
+
+**Documented, 2.3.7:** Mark the faulty device before selecting the replacement.
+`POST /dna/intent/api/v1/device-replacement` accepts an array containing the
+faulty device ID and `replacementStatus: MARKED_FOR_REPLACEMENT`; verify the
+replacement record before invoking the workflow with both serial numbers.
+The faulty device must be unreachable and the replacement must match the
+model/platform and be outside provisioning. Preserve the existing fabric,
+site, transit, VN, pool and handoff objects throughout recovery.
+
+Cisco requires the faulty device's software image in Image Repository before
+marking. Its conditional software-upgrade skip for matching software version
+and mode applies during replacement; it does not waive that marking prerequisite.
+**Observed on 2.3.7.10:** missing image metadata caused marking to return
+`NCRM11042` without creating a replacement record.
+
+The documented URL import API accepts QCOW2 among its image formats. Submit
+only the unmodified source artifact and use native task, family/product,
+version and integrity readback to qualify it. Accepted file extensions do not
+prove C9000v applicability or RMA eligibility. A URL connection failure occurs
+before parsing and provides no compatibility result. Do not repack an image,
+force invented metadata or substitute a runtime overlay for distributable software.
+C9000v Border/Control Plane restoration and preservation of all handoffs remain
+**field-test required**; successful task submission is insufficient.
+
+Sources: [Cisco RMA API guide](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/rma-device-replacement/),
+[Cisco Base Automation troubleshooting guide](https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/dna-center/tech_notes/b_cisco_dna_center_base_automation_services_troubleshooting_guide.html),
+[SWIM URL import schema](https://developer.cisco.com/docs/catalyst-center/2-3-7-4/import-software-image-via-url/).
+
 ## Sources
 
 - [Catalyst Center 2.3.7.10 API changelog](https://developer.cisco.com/docs/catalyst-center/api-changelog/)
