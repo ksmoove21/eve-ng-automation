@@ -23,7 +23,7 @@ shape before it mutates sites.
 | Resource | Read | Create | Update | Adapter boundary |
 | --- | --- | --- | --- | --- |
 | Site hierarchy | `GET /dna/intent/api/v1/site` | `POST /dna/intent/api/v1/site` | `PUT /dna/intent/api/v1/site/{siteId}` | Create supplies `type` and its matching area/building/floor structure. Do not invent building coordinates or parent hierarchy. |
-| Global pool | `GET /dna/intent/api/v1/global-pool` | `POST /dna/intent/api/v1/global-pool` | `PUT /dna/intent/api/v1/global-pool/{globalPoolId}` | Read paginates with one-based `offset` and `limit`; preserve the returned pool ID. |
+| Global IPv4 pool | `GET /dna/intent/api/v1/ipam/globalIpAddressPools` | `POST /dna/intent/api/v1/ipam/globalIpAddressPools` | No generic update contract | GET uses one-based `offset` and `limit` (maximum 500). Create requires only `name`, `poolType`, and `addressSpace.subnet`/`prefixLength`; the create-only adapter omits optional gateway, DNS, and DHCP fields, preserves returned IDs and observed optional metadata, and rejects overlap or immutable identity conflicts. |
 | Reserved site IPv4 subpool | `GET /dna/intent/api/v1/ipam/siteIpAddressPools` | `POST /dna/intent/api/v1/ipam/siteIpAddressPools` | No generic update contract | Create requires `ipV4AddressSpace`, `name`, `poolType`, and `siteId`; IPv4 space requires `subnet`, `prefixLength`, and `globalPoolId`. Reconcile is create-only and preserves the returned ID. |
 
 ## Fabric and virtual networks
@@ -102,3 +102,15 @@ field as an unordered unique membership set, retains the controller's existing
 order when constructing an additive request, and still rejects a readback that
 adds or removes any member. Controller record IDs and anchors remain exact
 identity fields.
+
+## Layer-2 virtual network creation
+
+The create-only adapter uses Cisco's 2.3.7.9 batch `POST
+/dna/intent/api/v1/sda/layer2VirtualNetworks` contract. It sends only requested
+`fabricId`, `vlanName`, `trafficType`, optional `vlanId`, and optional associated
+Layer-3 VN name. It verifies that an associated Layer-3 VN already exists.
+Existing Layer-2 records are immutable association identities for this adapter:
+conflicts fail closed; it never PUTs, deletes, or rebuilds one.
+
+- [Add Layer-2 virtual networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/add-layer-2-virtual-networks/)
+- [Layer-2 VN update request fields](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/updatelayer2virtualnetworksrequest/)
