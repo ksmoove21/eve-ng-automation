@@ -18,6 +18,13 @@ completion signal. A `taskId` is only a task when that operation returns
 return `executionId` and `executionStatusUrl`; an adapter must support that
 shape before it mutates sites.
 
+## Command Runner file results
+
+Cisco's Command Runner submits its read-only command request asynchronously. After
+the task identifies its file, `GET /dna/intent/api/v1/file/{fileId}` can return
+a top-level JSON array of command-response objects. Use the generic
+`read_array()` only for this documented array-shaped endpoint; `read()` remains
+object-only so an unexpected response shape fails closed.
 ## Hierarchy and pools
 
 | Resource | Read | Create | Update | Adapter boundary |
@@ -26,6 +33,23 @@ shape before it mutates sites.
 | Global IPv4 pool | `GET /dna/intent/api/v1/ipam/globalIpAddressPools` | `POST /dna/intent/api/v1/ipam/globalIpAddressPools` | No generic update contract | GET uses one-based `offset` and `limit` (maximum 500). Create requires only `name`, `poolType`, and `addressSpace.subnet`/`prefixLength`; the create-only adapter omits optional gateway, DNS, and DHCP fields, preserves returned IDs and observed optional metadata, and rejects overlap or immutable identity conflicts. |
 | Reserved site IPv4 subpool | `GET /dna/intent/api/v1/ipam/siteIpAddressPools` | `POST /dna/intent/api/v1/ipam/siteIpAddressPools` | No generic update contract | Create requires `ipV4AddressSpace`, `name`, `poolType`, and `siteId`; IPv4 space requires `subnet`, `prefixLength`, and `globalPoolId`. Reconcile is create-only and preserves the returned ID. |
 
+### Delete constraints (observed 2.3.7.10)
+
+Catalyst Center 2.3.7.10 accepted `DELETE
+/dna/intent/api/v1/ipam/siteIpAddressPools/{id}` for an unused site subpool
+with zero assigned addresses. It returned an asynchronous task and readback
+confirmed absence while unrelated records retained their IDs and objects.
+
+It also accepted `DELETE /dna/intent/api/v1/ipam/globalIpAddressPools/{id}`
+for an unused global pool only after its subpool-reference count was verified
+as zero. The documented global-pool delete response supplies `response.taskId`
+and `response.url`; deleting a global pool with subpools is unsupported. The
+field readback retained unrelated global-pool identity and optional metadata;
+allocation counters are expected to change independently of identity.
+
+The generic IPAM adapters remain deliberately create-only. A future delete
+adapter must perform those precondition checks, await the task, and verify the
+target absence plus unrelated-object preservation before reporting success.
 ## Fabric and virtual networks
 
 | Resource | Read | Create | Update | Adapter boundary |
@@ -82,7 +106,10 @@ for a compatibility exception.
 - [Catalyst Center 2.3.7.10 API changelog](https://developer.cisco.com/docs/catalyst-center/api-changelog/)
 - [Create Site](https://developer.cisco.com/docs/catalyst-center/2-3-7-7/create-site/)
 - [Create a global IP address pool](https://developer.cisco.com/docs/catalyst-center/2-3-7-10/create-a-global-ip-address-pool/)
+- [Delete a global IP address pool](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/delete-a-global-ip-address-pool/)
 - [Reserve IP address subpools](https://developer.cisco.com/docs/catalyst-center/reserve-create-ip-address-subpools/)
+- [Command Runner](https://developer.cisco.com/docs/catalyst-center/command-runner/)
+- [Download a file by fileId](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/download-a-file-by-fileid/)
 - [Add Layer 3 virtual networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/add-layer-3-virtual-networks/)
 - [Get Layer 3 virtual networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-layer-3-virtual-networks/)
 - [Get Layer 2 virtual networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-layer-2-virtual-networks/)

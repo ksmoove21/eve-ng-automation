@@ -41,13 +41,24 @@ class TaskStatus:
     end_time: int | None
 
 
-def _decode(raw: bytes, operation: str) -> dict[str, Any]:
+def _json(raw: bytes, operation: str) -> Any:
     try:
-        value = json.loads(raw)
+        return json.loads(raw)
     except (UnicodeDecodeError, ValueError) as error:
         raise CatalystCenterError(f"{operation} returned invalid JSON") from error
+
+
+def _decode(raw: bytes, operation: str) -> dict[str, Any]:
+    value = _json(raw, operation)
     if not isinstance(value, dict):
         raise CatalystCenterError(f"{operation} returned an unexpected JSON shape")
+    return value
+
+
+def _decode_array(raw: bytes, operation: str) -> list[dict[str, Any]]:
+    value = _json(raw, operation)
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise CatalystCenterError(f"{operation} returned an unexpected JSON array shape")
     return value
 
 
@@ -150,17 +161,18 @@ class CatalystCenterClient:
         if not path.startswith("/") or "//" in path[1:] or "?" in path or "#" in path:
             raise ValueError("Catalyst Center API path must be an absolute single-slash path")
 
-    def request(
+    def _request_value(
         self,
         method: str,
         path: str,
         *,
-        query: dict[str, Any] | None = None,
-        body: dict[str, Any] | list[dict[str, Any]] | None = None,
-        operation: str = "Catalyst Center request",
-        timeout: float | None = None,
-        deadline: float | None = None,
-    ) -> dict[str, Any]:
+        query: dict[str, Any] | None,
+        body: dict[str, Any] | list[dict[str, Any]] | None,
+        operation: str,
+        timeout: float | None,
+        deadline: float | None,
+        decoder: Callable[[bytes, str], Any],
+    ) -> Any:
         self._path(path)
         if timeout is not None and timeout <= 0:
             raise ValueError("Catalyst Center request timeout must be positive")
@@ -192,8 +204,26 @@ class CatalystCenterClient:
                 raise
             if not 200 <= status < 300:
                 raise CatalystCenterError(f"{operation} failed: HTTP {status}", status)
-            return _decode(raw, operation)
+            return decoder(raw, operation)
         raise AssertionError("unreachable")
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: dict[str, Any] | None = None,
+        body: dict[str, Any] | list[dict[str, Any]] | None = None,
+        operation: str = "Catalyst Center request",
+        timeout: float | None = None,
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
+        """Perform one object-shaped API request."""
+        value = self._request_value(
+            method, path, query=query, body=body, operation=operation, timeout=timeout, deadline=deadline, decoder=_decode
+        )
+        assert isinstance(value, dict)
+        return value
 
     def read(
         self,
@@ -204,8 +234,24 @@ class CatalystCenterClient:
         timeout: float | None = None,
         deadline: float | None = None,
     ) -> dict[str, Any]:
-        """Perform one generic read; resource-specific planning stays with its adapter."""
+        """Perform one generic object-shaped read; resource planning stays with its adapter."""
         return self.request("GET", path, query=query, operation=operation, timeout=timeout, deadline=deadline)
+
+    def read_array(
+        self,
+        path: str,
+        *,
+        query: dict[str, Any] | None = None,
+        operation: str = "Catalyst Center array read",
+        timeout: float | None = None,
+        deadline: float | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        """Perform one authenticated read whose documented top-level response is an object array."""
+        value = self._request_value(
+            "GET", path, query=query, body=None, operation=operation, timeout=timeout, deadline=deadline, decoder=_decode_array
+        )
+        assert isinstance(value, list)
+        return tuple(value)
 
     def list_all(
         self,

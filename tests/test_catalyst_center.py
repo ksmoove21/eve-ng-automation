@@ -162,6 +162,35 @@ class CatalystCenterClientTests(unittest.TestCase):
             timed_out.wait_task("task-1", timeout=1)
         self.assertFalse(timed_out._opener.requests)
 
+    def test_reads_documented_top_level_object_array(self):
+        client = self.client([(200, {"Token": "token"}), (200, [{"deviceUuid": "one"}, {"deviceUuid": "two"}])])
+
+        self.assertEqual(
+            client.read_array("/dna/intent/api/v1/file/file-id", operation="Command-runner file"),
+            ({"deviceUuid": "one"}, {"deviceUuid": "two"}),
+        )
+        request = client._opener.requests[-1]
+        self.assertEqual(request.get_method(), "GET")
+        self.assertEqual(request.get_header("X-auth-token"), "token")
+
+    def test_array_read_is_shape_strict_and_retains_refresh_and_size_protection(self):
+        for body in ({"response": []}, ["not-an-object"], "scalar"):
+            client = self.client([(200, {"Token": "token"}), (200, body)])
+            with self.assertRaisesRegex(CatalystCenterError, "array shape"):
+                client.read_array("/dna/intent/api/v1/file/file-id")
+
+        object_read = self.client([(200, {"Token": "token"}), (200, [{"id": "one"}])])
+        with self.assertRaisesRegex(CatalystCenterError, "unexpected JSON shape"):
+            object_read.read("/dna/intent/api/v1/file/file-id")
+
+        unauthorized = HTTPError("https://cc.example", 401, "Unauthorized", {}, None)
+        refreshed = self.client([(200, {"Token": "first"}), unauthorized, (200, {"Token": "second"}), (200, [])])
+        self.assertEqual(refreshed.read_array("/dna/intent/api/v1/file/file-id"), ())
+        self.assertEqual(refreshed._opener.requests[-1].get_header("X-auth-token"), "second")
+
+        oversized = self.client([(200, {"Token": "token"}), (200, b"[" + b" " * (4 * 1024 * 1024) + b"]")])
+        with self.assertRaisesRegex(CatalystCenterError, "exceeds 4 MiB"):
+            oversized.read_array("/dna/intent/api/v1/file/file-id")
 
 if __name__ == "__main__":
     unittest.main()
