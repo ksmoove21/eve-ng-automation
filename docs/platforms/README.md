@@ -39,3 +39,5 @@ Current platform notes:
 - [PAN-OS console qualification](paloalto-console.md): distinguish silent serial transport from guest boot and VGA readiness.
 
 - [Cisco ISE standalone first boot](cisco-ise.md): observed ISE 3.4 setup sequence and readiness boundaries.
+
+- [Cisco IOL-L2 management forwarding](cisco-iol-l2.md): exact-image management default-route and save/readback behavior.
