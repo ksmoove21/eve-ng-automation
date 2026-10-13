@@ -57,7 +57,7 @@ target absence plus unrelated-object preservation before reporting success.
 | Fabric/site/device inventory | `GET /dna/intent/api/v1/sda/fabricSites`; `GET /dna/intent/api/v1/sda/fabricDevices` | Fabric creation/association is adapter-specific | No generic update contract | Read fabric-site and device IDs before role, VN, or handoff operations. |
 | Layer 3 VN | `GET /dna/intent/api/v1/sda/layer3VirtualNetworks` | `POST /dna/intent/api/v1/sda/layer3VirtualNetworks` | `PUT /dna/intent/api/v1/sda/layer3VirtualNetworks` | Cisco documents array payloads. A greenfield create requires only `virtualNetworkName`; it may additionally declare `fabricIds` and `anchoredSiteId`. Preserve the returned record ID. |
 | Layer 2 VN | `GET /dna/intent/api/v1/sda/layer2VirtualNetworks` | No generic create contract here | No generic update contract here | Readback includes fabric, VLAN, traffic type, and its associated Layer-3 VN name where present. |
-| VN anycast gateway | `GET /dna/intent/api/v1/sda/anycastGateways` | No generic contract here | No generic contract here | Use readback for verification only until a version-specific mutation schema is accepted. |
+| VN anycast gateway | `GET /dna/intent/api/v1/sda/anycastGateways` | `POST /dna/intent/api/v1/sda/anycastGateways` | No generic update contract | Create-only explicit VLAN identity and options; task success plus filtered readback required. See the version-specific contract below. |
 
 `anchoredSiteId` is a documented Layer-3 VN field for a greenfield POST. Do not
 use its PUT operation to convert an ordinary existing VN into an anchored VN:
@@ -68,6 +68,36 @@ existing same-name ordinary VN differs from that design.
 The older `business/sda/virtual-network` and `business/sda/virtualnetwork/ippool`
 operations remain versioned public APIs. Do not mix those resource identities
 with the modern Layer-3 VN record without controller readback.
+
+### Create-only Anycast Gateways
+
+**DOCUMENTED in 2.3.7.9; FIELD TEST PENDING:**
+`catalyst_center_anycast.AnycastGatewayAdapter` uses the modern
+`/dna/intent/api/v1/sda/anycastGateways` endpoint. POST accepts an array and
+returns an asynchronous task reference. GET supports `fabricId` filtering,
+`offset`, and `limit`, with at most 500 records per response. The caller must
+first establish the Layer-3 VN's fabric membership and the named IP pool.
+
+The adapter supports explicit VLAN IDs and names for ordinary, non-critical,
+non-`INFRA_VN` DATA or VOICE gateways. It sends all required Boolean options:
+critical pool, Layer-2 flooding, wireless pool, directed broadcast, multiple
+IP-to-MAC addresses, and automatic VLAN naming default to false; intra-subnet
+routing defaults to true. `autoGenerateVlanName` is absent from the documented
+GET schema, so its absence is accepted only while the returned VLAN name
+matches exactly. Every other requested field must be present and match.
+
+`plan()` and `reconcile(..., dry_run=True)` read without mutation. Reconciliation
+checks all requested identities before batching missing gateways in one POST.
+Existing VN, pool, VLAN, name, or option conflicts fail closed. Task completion
+must correlate to the submitted task and indicate success; filtered readback
+must then prove the requested objects and preserve all prior IDs and records.
+Missing, duplicate, or unexpected objects fail verification. The adapter has
+no PUT, DELETE, automatic mutation retry, or rollback path. Offline tests prove
+these checks; controller application and endpoint forwarding still require
+independent field evidence.
+
+Sources: [Add Anycast Gateways (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/add-anycast-gateways/),
+[Get Anycast Gateways (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/get-anycast-gateways/).
 
 ## Transit and handoffs
 
