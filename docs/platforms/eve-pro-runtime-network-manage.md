@@ -31,3 +31,26 @@ host `ip link`, broad node restarts, or the undocumented netsetup stdin tool.
 On EVE Pro 7.2.0-4, a native node wipe can preserve the node object and its image/resource/interface identity while resetting a stopped node's observed satellite placement to the manager/default value. This is an **OBSERVED** version-specific behavior, not a universal API contract; the native API documentation describes wipe but does not document the placement reset. After wiping a stopped node, explicitly restore the intended host/satellite placement and verify the stopped-node pin before starting it.
 
 Reference: [EVE-NG API documentation](https://www.eve-ng.net/index.php/how-to-eve-ng-api/).
+
+
+## Selected image versus running firmware
+
+**OBSERVED on EVE Pro 7.2.0-4:** a node selected for
+`cat9kvuadp-17.15.03` still ran from an existing QCOW2 overlay backed by
+`cat9kvuadp-17.15.01`. Changing the node's image field did not reset that
+existing runtime disk. The configured image name therefore does not prove the
+running firmware version. Correlate the node and executing host, inspect QMP
+`query-block` backing-image information, and verify the guest's `show version`
+before accepting image-specific results.
+
+**DOCUMENTED; correction FIELD TEST PENDING:** the native single-node wipe
+endpoint, `GET /api/labs/{lab}.unl/nodes/{id}/wipe`, clears user configuration;
+EVE documents rebuilding from the selected image on the next start. Use this
+only with authorization covering that node's destructive reset. Preserve
+required configuration evidence first, stop the exact node, and verify image,
+placement, interface identity, runtime backing, and guest version after the
+scoped operation. Account for the placement-reset observation above and any
+exported startup configuration that EVE may restore. No successful image
+correction by wipe is established by the image/backing mismatch observation.
+
+Source: [EVE-NG API: node wipe and export](https://www.eve-ng.net/index.php/how-to-eve-ng-api/).
