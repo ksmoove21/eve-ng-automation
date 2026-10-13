@@ -146,9 +146,12 @@ and mode applies during replacement; it does not waive that marking prerequisite
 **Observed on 2.3.7.10:** missing image metadata caused marking to return
 `NCRM11042` without creating a replacement record.
 
-The documented URL import API accepts QCOW2 among its image formats. Submit
-only the unmodified source artifact and use native task, family/product,
-version and integrity readback to qualify it. Accepted file extensions do not
+The documented URL and local-file import APIs accept QCOW2 among their image
+formats. Local upload uses `POST /dna/intent/api/v1/image/importation/source/file`
+with multipart field `file`; Cisco's 2.3.7.6 SDK supplies the filename, stream,
+multipart content type and content length. This avoids requiring an external
+HTTP/FTP source. Submit only the unmodified source artifact and use native task,
+family/product, version and integrity readback to qualify it. Accepted file extensions do not
 prove C9000v applicability or RMA eligibility. A URL connection failure occurs
 before parsing and provides no compatibility result. Do not repack an image,
 force invented metadata or substitute a runtime overlay for distributable software.
@@ -157,7 +160,9 @@ C9000v Border/Control Plane restoration and preservation of all handoffs remain
 
 Sources: [Cisco RMA API guide](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/rma-device-replacement/),
 [Cisco Base Automation troubleshooting guide](https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/dna-center/tech_notes/b_cisco_dna_center_base_automation_services_troubleshooting_guide.html),
-[SWIM URL import schema](https://developer.cisco.com/docs/catalyst-center/2-3-7-4/import-software-image-via-url/).
+[SWIM URL import schema](https://developer.cisco.com/docs/catalyst-center/2-3-7-4/import-software-image-via-url/),
+[SWIM local-file import schema](https://developer.cisco.com/docs/catalyst-center/2-3-7-4/import-local-software-image/),
+[Cisco SDK 2.3.7.6 SWIM source](https://github.com/cisco-en-programmability/dnacentersdk/blob/master/dnacentersdk/api/v2_3_7_6/software_image_management_swim.py).
 
 ## Sources
 

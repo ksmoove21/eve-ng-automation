@@ -12,6 +12,13 @@ template defaults are 4 vCPU, 18432 MiB RAM, 25 Ethernet interfaces, and a
 Telnet serial console. The current integration image is
 `cat9kvuadp-17.15.01`; other releases require their own live verification.
 
+**Observed on 17.15.01:** with 25 EVE Ethernet adapters, guests reporting PID
+`C9KV-UADP-8P` exposed `GigabitEthernet1/0/1` through `1/0/24`. The higher
+interfaces were verified through guest CLI and controller Command Runner.
+Do not infer an eight-port limit solely from the PID; inspect the actual guest
+interfaces before assigning links. Interface existence does not prove cable
+attachment or forwarding.
+
 First boot is resource-intensive and can take many minutes. EVE reporting a
 running QEMU process is not guest readiness. Use a bounded `eve init --timeout`
 window and inspect both the guest console and QEMU state before deciding that a
