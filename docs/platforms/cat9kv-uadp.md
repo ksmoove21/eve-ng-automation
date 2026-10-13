@@ -254,3 +254,15 @@ Source: https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-a
 **FIELD-TESTED on `cat9kvuadp-17.15.01`:** with `ip ssh source-interface GigabitEthernet0/0` configured, an IOS SSH client connection to a global-table adjacent interface timed out. An explicit `ssh -vrf Mgmt-vrf -l <username> <management-address>` connection over the shared management segment succeeded. Verify the destination SSH host key and guest identity before configuration. Closing the outer Telnet channel did not terminate the nested IOS SSH session; explicitly exit it and verify the expected hostname and Loopback0 identity before another node-specific write.
 
 **DOCUMENTED:** the SSH source-interface setting controls client sourcing. Use the explicit VRF-aware client command for a management interface in a VRF. See [Cisco VRF-aware management examples](https://www.cisco.com/c/en/us/support/docs/routers/asr-1000-series-aggregation-services-routers/116093-configure-vrf-00.html).
+
+## Console visibility versus guest readiness
+
+**FIELD-OBSERVED on EVE Pro 7.2.0-4 / C9000v UADP IOS XE 17.15.3:** an
+external Telnet path returned negotiation bytes and the terminal title while
+an owner observed a usable guest prompt. A verified SSH broker to the owning
+satellite's native console port, using CRLF input and command-echo correlation,
+subsequently exposed the initial configuration dialog and supported normal
+bootstrap. The evidence does not isolate transport, line-ending or negotiation
+as the sole cause. A silent console path is not proof that the VM needs a
+restart or wipe. Compare another supported console path and runtime evidence
+first, and keep one command writer per guest.

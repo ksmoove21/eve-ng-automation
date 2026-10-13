@@ -163,8 +163,9 @@ satisfy an RMA prerequisite for an exact CAT9K build. A client polling timeout
 while the native task remains active must not be reported as import failure.
 Do not repack an image,
 force invented metadata or substitute a runtime overlay for distributable software.
-C9000v Border/Control Plane restoration and preservation of all handoffs remain
-**field-test required**; successful task submission is insufficient.
+Native RMA restoration of C9000v Border/Control Plane roles and handoffs remains
+**field-test required**. The separately authorized targeted recovery observation
+below does not qualify native RMA; successful task submission is insufficient.
 
 Sources: [Cisco RMA API guide](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/rma-device-replacement/),
 [Cisco Base Automation troubleshooting guide](https://www.cisco.com/c/en/us/td/docs/cloud-systems-management/network-automation-and-management/dna-center/tech_notes/b_cisco_dna_center_base_automation_services_troubleshooting_guide.html),
@@ -214,3 +215,62 @@ conflicts fail closed; it never PUTs, deletes, or rebuilds one.
 
 - [Add Layer-2 virtual networks](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/add-layer-2-virtual-networks/)
 - [Layer-2 VN update request fields](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/updatelayer2virtualnetworksrequest/)
+
+## Targeted Border recovery observations (2.3.7.10)
+
+**FIELD-VALIDATED with C9000v UADP IOS XE 17.15.3:** a replacement
+Border/Control Plane was provisioned in the existing fabric before removing the
+old device. Removing the sole Border/CP first was rejected with `NCSO20486`
+because anchored VNs still depended on those roles. Reusing the old device's
+RLOC during this overlap was rejected with `NCWL10054`; an independently
+allocated unique RLOC allowed the replacement role deployment. This is a
+scoped recovery sequence, not an automatic fallback from native RMA.
+
+The role GET returned border priority `10` and prepend-AS count `0`, while an
+explicit POST rejected those values with `NCHS20300` (accepted explicit ranges
+were 1–9 and 1–10 respectively). Omitting the optional fields produced the
+native defaults in readback. Do not blindly replay a GET object as POST input.
+
+An aggregate provisioning task could report failure while individual role
+records had already changed. Inspect the task tree, filtered role/association
+readback, and actual guest configuration before retrying. Inventory removal
+succeeded after the remaining provisioning dependency was removed. Protected
+fabric, hierarchy, VN and pool identities were preserved; pool utilization
+counters changed independently of pool identity and CIDR.
+
+A pool-backed batch IP-transit handoff restore accepted address hints but
+allocated some /30s in a different interface-group order. The documented
+`localIpAddress` and `remoteIpAddress` fields therefore did not establish exact
+address reuse in this tested pool-backed request. Read back every actual pair
+before configuring external peers. All restored BGP sessions reached
+Established after external peer alignment; this does not prove endpoint or
+Layer-2 forwarding.
+
+### Native multicast attachment
+
+**DOCUMENTED in the 2.3.7.9 API; FIELD-VALIDATED on 2.3.7.10:** transit-wide
+`sdaTransitSettings.isMulticastOverTransitEnabled` and the individual SDA
+handoff's `isMulticastOverTransitEnabled` are separate fields. A successful
+PUT to `/dna/intent/api/v1/sda/fabricDevices/layer3Handoffs/sdaTransits` enabled
+the existing Border attachment while retaining device, fabric, transit and
+Internet-exit identity. Check both levels for the intended Pub/Sub native
+multicast design. This flag does not substitute for PIM/RPF or endpoint proof.
+
+Sources: [Add Fabric Devices](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/add-fabric-devices/),
+[IP-transit handoff schema](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/add-fabric-devices-layer-3-handoffs-with-ip-transit/),
+[SDA handoff update](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/update-fabric-devices-layer-3-handoffs-with-sda-transit/).
+
+
+### Management address restoration
+
+**DOCUMENTED in 2.3.7.9; FIELD-VALIDATED on 2.3.7.10:**
+`PUT /dna/intent/api/v1/network-device/{deviceid}/management-address` accepts
+`{"newIP": "<intended-address>"}`. In a targeted recovery, the guest management
+address was first saved through its independent console and checked for
+controller/gateway reachability. The API then retained the existing inventory
+UUID and serial. Task completion preceded collection completion by several
+minutes; poll until the intended address is Managed and Reachable before
+claiming convergence. Do not remove/re-add inventory merely to change this
+address.
+
+Source: [Update device management address](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/update-device-management-address/).
