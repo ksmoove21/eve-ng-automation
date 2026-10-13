@@ -153,7 +153,15 @@ multipart content type and content length. This avoids requiring an external
 HTTP/FTP source. Submit only the unmodified source artifact and use native task,
 family/product, version and integrity readback to qualify it. Accepted file extensions do not
 prove C9000v applicability or RMA eligibility. A URL connection failure occurs
-before parsing and provides no compatibility result. Do not repack an image,
+before parsing and provides no compatibility result.
+
+**Observed on 2.3.7.10:** a native local-file import of an unmodified virtual
+base QCOW2 completed successfully after approximately 23 minutes, but the
+repository classified it as family `UNKNOWN`, version `-1`, without product
+applicability. This is import completion, not image qualification; it does not
+satisfy an RMA prerequisite for an exact CAT9K build. A client polling timeout
+while the native task remains active must not be reported as import failure.
+Do not repack an image,
 force invented metadata or substitute a runtime overlay for distributable software.
 C9000v Border/Control Plane restoration and preservation of all handoffs remain
 **field-test required**; successful task submission is insufficient.
