@@ -26,6 +26,31 @@ master, guest `vun` carrier, and an unaffected control link separately before
 proceeding to another network. Do not replace this scoped API call with raw
 host `ip link`, broad node restarts, or the undocumented netsetup stdin tool.
 
+## Running-node hotlinks: not proven on 7.2.0-18-PRO
+
+EVE Pro documents hot links for running Ethernet nodes in its
+[Professional Cookbook](https://www.eve-ng.net/wp-content/uploads/2024/05/EVE-PE-BOOK-6.7-2024.pdf)
+and [feature list](https://www.eve-ng.net/index.php/features/). On the installed
+**EVE Pro 7.2.0-18-PRO**, that capability remains **FIELD-TEST NOT PROVEN** for
+this automation.
+
+Two disposable, same-satellite, running Ethernet tests were performed: one
+between an IOL and a QEMU node and one between two QEMU nodes. In each case the
+current GUI's native interface request accepted the direct-peer form,
+`PUT .../nodes/{id}/interfaces` with `{interfaceId: "peerNodeId:peerInterfaceId"}`.
+It returned a network ID and subsequent interface reads showed both endpoints
+attached. The GUI-style delete restored both ports while preserving node
+identity and running state.
+
+Those controller records did not prove runtime connectivity. Five host link
+samples across about 12 seconds showed no new runtime bridge, tap, or bridge
+master relationship. The current GUI source issued no documented follow-up
+activation request after the accepted interface update. Do not infer that a
+successful metadata response materializes a running cable, and do not relax the
+generic engine guard that requires changed interface connections to use stopped
+nodes. A future exception requires version-scoped field evidence of runtime
+materialization and packet forwarding for the exact request sequence.
+
 ## Native wipe and placement observation
 
 On EVE Pro 7.2.0-4, a native node wipe can preserve the node object and its image/resource/interface identity while resetting a stopped node's observed satellite placement to the manager/default value. This is an **OBSERVED** version-specific behavior, not a universal API contract; the native API documentation describes wipe but does not document the placement reset. After wiping a stopped node, explicitly restore the intended host/satellite placement and verify the stopped-node pin before starting it.
