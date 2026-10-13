@@ -43,14 +43,21 @@ running firmware version. Correlate the node and executing host, inspect QMP
 `query-block` backing-image information, and verify the guest's `show version`
 before accepting image-specific results.
 
-**DOCUMENTED; correction FIELD TEST PENDING:** the native single-node wipe
+**DOCUMENTED:** the native single-node wipe
 endpoint, `GET /api/labs/{lab}.unl/nodes/{id}/wipe`, clears user configuration;
 EVE documents rebuilding from the selected image on the next start. Use this
 only with authorization covering that node's destructive reset. Preserve
 required configuration evidence first, stop the exact node, and verify image,
 placement, interface identity, runtime backing, and guest version after the
 scoped operation. Account for the placement-reset observation above and any
-exported startup configuration that EVE may restore. No successful image
-correction by wipe is established by the image/backing mismatch observation.
+exported startup configuration that EVE may restore.
+
+**OBSERVED on EVE Pro 7.2.0-4:** a targeted native wipe followed by restart
+changed the runtime backing from `cat9kvuadp-17.15.01` to the selected
+`cat9kvuadp-17.15.03`, confirmed through QMP. Node ID, UUID, MAC addresses,
+and resource allocation were preserved without host-file changes or node
+recreation. This proves the selected-base backing transition only. Guest boot
+completion and `show version` remain separate, pending acceptance gates; the
+backing result alone does not prove operational firmware or forwarding.
 
 Source: [EVE-NG API: node wipe and export](https://www.eve-ng.net/index.php/how-to-eve-ng-api/).
