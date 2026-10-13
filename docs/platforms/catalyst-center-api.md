@@ -128,8 +128,22 @@ performs no PUT, DELETE, automatic mutation retry, or rollback. Offline tests
 verify these boundaries; controller application and guest forwarding require
 separate field evidence.
 
+**OBSERVED on Catalyst Center 2.3.7.10; version-qualified:** a successful
+trunk assignment GET omitted both `nativeVlanId` and `allowedVlanRanges`, even
+though the native IOS XE interface state reported native VLAN 1 and allowed
+VLANs `all`. Earlier 2.3.7.6 GET documentation likewise omits those fields,
+while the 2.3.7.9 POST contract documents them. The adapter therefore remains
+fail-closed by default. A caller may explicitly provide a read-only
+`trunk_observer(fabric_id, network_device_id, interface_name)` which returns
+the same three identities plus independently measured `nativeVlanId` and
+`allowedVlanRanges`. It hydrates only fields absent from GET; malformed proof,
+wrong identity, disagreement with a GET field, and disagreement with requested
+trunk intent all fail reconciliation. This is native-state proof, not an API
+default or a license to infer controller write behavior across releases.
+
 Sources: [Add Port Assignments (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/add-port-assignments/),
-[Get Port Assignments (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/get-port-assignments/).
+[Get Port Assignments (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/get-port-assignments/),
+[Get Port Assignments (2.3.7.6)](https://developer.cisco.com/docs/catalyst-center/2-3-7-6/get-port-assignments/).
 
 ## Transit and handoffs
 

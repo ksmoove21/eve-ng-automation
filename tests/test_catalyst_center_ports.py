@@ -115,6 +115,83 @@ class TrunkPortAssignmentTests(unittest.TestCase):
                 TrunkPortAssignmentAdapter(client).reconcile([desired()])
             self.assertEqual(client.requests, [])
 
+    def test_missing_trunk_state_uses_validated_observer_without_post(self):
+        raw = record()
+        raw.pop("nativeVlanId")
+        raw.pop("allowedVlanRanges")
+        calls = []
+
+        def observer(fabric_id, network_device_id, interface_name):
+            calls.append((fabric_id, network_device_id, interface_name))
+            return {
+                "fabricId": fabric_id, "networkDeviceId": network_device_id,
+                "interfaceName": interface_name, "nativeVlanId": 1,
+                "allowedVlanRanges": "30,10,20",
+            }
+
+        client = Client([raw])
+        plan = TrunkPortAssignmentAdapter(client, trunk_observer=observer).reconcile([desired()])[0]
+        self.assertEqual((plan.action, plan.observed_id), ("noop", "port-a"))
+        self.assertEqual(calls, [("fabric-a", "device-a", "GigabitEthernet1/0/24")])
+        self.assertEqual(client.requests, [])
+
+    def test_complete_controller_readback_does_not_call_observer(self):
+        client = Client([record()])
+        adapter = TrunkPortAssignmentAdapter(client, trunk_observer=lambda *_: (_ for _ in ()).throw(AssertionError("unexpected observer call")))
+        self.assertEqual(adapter.reconcile([desired()])[0].action, "noop")
+        self.assertEqual(client.requests, [])
+
+    def test_invalid_supplemental_observer_fails_closed(self):
+        with self.assertRaises(TypeError):
+            TrunkPortAssignmentAdapter(Client(), trunk_observer=object())
+        raw = record()
+        raw.pop("nativeVlanId")
+        raw.pop("allowedVlanRanges")
+        invalid = [
+            [],
+            {"fabricId": "fabric-b", "networkDeviceId": "device-a", "interfaceName": "GigabitEthernet1/0/24", "nativeVlanId": 1, "allowedVlanRanges": "10,20,30"},
+            {"fabricId": "fabric-a", "networkDeviceId": "device-a", "interfaceName": "GigabitEthernet1/0/24", "allowedVlanRanges": "10,20,30"},
+            {"fabricId": "fabric-a", "networkDeviceId": "device-a", "interfaceName": "GigabitEthernet1/0/24", "nativeVlanId": 1, "allowedVlanRanges": "10,10"},
+        ]
+        for response in invalid:
+            client = Client([raw])
+            with self.subTest(response=response), self.assertRaises(CatalystCenterError):
+                TrunkPortAssignmentAdapter(client, trunk_observer=lambda *_, response=response: response).reconcile([desired()])
+            self.assertEqual(client.requests, [])
+
+    def test_supplemental_observer_cannot_override_present_controller_values(self):
+        controller_native = record()
+        controller_native.pop("allowedVlanRanges")
+        client = Client([controller_native])
+        with self.assertRaisesRegex(CatalystCenterError, "observer conflicts with controller native VLAN"):
+            TrunkPortAssignmentAdapter(client, trunk_observer=lambda *identity: {
+                "fabricId": identity[0], "networkDeviceId": identity[1], "interfaceName": identity[2],
+                "nativeVlanId": 20, "allowedVlanRanges": "10,20,30",
+            }).reconcile([desired()])
+        self.assertEqual(client.requests, [])
+
+        controller_allowed = record()
+        controller_allowed.pop("nativeVlanId")
+        client = Client([controller_allowed])
+        with self.assertRaisesRegex(CatalystCenterError, "observer conflicts with controller allowed VLAN ranges"):
+            TrunkPortAssignmentAdapter(client, trunk_observer=lambda *identity: {
+                "fabricId": identity[0], "networkDeviceId": identity[1], "interfaceName": identity[2],
+                "nativeVlanId": 1, "allowedVlanRanges": "20",
+            }).reconcile([desired()])
+        self.assertEqual(client.requests, [])
+
+    def test_observed_all_ranges_conflict_with_narrow_trunk_intent(self):
+        raw = record()
+        raw.pop("nativeVlanId")
+        raw.pop("allowedVlanRanges")
+        client = Client([raw])
+        with self.assertRaisesRegex(CatalystCenterError, "conflict"):
+            TrunkPortAssignmentAdapter(client, trunk_observer=lambda *identity: {
+                "fabricId": identity[0], "networkDeviceId": identity[1], "interfaceName": identity[2],
+                "nativeVlanId": 1, "allowedVlanRanges": "all",
+            }).reconcile([desired()])
+        self.assertEqual(client.requests, [])
+
     def test_duplicate_desired_endpoints_fail_before_read(self):
         client = Client()
         with self.assertRaises(ValueError):

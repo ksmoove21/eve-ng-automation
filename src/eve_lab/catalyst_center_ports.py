@@ -18,13 +18,14 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 import re
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 from .catalyst_center import CatalystCenterError, CatalystCenterTaskError, TaskStatus
 
 _PORT_PATH = "/dna/intent/api/v1/sda/portAssignments"
 Group = tuple[str, str]
 Records = dict[str, dict[str, Any]]
+TrunkObserver = Callable[[str, str, str], Mapping[str, Any]]
 
 
 def normalize_vlan_ranges(value: str) -> str:
@@ -106,8 +107,60 @@ class TrunkPortAssignmentPlan:
 class TrunkPortAssignmentAdapter:
     """Read-first, create-only trunks with per-device batches and preservation."""
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, *, trunk_observer: TrunkObserver | None = None) -> None:
+        if trunk_observer is not None and not callable(trunk_observer):
+            raise TypeError("trunk_observer must be callable")
         self._client = client
+        self._trunk_observer = trunk_observer
+
+    def _observed_trunk(self, group: Group, interface_name: str) -> Mapping[str, Any]:
+        if self._trunk_observer is None:
+            raise CatalystCenterError("Port assignment list returned missing trunk VLAN state without a supplemental observer")
+        try:
+            observed = self._trunk_observer(group[0], group[1], interface_name)
+        except Exception as error:
+            raise CatalystCenterError("Supplemental trunk observer failed") from error
+        if not isinstance(observed, Mapping):
+            raise CatalystCenterError("Supplemental trunk observer returned an invalid record")
+        identity = (observed.get("fabricId"), observed.get("networkDeviceId"), observed.get("interfaceName"))
+        if identity != (*group, interface_name) or not all(_text(value) for value in identity):
+            raise CatalystCenterError("Supplemental trunk observer returned an invalid identity")
+        return observed
+
+    def _hydrate_trunk(self, record: dict[str, Any], group: Group) -> None:
+        native_missing = "nativeVlanId" not in record
+        allowed_missing = "allowedVlanRanges" not in record
+        if not native_missing and not _vlan(record["nativeVlanId"]):
+            raise CatalystCenterError("Port assignment list returned missing or invalid native VLAN")
+        if not allowed_missing:
+            try:
+                record["allowedVlanRanges"] = normalize_vlan_ranges(record["allowedVlanRanges"])
+            except ValueError as error:
+                raise CatalystCenterError("Port assignment list returned missing or invalid allowed VLAN ranges") from error
+        if not native_missing and not allowed_missing:
+            return
+
+        observed = self._observed_trunk(group, record["interfaceName"])
+        if native_missing:
+            if not _vlan(observed.get("nativeVlanId")):
+                raise CatalystCenterError("Supplemental trunk observer returned missing or invalid native VLAN")
+            record["nativeVlanId"] = observed["nativeVlanId"]
+        elif "nativeVlanId" in observed:
+            if not _vlan(observed["nativeVlanId"]) or observed["nativeVlanId"] != record["nativeVlanId"]:
+                raise CatalystCenterError("Supplemental trunk observer conflicts with controller native VLAN")
+
+        if allowed_missing:
+            try:
+                record["allowedVlanRanges"] = normalize_vlan_ranges(observed.get("allowedVlanRanges"))
+            except ValueError as error:
+                raise CatalystCenterError("Supplemental trunk observer returned missing or invalid allowed VLAN ranges") from error
+        elif "allowedVlanRanges" in observed:
+            try:
+                observed_allowed = normalize_vlan_ranges(observed["allowedVlanRanges"])
+            except ValueError as error:
+                raise CatalystCenterError("Supplemental trunk observer returned missing or invalid allowed VLAN ranges") from error
+            if observed_allowed != record["allowedVlanRanges"]:
+                raise CatalystCenterError("Supplemental trunk observer conflicts with controller allowed VLAN ranges")
 
     def _records(self, group: Group) -> Records:
         rows = self._client.list_all(
@@ -123,12 +176,7 @@ class TrunkPortAssignmentAdapter:
                 raise CatalystCenterError("Port assignment list returned invalid identity")
             record = deepcopy(raw)
             if record["connectedDeviceType"] == "TRUNKING_DEVICE":
-                if not _vlan(record.get("nativeVlanId")):
-                    raise CatalystCenterError("Port assignment list returned missing or invalid native VLAN")
-                try:
-                    record["allowedVlanRanges"] = normalize_vlan_ranges(record.get("allowedVlanRanges"))
-                except ValueError as error:
-                    raise CatalystCenterError("Port assignment list returned missing or invalid allowed VLAN ranges") from error
+                self._hydrate_trunk(record, group)
             if record["id"] in result or record["interfaceName"] in interfaces:
                 raise CatalystCenterError("Port assignment list returned duplicate ID or interface")
             result[record["id"]] = record
