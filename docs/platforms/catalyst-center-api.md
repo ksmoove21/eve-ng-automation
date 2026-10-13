@@ -99,6 +99,38 @@ independent field evidence.
 Sources: [Add Anycast Gateways (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/add-anycast-gateways/),
 [Get Anycast Gateways (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/get-anycast-gateways/).
 
+### Create-only trunk port assignments
+
+**DOCUMENTED in 2.3.7.9; FIELD TEST PENDING:**
+`catalyst_center_ports.TrunkPortAssignmentAdapter` uses GET and POST at
+`/dna/intent/api/v1/sda/portAssignments`. Each POST array must contain only
+one device from one fabric. The adapter explicitly sends fabric, device,
+interface, native VLAN, allowed VLAN ranges, `TRUNKING_DEVICE`, and the exact
+authentication enum `No Authentication`.
+
+Native and allowed VLANs range from 1 through 4094. The adapter accepts a
+comma-separated list of IDs/ranges or `all`, rejects overlapping or malformed
+ranges, and compares normalized VLAN sets so equivalent compact readback is
+idempotent. It does not impose the Anycast Gateway reserved-VLAN exclusions.
+
+GET supports both `fabricId` and `networkDeviceId` filters. Cisco's limit
+parameter documents 500 records, while its response description says 50. The
+adapter conservatively requests pages of 50 to avoid prematurely treating a
+server-capped page as the final page; actual controller pagination remains a
+field-verification requirement.
+
+Planning and dry-run reconciliation are read-only. All requested identities
+are checked before the first POST. Each device batch requires correlated task
+success and filtered readback before the next batch. Conflicting assignments
+fail closed; existing IDs and unrelated records are preserved. Partial failure
+may leave earlier batches applied: plan again against actual state. The adapter
+performs no PUT, DELETE, automatic mutation retry, or rollback. Offline tests
+verify these boundaries; controller application and guest forwarding require
+separate field evidence.
+
+Sources: [Add Port Assignments (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/add-port-assignments/),
+[Get Port Assignments (2.3.7.9)](https://developer.cisco.com/docs/catalyst-center/2-3-7-9/get-port-assignments/).
+
 ## Transit and handoffs
 
 | Resource | Read | Create | Update | Adapter boundary |
